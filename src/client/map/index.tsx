@@ -1,12 +1,13 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Search, X } from "lucide-react";
+import { ArrowUpRight, Paintbrush, Search, ScanText, X } from "lucide-react";
 import type { Id, MapGraph, Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { emit, subscribe } from "../lib/events";
 import { keys } from "../lib/queries";
+import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
-import { layoutMap, type CardBox } from "./layout";
+import { layoutMap, unionBox, type CardBox } from "./layout";
 import { detailFor, scaleFor, type Detail, type Lod } from "./lod";
 import { MapCard } from "./map-card";
 import { Minimap } from "./minimap";
@@ -246,27 +247,53 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     [camera, cameraFor],
   );
 
+  // `focus` names one page, or several (comma-separated) to frame together, like a photo's new cards.
+  const focusIds = useMemo(() => (focusPageId ? focusPageId.split(",").filter(Boolean) : []), [focusPageId]);
+  /** Point the camera at the focus. False when none of its cards are on the map yet. */
+  const showFocus = useCallback(
+    (ids: Id[], animate: boolean) => {
+      const boxes = ids.flatMap((id) => layoutRef.current.cards.get(id) ?? []);
+      if (!boxes.length) return false;
+      // A chosen view: don't let "keep it fitted" undo it.
+      camera.touched = true;
+      if (ids.length === 1) {
+        focusOn(ids[0], "mid", animate);
+        return true;
+      }
+      const target = fitCamera(unionBox(boxes)!, camera.vw, camera.vh, insets(), narrow ? 16 : 48, 1);
+      if (animate) camera.flyTo(target);
+      else camera.set(target);
+      return true;
+    },
+    [camera, focusOn, insets, narrow],
+  );
+
   // First view: the page you came back from, else where you left the map, else all of it.
   const placed = useRef(false);
+  const lastFocus = useRef(focusPageId);
+  const pendingFocus = useRef<Id[] | null>(null);
   useEffect(() => {
     if (placed.current || !size.w || !layout.cards.size) return;
     placed.current = true;
-    if (focusPageId && layout.cards.has(focusPageId)) focusOn(focusPageId, "mid", false);
-    else {
-      camera.set(savedCamera() ?? fitAll());
-      camera.touched = !!savedCamera();
-    }
-  }, [size, layout, focusPageId, focusOn, fitAll, camera]);
+    if (focusIds.length && showFocus(focusIds, false)) return;
+    if (focusIds.length) pendingFocus.current = focusIds;
+    camera.set(savedCamera() ?? fitAll());
+    camera.touched = !!savedCamera();
+  }, [size, layout, focusIds, showFocus, fitAll, camera]);
   // Until someone moves the map, keep it fitted as the window changes.
   useEffect(() => {
     if (placed.current && !camera.touched && size.w) camera.set(fitAll());
   }, [size, camera, fitAll]);
-  const lastFocus = useRef(focusPageId);
+  // A new focus flies there; if its cards haven't reached the map yet, wait for them.
   useEffect(() => {
-    if (focusPageId === lastFocus.current) return;
-    lastFocus.current = focusPageId;
-    if (focusPageId) focusOn(focusPageId, "mid");
-  }, [focusPageId, focusOn]);
+    if (focusPageId !== lastFocus.current) {
+      lastFocus.current = focusPageId;
+      pendingFocus.current = focusIds.length ? focusIds : null;
+    }
+    const ids = pendingFocus.current;
+    if (!ids || !placed.current) return;
+    if (ids.every((id) => layout.cards.has(id)) && showFocus(ids, true)) pendingFocus.current = null;
+  }, [focusPageId, focusIds, layout, showFocus]);
 
   // ------------------------------------------------------------ the ink reveal
   const revealTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -425,6 +452,38 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       onInput: endReveal,
     });
   }, [camera, endReveal]);
+
+  // ------------------------------------------------------------ card menu
+  const [menu, setMenu] = useState<{ id: Id; x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeMenu = useCallback((refocus = false) => {
+    setMenu((m) => {
+      if (m && refocus) requestAnimationFrame(() => (cardsRef.current?.querySelector(`[data-card="${CSS.escape(m.id)}"]`) as HTMLElement | null)?.focus());
+      return null;
+    });
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    requestAnimationFrame(() => menuRef.current?.querySelector("button")?.focus());
+    const onDown = (e: PointerEvent) => !menuRef.current?.contains(e.target as Node) && closeMenu();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), closeMenu(true));
+    // Moving the map dismisses the menu (listen also fires once straight away; ignore that).
+    const at = { ...camera.cam };
+    const stopListening = camera.listen((c) => (c.x !== at.x || c.y !== at.y || c.s !== at.s) && closeMenu());
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      stopListening();
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [menu, camera, closeMenu]);
+  const onMenu = useCallback((id: Id, x: number, y: number) => {
+    const r = rootRef.current?.getBoundingClientRect();
+    setMenu({ id, x: x - (r?.left ?? 0), y: y - (r?.top ?? 0) });
+  }, []);
+  const menuPage = menu ? pages?.get(menu.id) : undefined;
+  const importPhoto = usePhotoImport();
 
   // ------------------------------------------------------------ actions
   const handlers = useRef({
@@ -594,6 +653,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   onActivate={onActivate}
                   onOpen={onOpen}
                   onMove={onMove}
+                  onMenu={fixture ? undefined : onMenu}
                 />
               );
             })}
@@ -623,6 +683,18 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           <Roster state={state} narrow={narrow} onFollow={follow} />
 
           <div className={css.find} data-map-control data-open={findOpen || undefined}>
+            {!fixture && !(findOpen && narrow) && (
+              <button
+                type="button"
+                className={`${css.findButton} ${css.photo}`}
+                onClick={() => importPhoto()}
+                aria-label="Turn a photo of notes into cards"
+                title="Turn a photo of notes into cards"
+              >
+                <ScanText size={16} aria-hidden />
+                <span>From a photo</span>
+              </button>
+            )}
             {findOpen ? (
               <label className={css.findField}>
                 <Search size={15} aria-hidden />
@@ -675,6 +747,45 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             />
           )}
 
+        </div>
+      )}
+
+      {menu && menuPage && (
+        <div
+          ref={menuRef}
+          className={css.cardMenu}
+          role="menu"
+          aria-label={titleOf(menuPage)}
+          data-map-control
+          style={{ left: Math.min(menu.x, size.w - 220), top: Math.min(menu.y, size.h - 110) }}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            e.preventDefault();
+            const items = [...(menuRef.current?.querySelectorAll("button") ?? [])];
+            const i = items.indexOf(document.activeElement as HTMLButtonElement);
+            items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+          }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu();
+              onOpen(menuPage.id);
+            }}
+          >
+            <ArrowUpRight size={15} aria-hidden /> Open page
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              closeMenu(true);
+              void paintCover(menuPage);
+            }}
+          >
+            <Paintbrush size={15} aria-hidden /> {menuPage.coverUrl ? "Paint a new cover" : "Paint a cover"}
+          </button>
         </div>
       )}
 

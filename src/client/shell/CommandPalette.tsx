@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useMatch, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CornerDownLeft, FilePlus2, FileText, Feather, Map as MapIcon, SunMoon } from "lucide-react";
+import { CornerDownLeft, FilePlus2, FileText, Feather, Map as MapIcon, Paintbrush, ScanText, SunMoon } from "lucide-react";
 import type { Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { keys, pageTitle, usePages } from "../lib/queries";
 import { useCreatePage } from "../lib/mutations";
 import { openDiaryWith, setUi, useUi } from "../lib/ui";
+import { paintCover, usePhotoImport } from "../lib/media";
 
 interface Item {
   id: string;
@@ -69,6 +70,8 @@ export function CommandPalette() {
   const create = useCreatePage();
   const { data: pages = [] } = usePages();
   const debounced = useDebounced(q.trim(), 160);
+  const importPhoto = usePhotoImport();
+  const onPage = useMatch("/p/:id")?.params.id;
 
   const search = useQuery({
     queryKey: keys.search(debounced),
@@ -138,9 +141,19 @@ export function CommandPalette() {
       out.push({ id: "new", section: "Actions", label: "New page", icon: <FilePlus2 size={16} />, run: () => (close(), create.mutate({})) });
     }
     out.push({ id: "map", section: "Actions", label: "Open the map", icon: <MapIcon size={16} />, run: () => (close(), navigate("/")) });
+    out.push({ id: "photo", section: "Actions", label: "Turn a photo of notes into cards", icon: <ScanText size={16} />, run: () => (close(), importPhoto()) });
+    const here = onPage ? pages.find((p) => p.id === onPage) : undefined;
+    if (here)
+      out.push({
+        id: "cover",
+        section: "Actions",
+        label: <>{here.coverUrl ? "Paint a new cover for" : "Paint a cover for"} <em>“{pageTitle(here)}”</em></>,
+        icon: <Paintbrush size={16} />,
+        run: () => (close(), void paintCover(here)),
+      });
     out.push({ id: "theme", section: "Actions", label: "Switch light / dark", icon: <SunMoon size={16} />, run: () => (toggleTheme(), close()) });
     return out;
-  }, [pages, q, search.data]);
+  }, [pages, q, search.data, onPage, importPhoto]);
 
   useEffect(() => setIndex(0), [q]);
   const active = items[Math.min(index, items.length - 1)];

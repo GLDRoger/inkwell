@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Editor as TiptapEditor } from "@tiptap/react";
-import { CloudOff, Feather, FilePlus2, FileText, Loader2, Map as MapIcon, Trash2 } from "lucide-react";
+import { CloudOff, Feather, FilePlus2, FileText, Loader2, Map as MapIcon, Paintbrush, Trash2 } from "lucide-react";
 import type { Agent, Page, Run } from "@shared/types";
 import { isNotFound } from "../lib/api";
 import { childrenOf, pageTitle, useAgents, useMap, useMe, usePage, usePages } from "../lib/queries";
@@ -10,6 +10,8 @@ import { openDiaryWith, personColor } from "../lib/ui";
 import { useCollab, type CollabStatus } from "./collab";
 import { PageEditor } from "./Editor";
 import { timeAgo } from "../lib/time";
+import { paintCover, usePainting } from "../lib/media";
+import { useServerEvent } from "../lib/events";
 
 function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
   const update = useUpdatePage(page.id);
@@ -91,19 +93,29 @@ function SyncPill({ status, synced, unsynced }: { status: CollabStatus; synced: 
   );
 }
 
-/** Agents working on this page now, from the live runs. */
-function useWritersHere(pageId: string): { agent: Agent; run: Run }[] {
+type Doing = "reading" | "writing" | "thinking";
+const DOING: Record<Doing, string> = { reading: "is reading here", writing: "is writing here", thinking: "is thinking here" };
+
+/** Agents working on this page now, from the live runs, with what each is doing (from its footsteps). */
+function useWritersHere(pageId: string): { agent: Agent; run: Run; doing: Doing }[] {
   const { data: graph } = useMap();
   const { data: agents } = useAgents();
+  const [doing, setDoing] = useState<Record<string, Doing>>({});
+  useServerEvent("agent.moved", (e) => {
+    if (e.action !== "leaving") setDoing((d) => (d[e.runId] === e.action ? d : { ...d, [e.runId]: e.action as Doing }));
+  });
   return useMemo(() => {
     const all = graph?.agents ?? agents ?? [];
     return (graph?.runs ?? [])
       .filter((r) => r.pageId === pageId && (r.status === "running" || r.status === "queued"))
       .flatMap((run) => {
         const agent = all.find((a) => a.id === run.agentId);
-        return agent ? [{ agent, run }] : [];
+        if (!agent) return [];
+        const last = run.steps.at(-1);
+        const guess: Doing = !last ? "thinking" : /write|edit|create|append|replace|rename|move/i.test(last.tool) ? "writing" : "reading";
+        return [{ agent, run, doing: doing[run.id] ?? guess }];
       });
-  }, [graph, agents, pageId]);
+  }, [graph, agents, pageId, doing]);
 }
 
 function Children({ page, pages }: { page: Page; pages: Page[] }) {
@@ -141,6 +153,7 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
   const writers = useWritersHere(page.id);
   const navigate = useNavigate();
   const del = useDeletePage();
+  const painting = usePainting(page.id);
   const onReady = useCallback((e: TiptapEditor) => (editorRef.current = e), []);
   const user = useMemo(
     () => ({ name: me?.person.name ?? "You", color: personColor(me?.person.id ?? "me") }),
@@ -158,6 +171,18 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
         <div className="page-actions">
           <button type="button" className="ghost-button" onClick={() => openDiaryWith("", null)} title="Ask an agent about this page">
             <Feather size={15} aria-hidden /> <span>Ask</span>
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => void paintCover(page)}
+            disabled={painting}
+            aria-busy={painting}
+            aria-label={painting ? "Painting a cover" : page.coverUrl ? "Repaint the cover" : "Paint a cover"}
+            title={page.coverUrl ? "Paint a new cover with Muse Image" : "Paint a cover with Muse Image"}
+          >
+            {painting ? <Loader2 size={15} className="spin" aria-hidden /> : <Paintbrush size={15} aria-hidden />}{" "}
+            <span>{painting ? "Painting…" : page.coverUrl ? "Repaint cover" : "Paint a cover"}</span>
           </button>
           <Link to={`/?focus=${page.id}`} className="ghost-button" title="See this page on the map">
             <MapIcon size={15} aria-hidden /> <span>On the map</span>
@@ -179,7 +204,16 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
       </div>
 
       <header className="page-head">
-        {page.coverUrl && <img className="page-cover" src={page.coverUrl} alt="" />}
+        {(page.coverUrl || painting) && (
+          <div className="page-cover-frame" data-painting={painting || undefined}>
+            {page.coverUrl && <img className="page-cover" src={page.coverUrl} alt="" />}
+            {painting && (
+              <p className="cover-painting" role="status">
+                <Paintbrush size={15} aria-hidden /> Muse Image is painting a cover…
+              </p>
+            )}
+          </div>
+        )}
         {page.icon && <div className="page-icon" aria-hidden>{page.icon}</div>}
         <span id="page-title-label" className="sr-only">{pageTitle(page)}</span>
         <TitleField page={page} onEnter={() => editorRef.current?.commands.focus("start")} />
@@ -195,10 +229,10 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
         </p>
         {writers.length > 0 && (
           <ul className="writers" aria-label="Agents on this page">
-            {writers.map(({ agent }) => (
-              <li key={agent.id} className="writer" style={{ ["--agent" as string]: agent.color }}>
+            {writers.map(({ agent, doing }) => (
+              <li key={agent.id} className="writer" data-doing={doing} style={{ ["--agent" as string]: agent.color }}>
                 <span className="writer-nib" aria-hidden />
-                <span className="hand-name">{agent.name}</span> is writing here
+                <span className="hand-name">{agent.name}</span> {DOING[doing]}
               </li>
             ))}
           </ul>
@@ -213,7 +247,7 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
           collab={collab}
           synced={synced}
           user={user}
-          writerColor={writers[0]?.agent.color ?? null}
+          writerColor={writers.find((w) => w.doing === "writing")?.agent.color ?? writers[0]?.agent.color ?? null}
           onReady={onReady}
         />
       ) : null}

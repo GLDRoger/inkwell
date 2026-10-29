@@ -1,5 +1,7 @@
 import { memo, useRef, type CSSProperties } from "react";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Paintbrush } from "lucide-react";
+import { arrivalOf, useArrivals } from "../lib/arrivals";
+import { paintCover, usePainting } from "../lib/media";
 import type { Page } from "@shared/types";
 import type { CameraController } from "./camera";
 import type { CardBox } from "./layout";
@@ -25,6 +27,8 @@ interface Props {
   onActivate(id: string): void;
   onOpen(id: string): void;
   onMove(id: string, x: number, y: number): void;
+  /** Right-click (or the context-menu key): actions for this card at a screen point. */
+  onMenu?(id: string, x: number, y: number): void;
 }
 
 const FRESH_SHOW_MS = 12_000;
@@ -49,6 +53,9 @@ export const MapCard = memo(function MapCard(p: Props) {
   const title = titleOf(page);
   const near = detail === "near";
   const movable = detail === "mid" || detail === "near";
+  useArrivals();
+  const arrival = arrivalOf(page, p.freshAt);
+  const painting = usePainting(page.id);
   const freshAge = p.freshAt ? p.now - p.freshAt : Infinity;
   const fresh = freshAge < 60_000;
 
@@ -62,6 +69,8 @@ export const MapCard = memo(function MapCard(p: Props) {
   if (p.touchedInk) style["--touched"] = p.touchedInk;
   // Fresh ink dries on its own clock, even if the card remounts mid-way.
   if (fresh) style["--fresh-delay"] = `${-Math.min(freshAge, FRESH_SHOW_MS)}ms`;
+  // New cards from a photo come in one after another, on their own clock too.
+  if (arrival?.kind === "arriving") style["--arrive-delay"] = `${Math.round(arrival.delayMs)}ms`;
 
   const label = `${title}${p.writing ? ", being written now" : ""}. Last touched by ${page.updatedBy.name} ${ago(page.updatedAt, p.now)}.`;
   const by = page.updatedBy;
@@ -78,6 +87,9 @@ export const MapCard = memo(function MapCard(p: Props) {
       data-dim={p.dim || undefined}
       data-match={p.match || undefined}
       data-root={box.depth === 0 ? "" : undefined}
+      data-arrive={arrival?.kind === "held" ? "held" : arrival ? "in" : undefined}
+      data-painting={painting || undefined}
+      aria-busy={painting || undefined}
       tabIndex={0}
       role={near ? "article" : "button"}
       aria-label={label}
@@ -89,6 +101,14 @@ export const MapCard = memo(function MapCard(p: Props) {
         }
         if ((e.target as HTMLElement).closest("button, a, [data-scrolls]")) return;
         p.onActivate(page.id);
+      }}
+      onContextMenu={(e) => {
+        if (!p.onMenu) return;
+        e.preventDefault();
+        // The context-menu key reports no pointer position; open beside the card instead.
+        const r = e.currentTarget.getBoundingClientRect();
+        const keyboard = e.clientX === 0 && e.clientY === 0;
+        p.onMenu(page.id, keyboard ? r.left + 12 : e.clientX, keyboard ? r.top + 12 : e.clientY);
       }}
       onDoubleClick={(e) => {
         if ((e.target as HTMLElement).closest("button, a, [data-scrolls]")) return;
@@ -153,6 +173,7 @@ export const MapCard = memo(function MapCard(p: Props) {
       {detail === "mid" && (
         <div className={css.mid}>
           {page.coverUrl && <img className={css.cover} src={page.coverUrl} alt="" draggable={false} />}
+          {painting && !page.coverUrl && <span className={css.coverWash} aria-hidden />}
           <h3 className={css.midTitle}>
             {page.icon && <span className={css.icon}>{page.icon}</span>}
             {title}
@@ -172,6 +193,19 @@ export const MapCard = memo(function MapCard(p: Props) {
             <span className={css.crumb}>{p.crumb}</span>
             <button
               type="button"
+              className={css.paint}
+              disabled={painting}
+              onClick={(e) => {
+                e.stopPropagation();
+                void paintCover(page);
+              }}
+              aria-label={painting ? `Painting a cover for ${title}` : `Paint a cover for ${title}`}
+              title={page.coverUrl ? "Paint a new cover" : "Paint a cover"}
+            >
+              <Paintbrush size={14} strokeWidth={2} aria-hidden />
+            </button>
+            <button
+              type="button"
               className={css.open}
               onClick={(e) => {
                 e.stopPropagation();
@@ -183,6 +217,7 @@ export const MapCard = memo(function MapCard(p: Props) {
             </button>
           </div>
           {page.coverUrl && <img className={css.coverNear} src={page.coverUrl} alt="" draggable={false} />}
+          {painting && !page.coverUrl && <span className={css.coverWashNear} aria-hidden />}
           <h2 className={css.nearTitle}>
             {page.icon && <span className={css.icon}>{page.icon}</span>}
             {title}

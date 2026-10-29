@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, FileText, ImagePlus, Loader2, Mic, Square, X } from "lucide-react";
+import { ArrowUp, FileText, ImagePlus, Loader2, Mic, Square, ScanText, X } from "lucide-react";
 import type { Agent, Attachment } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { prefersReducedMotion } from "../lib/ui";
+import { mediaErrorCopy, usePhotoImport } from "../lib/media";
 import { canRecord, startRecording, type Recording } from "./recorder";
 import { Picker } from "./Picker";
 
@@ -114,6 +115,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
 
   useEffect(() => () => recording.current?.cancel(), []);
 
+  // Muse Voice Transcribe takes up to ten minutes; stop a little before.
+  const toggleRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (mic === "recording" && seconds >= 590) toggleRef.current();
+  }, [mic, seconds]);
+  const importPhoto = usePhotoImport();
+
   const uploading = files.some((f) => f.status === "uploading");
   const canSend = !!text.trim() && !sending && !uploading;
 
@@ -140,7 +148,10 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             setUploadsOk(false);
             setFiles((fs) => fs.filter((f) => f.key !== key));
             onNote("Pictures can't be attached on this server yet.");
-          } else setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, status: "failed" } : f)));
+          } else {
+            setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, status: "failed" } : f)));
+            onNote(mediaErrorCopy(e, "photo"));
+          }
         });
     }
   };
@@ -161,7 +172,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
           markMissing("transcribe");
           setMicOk(false);
           onNote("Voice isn't available on this server yet. Type instead.");
-        } else onNote("Couldn't hear that. Try again, or type it.");
+        } else onNote(mediaErrorCopy(e, "voice"));
       } finally {
         setMic("idle");
       }
@@ -176,6 +187,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     }
   };
 
+  toggleRef.current = () => void toggleMic();
   const agent = agents.find((a) => a.id === agentId);
 
   return (
@@ -287,6 +299,15 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             />
             <button type="button" className="tool-button" aria-label="Attach a picture" title="Attach a picture" onClick={() => fileInput.current?.click()}>
               <ImagePlus size={18} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className="tool-button"
+              aria-label="Turn a photo of notes into map cards"
+              title="Turn a photo of notes into map cards"
+              onClick={() => importPhoto()}
+            >
+              <ScanText size={18} aria-hidden />
             </button>
           </>
         )}

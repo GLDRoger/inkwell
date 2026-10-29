@@ -391,6 +391,7 @@
 
 .cover {
   flex: none;
+  width: calc(100% + 16px);
   height: 28%;
   margin: -6px -8px 4px;
   object-fit: cover;
@@ -400,6 +401,7 @@
 
 .coverNear {
   flex: none;
+  width: 100%;
   max-height: 22%;
   object-fit: cover;
   border-radius: 2px;
@@ -910,7 +912,15 @@
   position: absolute;
   top: calc(var(--shell-top, 0px) + 14px);
   right: calc(var(--diary-inset, 0px) + 12px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   pointer-events: auto;
+}
+
+.findButton span {
+  font: 500 12.5px/1 var(--font-ui);
+  color: var(--ink-soft);
 }
 
 .findButton {
@@ -1208,9 +1218,22 @@
 /* ---------------------------------------------------------------- narrow */
 
 @media (max-width: 639px) {
-  /* The shell's search is right above; find stays on the F key. */
+  /* The shell's search is right above; find stays on the F key. The photo
+     button moves to the free bottom-left corner, in reach of a thumb. */
   .find:not([data-open]) {
+    top: auto;
+    right: auto;
+    left: 12px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .find:not([data-open]) .findButton:not(.photo) {
     display: none;
+  }
+
+  .photo {
+    height: 38px;
+    padding: 0 14px 0 12px;
   }
 
   .roster {
@@ -1248,4 +1271,136 @@
     animation-duration: 1ms;
     animation-name: none;
   }
+}
+
+/* ---------------------------------------------------------------- arrivals, covers, card menu */
+
+/* A photo's cards wait (unseen) until the camera is there, then come in one by one. */
+.card[data-arrive="held"] {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card[data-arrive="in"] {
+    animation: arrive 650ms var(--arrive-delay, 0ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .coverWash,
+  .coverWashNear {
+    animation: coverWash 2.4s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    scale: 0.9;
+    translate: 0 -10px;
+    filter: blur(3px);
+  }
+}
+
+/* Muse Image at work: a damp wash where the cover will be. */
+.coverWash,
+.coverWashNear {
+  flex: none;
+  display: block;
+  border-radius: 2px;
+  background:
+    radial-gradient(45% 60% at 30% 45%, color-mix(in oklab, var(--wax) 22%, transparent), transparent 70%),
+    radial-gradient(40% 60% at 72% 55%, color-mix(in oklab, #3f6b7a 24%, transparent), transparent 70%),
+    color-mix(in oklab, var(--ink) 6%, transparent);
+  background-size: 140% 140%;
+}
+
+.coverWash {
+  height: 28%;
+  margin: -6px -8px 4px;
+}
+
+.coverWashNear {
+  height: 22%;
+}
+
+.card[data-painting] .cover,
+.card[data-painting] .coverNear {
+  opacity: 0.5;
+  filter: blur(1.5px) saturate(0.6);
+}
+
+@keyframes coverWash {
+  from {
+    background-position: 0% 30%;
+  }
+  to {
+    background-position: 100% 70%;
+  }
+}
+
+.paint {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.paint:hover {
+  color: var(--wax);
+  background: var(--wax-soft);
+}
+
+.paint:disabled {
+  cursor: progress;
+  color: var(--wax);
+}
+
+.paint:focus-visible,
+.cardMenu button:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 2px;
+}
+
+.cardMenu {
+  position: absolute;
+  z-index: 5;
+  min-width: 190px;
+  padding: 5px;
+  display: grid;
+  gap: 1px;
+  border-radius: 12px;
+  background: var(--paper-raised);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--ink) 14%, transparent),
+    0 10px 30px rgb(40 25 5 / 0.18);
+  pointer-events: auto;
+}
+
+.cardMenu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: 500 13.5px/1 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cardMenu button svg {
+  color: var(--ink-faint);
+}
+
+.cardMenu button:hover,
+.cardMenu button:focus-visible {
+  background: var(--paper-sunken);
 }

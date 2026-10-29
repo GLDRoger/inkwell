@@ -7,6 +7,7 @@ import { getUi, setUi, useUi } from "./lib/ui";
 import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
 import { ConnectionNotice } from "./shell/ConnectionNotice";
+import { Notices } from "./shell/Notices";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
 import { DiaryPanel } from "./diary/DiaryPanel";
 
@@ -136,6 +137,7 @@ function Shell() {
       <DiaryPanel />
       <CommandPalette />
       <ConnectionNotice />
+      <Notices />
     </div>
   );
 }
