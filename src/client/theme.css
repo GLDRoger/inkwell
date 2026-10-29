@@ -1,0 +1,39 @@
+/*
+ * Design tokens. Shared by the app and the map; the app worker owns this file
+ * and may tune values, but keep the names stable.
+ *
+ * Direction: Notion/ChatGPT calm and legible for everyday work; the magic is in
+ * the ink: parchment surfaces, iron-gall ink, agents' handwriting, footprints.
+ */
+:root {
+  color-scheme: light dark;
+
+  --paper: light-dark(#f7f2e7, #1b1814);
+  --paper-raised: light-dark(#fdfaf3, #24201b);
+  --paper-sunken: light-dark(#efe7d6, #15120f);
+  --rule: light-dark(#e2d8c3, #3a332a);
+  --rule-strong: light-dark(#cbbd9f, #50473a);
+
+  --ink: light-dark(#2b2218, #ece3d2);
+  --ink-soft: light-dark(#5d5040, #b9ad98);
+  --ink-faint: light-dark(#8d806c, #857a68);
+
+  /* Accent: oxblood sealing wax. */
+  --wax: light-dark(#8a2b1f, #d0705f);
+  --wax-soft: light-dark(#f3ddd5, #3b2420);
+
+  /* Status */
+  --working: light-dark(#2f6b4f, #7cc4a0);
+  --waiting: light-dark(#a06a12, #e0b25c);
+  --failed: light-dark(#a3271b, #ef8a7c);
+
+  --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Fraunces", "Iowan Old Style", Georgia, serif;
+  /* Agents write in this hand. */
+  --font-hand: "Cedarville Cursive", "Segoe Script", cursive;
+
+  --radius: 8px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgb(60 40 10 / 0.08), 0 4px 16px rgb(60 40 10 / 0.06);
+  --ease-ink: cubic-bezier(0.22, 1, 0.36, 1);
+}
