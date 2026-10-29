@@ -3,6 +3,11 @@
 .app-main { position: absolute; inset: 0; outline: none; }
 .app[data-route="page"] .app-main { top: var(--topbar-h); }
 
+.session-gate { height: 100dvh; display: grid; place-content: center; text-align: center; gap: 4px; }
+.session-gate p { margin: 0; }
+.session-gate-mark { font: 400 44px/1.1 var(--font-hand); color: var(--wax); animation: invite 1.4s var(--ease-ink) both; }
+@media (prefers-reduced-motion: reduce) { .session-gate-mark { animation: none; } }
+
 /* ------------------------------------------------------------ top bar */
 .topbar {
   position: absolute; inset: 0 0 auto 0; z-index: 30; height: var(--topbar-h);

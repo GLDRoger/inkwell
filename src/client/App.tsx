@@ -2,6 +2,7 @@ import { Component, lazy, Suspense, useEffect, type ComponentType, type ReactNod
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useServerEvents } from "./lib/events";
 import { api, isNotFound } from "./lib/api";
+import { useMe } from "./lib/queries";
 import { getUi, setUi, useUi } from "./lib/ui";
 import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
@@ -82,7 +83,28 @@ function useGlobalShortcuts() {
   }, []);
 }
 
+/**
+ * The first request creates the visitor's session and workspace. Wait for it
+ * before anything else runs, or parallel first requests each mint their own.
+ */
 export function App() {
+  const me = useMe();
+  if (me.data) return <Shell />;
+  return (
+    <div className="session-gate" role={me.error ? "alert" : "status"} aria-busy={!me.error}>
+      <p className="session-gate-mark">Inkwell</p>
+      {me.error ? (
+        <p>
+          Couldn't open your notebook. <button className="link-button" onClick={() => me.refetch()}>Try again</button>
+        </p>
+      ) : (
+        <p className="muted">Opening your notebook…</p>
+      )}
+    </div>
+  );
+}
+
+function Shell() {
   useServerEvents();
   usePresenceReport();
   useGlobalShortcuts();
