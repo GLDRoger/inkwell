@@ -191,10 +191,12 @@ export class CameraController {
     if (this.tween) this.kick();
   };
 
+  /** Stop any frame in flight. Listeners remove themselves; listening again restarts frames. */
   dispose() {
     if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.tween = null;
     clearTimeout(this.settleTimer);
-    this.listeners.clear();
   }
 }
 

@@ -104,7 +104,11 @@ interface Group {
   maxCols: number;
 }
 
-export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves"): MapLayout {
+/**
+ * `shape` is how much wider than tall the rows of auto regions should run:
+ * about 2 on a landscape screen, about 1 on a phone held upright.
+ */
+export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shape = 2.1): MapLayout {
   const ids = new Set(pages.map((p) => p.id));
   const children = new Map<Id, LayoutPage[]>();
   const roots: LayoutPage[] = [];
@@ -220,7 +224,7 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves"): Map
   const area = drafts.reduce((s, d) => s + d.w * d.h, 0);
   const widest = drafts.reduce((m, d) => Math.max(m, d.w), 0);
   // Rows a bit wider than tall read like a map on a landscape screen.
-  const rowWidth = Math.max(widest, Math.sqrt(area) * 1.6, handBounds ? handBounds.w : 0);
+  const rowWidth = Math.max(widest, Math.sqrt(area) * shape, handBounds ? handBounds.w : 0);
   const autoBoxes = new Map<string, Box>();
   let x = 0;
   let rowH = 0;

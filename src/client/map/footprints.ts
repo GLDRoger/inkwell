@@ -48,7 +48,7 @@ export function strideFor(scale: number): number {
 export function standingSpot(card: Box, slot = 0): Pt {
   const col = slot % 4;
   const row = Math.floor(slot / 4);
-  return { x: card.x + 26 + col * Math.min(64, card.w / 4.5), y: card.y + card.h - 20 - row * 36 };
+  return { x: card.x + 56 + col * Math.min(64, card.w / 4.5), y: card.y + card.h - 22 - row * 36 };
 }
 
 function bezier(p0: Pt, p1: Pt, p2: Pt, t: number): Pt {
@@ -136,4 +136,4 @@ export const FOOT_PATH =
 export const FOOT_LENGTH = 18.5;
 
 /** Print scale so a print is about 60% of the stride. */
-export const printScale = (stride: number) => (stride * 0.6) / FOOT_LENGTH;
+export const printScale = (stride: number) => (stride * 0.66) / FOOT_LENGTH;

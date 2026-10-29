@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inkwell map (dev harness)</title>
+    <!-- The fonts the tokens name; the app shell loads its own. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:wght@400..700&display=swap"
+    />
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      body { background: var(--paper); }
+      .toast { position: fixed; left: 50%; bottom: 24px; translate: -50% 0; padding: 8px 14px; border-radius: 999px;
+        background: var(--ink); color: var(--paper); font: 13px var(--font-ui); z-index: 10; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./dev-main.tsx"></script>
+  </body>
+</html>

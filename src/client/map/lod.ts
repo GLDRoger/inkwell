@@ -35,7 +35,7 @@ export function scaleFor(lod: Lod, viewportWidth = Infinity, viewportHeight = In
   if (lod === "far") return 0.3;
   if (lod === "mid") return 0.85;
   // Near: the page as big as fits, never below the near threshold.
-  const room = Math.min((viewportWidth - 32) / CARD_W, (viewportHeight - 180) / 250, 2.2);
+  const room = Math.min((viewportWidth - 32) / CARD_W, (viewportHeight - 180) / 250, 1.6);
   const near = Math.max(MID_AT + 0.1, Math.min(NEAR_AT, (viewportWidth - 24) / CARD_W));
   return Math.max(near, room);
 }
