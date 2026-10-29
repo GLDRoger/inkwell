@@ -103,4 +103,28 @@ describe("layoutMap", () => {
     expect(l.regions).toEqual([]);
     expect(l.bounds).toEqual({ x: 0, y: 0, w: 0, h: 0 });
   });
+
+  it("pulls in the facing walls of hand-arranged wings that would overlap, never into a card", () => {
+    const l = layoutMap([
+      page("a", null, { x: 0, y: 0 }),
+      page("a1", "a", { x: 0, y: 300 }),
+      page("b", null, { x: 0, y: 700 }),
+      page("b1", "b", { x: 350, y: 700 }),
+    ]);
+    const [a, b] = l.regions;
+    expect(overlaps(a, b)).toBe(false);
+    for (const r of l.regions)
+      for (const id of r.pageIds) {
+        const c = l.cards.get(id)!;
+        expect(c.x).toBeGreaterThanOrEqual(r.x);
+        expect(c.y).toBeGreaterThanOrEqual(r.y);
+        expect(c.x + c.w).toBeLessThanOrEqual(r.x + r.w);
+        expect(c.y + c.h).toBeLessThanOrEqual(r.y + r.h);
+      }
+    // The lower wing keeps room above its cards for its name.
+    expect(l.cards.get("b")!.y - b.y).toBe(b.head);
+    expect(b.head).toBeGreaterThanOrEqual(72);
+    // Cards stay exactly where they were saved.
+    expect(l.cards.get("b")).toMatchObject({ x: 0, y: 700 });
+  });
 });

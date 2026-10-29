@@ -16,7 +16,9 @@ import { Roster } from "./roster";
 import { SpellBook, type Spell } from "./spells";
 import { isTypingTarget, titleOf, useNow, useReducedMotion } from "./util";
 import { Banners, Prints, useWalks } from "./walkers";
-import { WorldBack, worldFrame } from "./world";
+import { INK_SPAN_MS, WorldBack, worldFrame } from "./world";
+import { inkDelay, noteFrame } from "./ink";
+import { useMapFonts } from "./fonts";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -26,7 +28,10 @@ export interface MapViewProps {
 
 const CAMERA_KEY = "inkwell:map-camera";
 const INKED_KEY = "inkwell:map-inked";
-const REVEAL_MS = 2600;
+const REVEAL_MS = 3400;
+/** A page made this recently, while we watched, writes itself onto the map. */
+const BORN_MS = 20_000;
+const NOTE_FRAME = noteFrame();
 const LEVEL_NAME: Record<Lod, string> = { far: "Territory", mid: "Cards", near: "Pages" };
 
 function fixtureParams() {
@@ -535,7 +540,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [] }, 0), []);
   const live = state ?? emptyState;
-  const { walks, spots, register } = useWalks(live, layout, camera, reduced);
+  const { store: walkStore, spots, register } = useWalks(live, layout, camera, reduced);
 
   // Say what moved, for screen readers.
   const [announce, setAnnounce] = useState("");
@@ -553,6 +558,19 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     }
   }, [state]);
 
+  // New pages, made while we watched: their rooms and titles write themselves in.
+  const bornKey = useMemo(() => {
+    if (!state) return "";
+    const ids: string[] = [];
+    for (const [id, at] of state.fresh) {
+      const created = Date.parse(state.pages.get(id)?.createdAt ?? "");
+      if (now - at < BORN_MS && Math.abs(created - at) < BORN_MS) ids.push(id);
+    }
+    return ids.sort().join(",");
+  }, [state, now]);
+  const born = useMemo(() => new Set(bornKey ? bornKey.split(",") : []), [bornKey]);
+  useMapFonts();
+
   // ------------------------------------------------------------ render
   const regionTitle = useMemo(() => new Map(layout.regions.map((r) => [r.id, r.title])), [layout]);
   const crumb = (box: CardBox, page: Page) => {
@@ -564,6 +582,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const agentInk = (p: Page) => (p.updatedBy.kind === "agent" ? (state?.agents.get(p.updatedBy.id)?.color ?? null) : null);
   const levelLabel = LEVEL_NAME[detail === "dots" || detail === "rooms" ? "far" : detail];
   const frame = worldFrame(layout.bounds);
+  const lb = layout.bounds;
+  const centre = { x: lb.x + lb.w / 2, y: lb.y + lb.h / 2 };
+  const reach = Math.hypot(lb.w, lb.h) / 2;
+  const inkAt = (b: { x: number; y: number; w: number; h: number }) => inkDelay(b, centre, reach, INK_SPAN_MS);
   const writingIn = (pageIds: Id[]) => {
     for (const id of pageIds) if (writing.has(id)) return true;
     return false;
@@ -579,6 +601,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     <div
       ref={rootRef}
       className={css.root}
+      style={{ "--note-frame": NOTE_FRAME } as CSSProperties}
       lang="en"
       data-detail={detail}
       data-blank={blank || undefined}
@@ -603,12 +626,15 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       <p className={css.srOnly} aria-live="polite">
         {announce}
       </p>
-      <div className={css.paper} aria-hidden />
+      <div className={css.paper} aria-hidden>
+        <div className={css.mottle} />
+        <div className={css.creases} />
+      </div>
 
       <div ref={inkRef} className={css.ink}>
         <div ref={backRef} className={css.world}>
           <div ref={backScaleRef} className={css.scale}>
-            {state && <WorldBack layout={layout} links={state.links} />}
+            {state && <WorldBack layout={layout} links={state.links} born={born} />}
           </div>
         </div>
 
@@ -617,7 +643,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             <div
               key={r.id}
               className={css.regionLabel}
-              style={{ "--x": r.x, "--y": r.y, "--w": r.w } as CSSProperties}
+              style={{ "--x": r.x, "--y": r.y, "--w": r.w, "--head": r.head, "--d": `${inkAt(r) + 250}ms` } as CSSProperties}
               data-busy={writingIn(r.pageIds) || undefined}
             >
               <span className={css.regionName}>
@@ -644,6 +670,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   detail={detail}
                   writing={writing.get(id) ?? null}
                   freshAt={state.fresh.get(id) ?? null}
+                  born={born.has(id)}
+                  inkAt={inkAt(box)}
                   touchedInk={agentInk(page)}
                   dim={!!matchSet && !matchSet.has(id)}
                   match={!!matchSet && matchSet.has(id)}
@@ -667,12 +695,12 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             viewBox={frame.viewBox}
             aria-hidden
           >
-            <Prints walks={walks} />
+            <Prints store={walkStore} />
           </svg>
           </div>
         </div>
 
-        <div ref={bannersRef} className={css.layer} aria-hidden>
+        <div ref={bannersRef} className={`${css.layer} ${css.banners}`} aria-hidden>
           <Banners state={live} spots={spots} register={register} onFollow={follow} />
         </div>
       </div>

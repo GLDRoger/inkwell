@@ -14,6 +14,14 @@
 }
 
 .root {
+  /* Inside the map, the app's paper and ink are the map's parchment and ink. */
+  --paper: var(--map-paper);
+  --paper-raised: var(--map-sheet);
+  --paper-sunken: var(--map-paper-deep);
+  --ink: var(--map-ink);
+  --ink-soft: var(--map-ink-soft);
+  --ink-faint: var(--map-ink-faint);
+  --rule: var(--map-rule);
   --fallback-ink: #8a2b1f;
   position: relative;
   width: 100%;
@@ -56,10 +64,49 @@
   inset: 0;
   pointer-events: none;
   background-image:
-    radial-gradient(ellipse 55% 45% at 12% 18%, light-dark(rgb(160 115 50 / 0.1), rgb(0 0 0 / 0.28)), transparent 70%),
-    radial-gradient(ellipse 45% 55% at 88% 84%, light-dark(rgb(150 100 40 / 0.09), rgb(0 0 0 / 0.3)), transparent 70%),
-    radial-gradient(ellipse 35% 30% at 70% 22%, light-dark(rgb(255 250 235 / 0.5), rgb(255 230 190 / 0.025)), transparent 70%);
-  box-shadow: inset 0 0 180px light-dark(rgb(110 72 25 / 0.2), rgb(0 0 0 / 0.6));
+    radial-gradient(ellipse 70% 62% at 50% 46%, var(--map-glow), transparent 78%),
+    radial-gradient(ellipse 42% 34% at 12% 16%, var(--map-stain), transparent 70%),
+    radial-gradient(ellipse 34% 46% at 90% 84%, var(--map-stain), transparent 72%),
+    radial-gradient(ellipse 22% 18% at 74% 26%, var(--map-stain), transparent 70%),
+    radial-gradient(ellipse 18% 24% at 30% 88%, var(--map-stain), transparent 70%);
+  /* Edges darkened by years of hands (or by the candle's reach, at night). */
+  box-shadow:
+    inset 0 0 160px 24px var(--map-paper-deep),
+    inset 0 0 36px 2px color-mix(in oklab, var(--map-paper-deep) 80%, transparent);
+}
+
+/* Blotches where the parchment took up damp, unevenly. */
+.mottle {
+  position: absolute;
+  inset: 0;
+  background: var(--map-stain);
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1100' height='1100'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.0045' numOctaves='4' seed='9' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  2.6 0 0 0 -1.05'/></filter><rect width='100%' height='100%' filter='url(%23m)'/></svg>");
+  mask-size: 1100px 1100px;
+  opacity: 0.75;
+}
+
+/*
+ * Where the map was folded: three panels across, two down, each crease a
+ * soft valley with a lit edge. Fixed to the sheet, not the drawing.
+ */
+.creases {
+  --crease-dark: light-dark(rgb(110 70 20 / 0.075), rgb(0 0 0 / 0.2));
+  --crease-lit: light-dark(rgb(255 252 238 / 0.42), rgb(255 214 160 / 0.035));
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent calc(33.33% - 22px), var(--crease-dark) calc(33.33% - 1px), var(--crease-lit) 33.33%, transparent calc(33.33% + 7px)),
+    linear-gradient(90deg, transparent calc(66.66% - 22px), var(--crease-dark) calc(66.66% - 1px), var(--crease-lit) 66.66%, transparent calc(66.66% + 7px)),
+    linear-gradient(180deg, transparent calc(50% - 20px), var(--crease-dark) calc(50% - 1px), var(--crease-lit) 50%, transparent calc(50% + 6px));
+}
+
+@media (max-width: 639px) {
+  /* A phone sees one panel's worth: a single fold each way. */
+  .creases {
+    background:
+      linear-gradient(90deg, transparent calc(50% - 18px), var(--crease-dark) calc(50% - 1px), var(--crease-lit) 50%, transparent calc(50% + 6px)),
+      linear-gradient(180deg, transparent calc(50% - 18px), var(--crease-dark) calc(50% - 1px), var(--crease-lit) 50%, transparent calc(50% + 6px));
+  }
 }
 
 /* Grain: the paper's fibres, tinted for day or night. */
@@ -67,7 +114,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: light-dark(rgb(90 60 25 / 0.55), rgb(255 240 210 / 0.22));
+  background: light-dark(rgb(90 55 15 / 0.6), rgb(255 230 190 / 0.2));
   mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .55 -.18'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   mask-size: 240px 240px;
   opacity: 0.5;
@@ -115,34 +162,75 @@
 
 /* ---------------------------------------------------------------- territory */
 
-.region {
-  fill: light-dark(rgb(140 100 40 / 0.05), rgb(255 235 200 / 0.025));
-  stroke: color-mix(in oklab, var(--ink) 34%, transparent);
-  stroke-width: 1.3;
-  vector-effect: non-scaling-stroke;
-}
-
-.regionEdge {
+/* The sheet's own border, the wings' walls, a room for every page: all pen strokes. */
+.sheetEdge path,
+.wall,
+.wallInner,
+.room,
+.hubRoom {
   fill: none;
-  stroke: color-mix(in oklab, var(--ink) 22%, transparent);
-  stroke-width: 1;
-  stroke-dasharray: calc(1px * var(--k, 1)) calc(4px * var(--k, 1));
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
 
+.sheetEdge path {
+  stroke: color-mix(in oklab, var(--ink) 42%, transparent);
+  stroke-width: 1.4;
+}
+
+.sheetEdge .thin {
+  stroke: color-mix(in oklab, var(--ink) 26%, transparent);
+  stroke-width: 0.9;
+}
+
+.wingFloor {
+  fill: light-dark(rgb(150 100 30 / 0.05), rgb(255 222 165 / 0.028));
+}
+
+.wall {
+  stroke: color-mix(in oklab, var(--ink) 66%, transparent);
+  stroke-width: 1.5;
+}
+
+.wallInner {
+  stroke: color-mix(in oklab, var(--ink) 34%, transparent);
+  stroke-width: 1;
+}
+
+.room {
+  stroke: color-mix(in oklab, var(--ink) 50%, transparent);
+  stroke-width: 1.15;
+}
+
+.hubRoom {
+  stroke: color-mix(in oklab, var(--ink) 74%, transparent);
+  stroke-width: 1.7;
+}
+
+/* Up close the cards are notes with their own edges; the drawn rooms rest. */
+.root[data-detail="mid"] .rooms,
+.root[data-detail="near"] .rooms {
+  display: none;
+}
+
+/* Dotted ink paths between linked pages, the way the corridors are walked on the old map. */
 .road {
   fill: none;
-  stroke: color-mix(in oklab, var(--ink-soft) 70%, transparent);
-  stroke-width: 1.3;
-  stroke-dasharray: calc(6px * var(--k, 1)) calc(5px * var(--k, 1));
+  stroke: color-mix(in oklab, var(--ink-soft) 72%, transparent);
+  stroke-width: 2.2;
+  /* Every dot is its own round cap to rasterise on each zoom: keep them spaced (measured, 400 pages). */
+  stroke-dasharray: 0 calc(9px * var(--k, 1));
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+}
+
+.root[data-detail="dots"] .road {
+  stroke-width: 1.6;
 }
 
 .root[data-detail="mid"] .road,
 .root[data-detail="near"] .road {
-  stroke: color-mix(in oklab, var(--ink-soft) 45%, transparent);
+  stroke: color-mix(in oklab, var(--ink-soft) 50%, transparent);
 }
 
 .compass {
@@ -189,25 +277,26 @@
   text-anchor: middle;
 }
 
-/* Region names: engraved, centred over each wing like places on an old map. */
+/* Region names: lettered by hand over each wing, the way places are named on an old map. */
 .regionLabel {
   position: absolute;
   left: 0;
   top: 0;
   transform: translate(
-    round(calc(var(--x) * var(--s) * 1px), 1px),
-    round(calc(var(--y) * var(--s) * 1px), 1px)
-  );
-  width: calc(var(--w) * var(--s) * 1px);
-  height: max(18px, calc(120 * var(--s) * 1px));
+      round(calc((var(--x) + var(--w) / 2) * var(--s) * 1px), 1px),
+      round(calc(var(--y) * var(--s) * 1px), 1px)
+    )
+    translateX(-50%);
+  width: max-content;
+  max-width: max(120px, calc(var(--w) * var(--s) * 1.5px));
+  height: max(18px, calc(var(--head, 120) * var(--s) * 1px));
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   text-align: center;
   white-space: nowrap;
-  overflow: hidden;
   pointer-events: none;
 }
 
@@ -215,38 +304,48 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding: 0.1em 0.05em;
 }
 
 .regionName {
   display: inline-flex;
   align-items: center;
-  gap: 0.7em;
+  gap: 0.55em;
   max-width: 100%;
-  font-family: var(--font-serif);
-  font-weight: 500;
-  font-size: clamp(9px, calc(var(--s) * 44px), 30px);
+  font-family: var(--font-map-caps);
+  font-weight: 400;
+  font-synthesis: none;
+  font-size: clamp(11px, calc(var(--s) * 52px), 36px);
   line-height: 1.1;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  text-shadow: 0 1px 0 light-dark(rgb(255 252 240 / 0.85), rgb(0 0 0 / 0.7));
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  text-shadow:
+    0 0 2px var(--paper),
+    0 0 6px var(--paper);
 }
 
+/* Little pen flourishes either side of the name. */
 .regionName::before,
 .regionName::after {
   content: "";
   flex: none;
-  width: 1.6em;
-  height: 0;
-  border-top: 1px solid currentColor;
-  opacity: 0.45;
+  width: 1.3em;
+  height: 0.5em;
+  background: currentColor;
+  opacity: 0.55;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 12'><path d='M1 6 C 10 2, 18 10, 27 6 S 36 4, 39 6' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round'/><circle cx='34' cy='6' r='1.7'/></svg>") center / contain no-repeat;
+}
+
+.regionName::before {
+  transform: scaleX(-1);
 }
 
 .regionMeta {
-  font-family: var(--font-serif);
+  font-family: var(--font-map);
   font-style: italic;
-  font-size: 12px;
-  color: var(--ink-faint);
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-shadow: 0 0 4px var(--paper);
   display: none;
 }
 
@@ -297,28 +396,21 @@
   contain: layout style size;
 }
 
-/* Far: a room drawn in ink, its name inside. */
+/* Far: a room drawn in ink on the parchment (the walls are in the SVG below), its name written inside. */
 .card[data-detail="rooms"],
 .card[data-detail="dots"] {
-  background: color-mix(in oklab, var(--paper-raised) 55%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink) 30%, transparent);
-  border-radius: 2px;
   display: grid;
   place-items: center;
   padding: 4px;
 }
 
-.card[data-detail="rooms"][data-root],
-.card[data-detail="dots"][data-root] {
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--ink) 48%, transparent);
-}
-
 .roomTitle {
   --rest-ink: var(--ink-soft);
-  font-family: var(--font-serif);
-  font-size: clamp(9px, calc(var(--s) * 48px), 16px);
-  line-height: 1.15;
+  font-family: var(--font-map);
+  font-size: clamp(8.5px, calc(var(--s) * 46px), 17px);
+  line-height: 1.12;
   text-align: center;
+  text-wrap: balance;
   color: var(--rest-ink);
   overflow-wrap: break-word;
   hyphens: auto;
@@ -330,28 +422,54 @@
 
 .card[data-root] .roomTitle {
   --rest-ink: var(--ink);
-  font-weight: 600;
+  font-family: var(--font-map-caps);
+  letter-spacing: 0.03em;
 }
 
 .dot {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
-  background: var(--ink-faint);
+  background: var(--ink-soft);
+  opacity: 0.8;
 }
 
-/* Mid: a parchment card with a ruled double edge. */
-.card[data-detail="mid"],
-.card[data-detail="near"] {
-  background: var(--paper-raised);
-  border-radius: 3px;
+/* Mid: a note written on a scrap of the same parchment, edges aged, framed by hand. */
+.card[data-detail="mid"] {
+  background: var(--map-sheet);
+  border-radius: 2px;
   box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--ink) 22%, transparent),
-    var(--shadow-card);
+    inset 0 0 16px 1px color-mix(in oklab, var(--map-paper-deep) 75%, transparent),
+    0 1px 1px light-dark(rgb(70 40 10 / 0.12), rgb(0 0 0 / 0.35)),
+    0 8px 20px -10px light-dark(rgb(70 40 10 / 0.35), rgb(0 0 0 / 0.6));
   cursor: grab;
 }
 
-.card[data-detail="mid"]::before,
+.card[data-detail="mid"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  opacity: 0.5;
+  mask: var(--note-frame) 0 0 / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
+.card[data-detail="mid"][data-root]::before {
+  opacity: 0.75;
+}
+
+/* Near: the page itself, calm and crisp for reading, on a clean leaf. */
+.card[data-detail="near"] {
+  background: var(--map-page);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--ink) 20%, transparent),
+    0 2px 4px light-dark(rgb(70 40 10 / 0.08), rgb(0 0 0 / 0.3)),
+    0 14px 40px -12px light-dark(rgb(70 40 10 / 0.3), rgb(0 0 0 / 0.55));
+  cursor: default;
+}
+
 .card[data-detail="near"]::before {
   content: "";
   position: absolute;
@@ -359,10 +477,6 @@
   border: 1px solid color-mix(in oklab, var(--rule) 80%, transparent);
   border-radius: 1px;
   pointer-events: none;
-}
-
-.card[data-detail="near"] {
-  cursor: default;
 }
 
 .card[data-dragging] {
@@ -418,9 +532,11 @@
 }
 
 .midTitle {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.22;
+  font-family: var(--font-map);
+  font-size: 19px;
+  font-weight: 400;
+  font-synthesis: none;
+  line-height: 1.15;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -436,8 +552,9 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.48;
   color: var(--ink-soft);
   mask-image: linear-gradient(to bottom, #000 62%, transparent);
 }
@@ -467,11 +584,14 @@
   color: var(--ink-soft);
 }
 
+/* An agent's name in its own hand and ink, as it signs the diary. */
 .touched[data-agent] .byName {
   color: var(--who-ink);
   --who: var(--touched);
-  font-family: var(--font-serif);
-  font-style: italic;
+  font-family: var(--font-hand);
+  font-weight: 400;
+  font-size: 1.32em;
+  line-height: 1;
 }
 
 .when {
@@ -548,9 +668,9 @@
 .crumb {
   flex: 1;
   min-width: 0;
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-family: var(--font-map-caps);
+  font-size: 13px;
+  letter-spacing: 0.06em;
   color: var(--ink-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -632,10 +752,10 @@
 
 .card[data-writing][data-detail="rooms"],
 .card[data-writing][data-detail="dots"] {
-  background: color-mix(in oklab, var(--who-ink) 10%, var(--paper-raised));
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--who-ink) 16%, transparent), transparent);
   box-shadow:
-    inset 0 0 0 1.5px color-mix(in oklab, var(--who-ink) 75%, transparent),
-    0 0 18px 2px color-mix(in oklab, var(--who-ink) 32%, transparent);
+    inset 0 0 0 1.5px color-mix(in oklab, var(--who-ink) 70%, transparent),
+    0 0 18px 2px color-mix(in oklab, var(--who-ink) 28%, transparent);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -662,6 +782,22 @@
 .print {
   opacity: 0;
   animation: print 3400ms linear both;
+}
+
+.walk[data-pacing] .print {
+  animation-name: pace;
+}
+
+@keyframes pace {
+  0% {
+    opacity: 0;
+  }
+  4% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes print {
@@ -713,11 +849,10 @@
     inset 0 1px 0 currentColor,
     inset 0 -1px 0 currentColor;
   clip-path: polygon(0 0, 100% 0, calc(100% - 7px) 50%, 100% 100%, 0 100%, 7px 50%);
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 600;
-  font-size: 12.5px;
-  line-height: 1.25;
+  font-family: var(--font-hand);
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1.15;
   white-space: nowrap;
   transition: opacity 300ms ease;
 }
@@ -725,13 +860,29 @@
 /* Several in one room at the territory view: their names stack. */
 .root[data-detail="rooms"] .ribbon,
 .root[data-detail="dots"] .ribbon {
-  margin-bottom: calc(var(--slot, 0) * 20px);
-  font-size: 11.5px;
+  margin-bottom: calc(var(--slot, 0) * 22px);
+  font-size: 15px;
   padding: 1px 10px 2px;
+}
+
+@media (max-width: 639px) {
+  .root[data-detail="rooms"] .ribbon,
+  .root[data-detail="dots"] .ribbon {
+    margin-bottom: calc(var(--slot, 0) * 19px);
+    font-size: 13.5px;
+    padding: 0 8px 1px;
+  }
+
+  .root[data-detail="rooms"] .doing,
+  .root[data-detail="dots"] .doing {
+    font-size: 9.5px;
+  }
 }
 
 .who {
   color: var(--who-ink);
+  /* The hand is fine-nibbed; a touch of weight so a name reads at a glance. */
+  -webkit-text-stroke: 0.25px currentColor;
 }
 
 .doing {
@@ -767,9 +918,10 @@
   margin-top: calc(14px + var(--slot, 0) * 24px);
 }
 
+/* People sign in the map's own lettering, so nobody mistakes a person for an agent. */
 .banner[data-kind="person"] .ribbon {
-  font-style: normal;
-  font-variant: small-caps;
+  font-family: var(--font-map-caps);
+  font-size: 14px;
   letter-spacing: 0.04em;
 }
 
@@ -890,11 +1042,18 @@
 }
 
 .chipName {
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 600;
-  font-size: 13.5px;
+  font-family: var(--font-hand);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1;
   color: var(--who-ink);
+  -webkit-text-stroke: 0.2px currentColor;
+}
+
+.chip[data-kind="person"] .chipName {
+  font-family: var(--font-map-caps);
+  font-size: 14px;
+  -webkit-text-stroke: 0;
 }
 
 .chipLine {
@@ -1092,44 +1251,123 @@
 }
 
 /*
- * The map inks itself in from the centre: a parchment cover over everything
- * with a widening hole, and a faint wet-ink ring where the ink is spreading.
- * A cover rather than a mask, so composited layers can't escape it.
+ * The map inks itself in from the middle. Every wall, room and border is a
+ * pen stroke that draws itself (pathLength 1, dash offset 1 to 0), each on a
+ * delay --d that grows with its distance from the middle; names write
+ * themselves in left to right just behind the walls; the dotted paths and
+ * the walkers come last. A faint wet ring spreads ahead of the ink, and a
+ * parchment cover hides whatever isn't drawn by hand until the ring passes.
  */
 .root[data-reveal] .wash {
   opacity: 1;
   background:
     radial-gradient(
       circle at 50% 52%,
-      transparent calc(var(--reveal) + 1vmax),
-      light-dark(rgb(95 55 20 / 0.085), rgb(255 228 185 / 0.05)) calc(var(--reveal) + 5vmax),
-      transparent calc(var(--reveal) + 10vmax)
-    ),
-    radial-gradient(circle at 50% 52%, transparent var(--reveal), var(--paper) calc(var(--reveal) + 20vmax));
-  animation: reveal 2600ms cubic-bezier(0.35, 0.05, 0.35, 1) both;
+      transparent calc(var(--reveal) - 2vmax),
+      light-dark(rgb(95 55 15 / 0.07), rgb(255 220 160 / 0.045)) calc(var(--reveal) + 3vmax),
+      transparent calc(var(--reveal) + 9vmax)
+    );
+  animation: reveal 2300ms cubic-bezier(0.3, 0.1, 0.4, 1) both;
 }
 
+.root[data-reveal] .draw {
+  stroke-dasharray: 1 1;
+  animation: draw 1000ms var(--d, 0ms) cubic-bezier(0.5, 0.1, 0.35, 1) both;
+}
+
+/* A wing's rooms are one long stroke: the pen takes longer going round them all. */
+.root[data-reveal] .slow {
+  animation-duration: 1700ms;
+}
+
+.root[data-reveal] .road,
+.root[data-reveal] .compass,
+.root[data-reveal] .dot {
+  animation: inkIn 900ms calc(var(--d, 0ms) + 500ms) ease-out both;
+}
+
+.root[data-reveal] .compass {
+  --d: 1200ms;
+}
+
+.root[data-reveal] .roomTitle,
+.root[data-reveal] .midTitle,
 .root[data-reveal] .regionName {
-  animation: inkIn 1500ms 350ms var(--ease-ink) both;
+  animation: write 1100ms calc(var(--d, 0ms) + 380ms) cubic-bezier(0.4, 0.1, 0.4, 1) both;
+}
+
+/* Notes and the faces of cards (anything not drawn by a pen stroke) soak in behind the walls. */
+.root[data-reveal] .card[data-detail="mid"],
+.root[data-reveal] .card[data-detail="near"],
+.root[data-reveal] .excerpt,
+.root[data-reveal] .touched,
+.root[data-reveal] .regionMeta {
+  animation: inkIn 900ms calc(var(--d, 0ms) + 300ms) ease-out both;
+}
+
+.root[data-reveal] .banners {
+  animation: inkIn 800ms 1700ms ease-out both;
 }
 
 .root[data-reveal] .chrome {
-  animation: chromeIn 700ms 1500ms ease-out both;
+  animation: chromeIn 700ms 1900ms ease-out both;
+}
+
+/* A page made just now writes itself onto the map the same way. */
+@media (prefers-reduced-motion: no-preference) {
+  .draw[data-born] {
+    stroke-dasharray: 1 1;
+    animation: draw 1100ms cubic-bezier(0.5, 0.1, 0.35, 1) both;
+  }
+
+  .card[data-born] .roomTitle,
+  .card[data-born] .midTitle,
+  .card[data-born] .nearTitle {
+    animation:
+      write 1300ms calc(var(--born-delay, 0ms) + 500ms) cubic-bezier(0.4, 0.1, 0.4, 1) both,
+      freshInk 12s var(--fresh-delay, 0s) ease-out both;
+  }
+
+  .card[data-born]:not([data-arrive])[data-detail="mid"] {
+    animation: inkIn 900ms var(--born-delay, 0ms) ease-out both;
+  }
 }
 
 @keyframes reveal {
   from {
-    --reveal: -24vmax;
+    --reveal: 0px;
   }
   to {
-    --reveal: 140vmax;
+    --reveal: 130vmax;
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Handwriting: the words appear left to right, a little wet, then dry. */
+@keyframes write {
+  from {
+    clip-path: inset(-20% 100% -20% 0);
+    filter: blur(1.2px);
+  }
+  70% {
+    filter: none;
+  }
+  to {
+    clip-path: inset(-20% -2% -20% 0);
   }
 }
 
 @keyframes inkIn {
   from {
     opacity: 0;
-    letter-spacing: 0.42em;
     filter: blur(2.5px);
   }
 }
@@ -1187,17 +1425,18 @@
 }
 
 .presents span {
+  font-family: var(--font-map);
   font-style: italic;
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ink-soft);
 }
 
 .presents b {
-  margin-top: 4px;
-  font-weight: 500;
-  font-size: 34px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
+  margin-top: 6px;
+  font-family: var(--font-map-caps);
+  font-weight: 400;
+  font-size: 44px;
+  letter-spacing: 0.16em;
 }
 
 @keyframes presents {

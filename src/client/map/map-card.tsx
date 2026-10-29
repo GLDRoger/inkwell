@@ -17,6 +17,10 @@ interface Props {
   writing: string | null;
   /** When the page last got fresh ink while we watched. */
   freshAt: number | null;
+  /** Made just now, while we watched: it writes itself onto the map. */
+  born: boolean;
+  /** When this card inks itself in during the map's reveal, ms. */
+  inkAt: number;
   /** Ink of whoever touched it last, when that was an agent. */
   touchedInk: string | null;
   dim: boolean;
@@ -64,11 +68,14 @@ export const MapCard = memo(function MapCard(p: Props) {
     "--y": box.y,
     "--w": box.w,
     "--h": box.h,
+    "--d": `${p.inkAt}ms`,
   } as CSSProperties & Record<string, string | number>;
   if (p.writing) style["--who"] = p.writing;
   if (p.touchedInk) style["--touched"] = p.touchedInk;
   // Fresh ink dries on its own clock, even if the card remounts mid-way.
   if (fresh) style["--fresh-delay"] = `${-Math.min(freshAge, FRESH_SHOW_MS)}ms`;
+  // A newborn page writes itself in on its own clock, so scrolling it out and back doesn't replay it.
+  if (p.born && p.freshAt) style["--born-delay"] = `${-Math.max(0, Math.min(Date.now() - p.freshAt, 5000))}ms`;
   // New cards from a photo come in one after another, on their own clock too.
   if (arrival?.kind === "arriving") style["--arrive-delay"] = `${Math.round(arrival.delayMs)}ms`;
 
@@ -84,6 +91,7 @@ export const MapCard = memo(function MapCard(p: Props) {
       data-detail={detail}
       data-writing={p.writing ? "" : undefined}
       data-fresh={fresh ? "" : undefined}
+      data-born={p.born || undefined}
       data-dim={p.dim || undefined}
       data-match={p.match || undefined}
       data-root={box.depth === 0 ? "" : undefined}

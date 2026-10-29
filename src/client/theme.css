@@ -49,3 +49,24 @@
   --shadow-pop: 0 2px 6px rgb(40 25 5 / 0.1), 0 16px 48px rgb(40 25 5 / 0.18);
   --font-hand-size: 23px;
 }
+
+/*
+ * The map's own parchment and ink. The map is a sheet of old parchment by
+ * day and the same sheet by candlelight at night (warm brown, gold-cream
+ * ink), never flat black. The map re-points --paper/--ink at these inside
+ * itself; nothing else needs to use them.
+ */
+:root {
+  --map-paper: light-dark(#efe1c1, #35291c);
+  --map-paper-deep: light-dark(#d6bd93, #110b06);
+  --map-stain: light-dark(rgb(150 100 35 / 0.16), rgb(0 0 0 / 0.32));
+  --map-glow: light-dark(rgb(255 250 232 / 0.55), rgb(255 184 100 / 0.15));
+  --map-sheet: light-dark(#f7eed8, #403223);
+  --map-page: light-dark(#fcf7ec, #3a2d20);
+  --map-ink: light-dark(#38230f, #f0dfbb);
+  --map-ink-soft: light-dark(#5f452b, #d0bb95);
+  --map-ink-faint: light-dark(#86704f, #9e8a6b);
+  --map-rule: light-dark(#dcc9a4, #4b3d2d);
+  --font-map: "IM Fell English", "Fraunces", "Iowan Old Style", Georgia, serif;
+  --font-map-caps: "IM Fell English SC", "IM Fell English", "Fraunces", Georgia, serif;
+}

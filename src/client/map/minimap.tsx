@@ -51,8 +51,9 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
     const inks = new Map<string, string>();
     const readPalette = () => {
       palette = {
-        region: resolveColor(pr, "color-mix(in oklab, var(--rule-strong) 45%, transparent)"),
-        room: resolveColor(pr, "color-mix(in oklab, var(--ink-faint) 55%, transparent)"),
+        region: resolveColor(pr, "color-mix(in oklab, var(--ink) 7%, transparent)"),
+        wall: resolveColor(pr, "color-mix(in oklab, var(--ink) 45%, transparent)"),
+        room: resolveColor(pr, "color-mix(in oklab, var(--ink-soft) 38%, transparent)"),
         fresh: resolveColor(pr, "var(--ink-soft)"),
         view: resolveColor(pr, "var(--wax)"),
       };
@@ -81,8 +82,14 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
       }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, width, height);
+      // The territory in miniature: inked walls round each wing, the rooms shaded in.
       g.fillStyle = palette.region;
-      for (const r of layout.regions) g.fillRect(ox + r.x * k, oy + r.y * k, Math.max(1, r.w * k), Math.max(1, r.h * k));
+      g.strokeStyle = palette.wall;
+      g.lineWidth = 0.75;
+      for (const r of layout.regions) {
+        g.fillRect(ox + r.x * k, oy + r.y * k, Math.max(1, r.w * k), Math.max(1, r.h * k));
+        g.strokeRect(ox + r.x * k + 0.5, oy + r.y * k + 0.5, Math.max(1, r.w * k - 1), Math.max(1, r.h * k - 1));
+      }
       g.fillStyle = palette.room;
       for (const c of layout.cards.values()) {
         g.fillStyle = writing.has(c.id) ? ink(writing.get(c.id)!) : state.fresh.has(c.id) ? palette.fresh : palette.room;

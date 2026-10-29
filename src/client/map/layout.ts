@@ -51,6 +51,8 @@ export interface RegionBox extends Box {
   pageIds: Id[];
   /** Someone arranged this region by hand (at least one page has x/y). */
   pinned: boolean;
+  /** Height of the band above the cards where the region's name is written. */
+  head: number;
 }
 
 export interface MapLayout {
@@ -252,8 +254,9 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
       const u = unionBox(pageIds.map((id) => cards.get(id)!))!;
       box = { x: u.x - REGION_PAD, y: u.y - REGION_HEADER, w: u.w + REGION_PAD * 2, h: u.h + REGION_HEADER + REGION_PAD };
     }
-    regions.push({ id: g.id, title: g.title, pageId: g.pageId, pageIds, pinned: pinnedGroups.has(g.id), ...box });
+    regions.push({ id: g.id, title: g.title, pageId: g.pageId, pageIds, pinned: pinnedGroups.has(g.id), head: REGION_HEADER, ...box });
   }
+  trimOverlaps(regions, cards);
 
   const bounds = unionBox(regions) ?? { x: 0, y: 0, w: 0, h: 0 };
   return { cards, regions, bounds };
@@ -273,6 +276,54 @@ export function separate(box: Box, placed: Box[], pad = GAP / 2) {
     const pushY = dy >= 0 ? hit.y + hit.h + pad - box.y : hit.y - pad - (box.y + box.h);
     if (Math.abs(pushX) <= Math.abs(pushY)) box.x += pushX;
     else box.y += pushY;
+  }
+}
+
+/** The least margin a wall keeps from its cards, and the least room kept for a region's name. */
+const WALL_MIN = 20;
+const HEAD_MIN = 72;
+const WALL_GAP = 16;
+
+/**
+ * Hand-arranged regions are framed around wherever their cards ended up, so
+ * two can overlap. Pull the facing walls in (never into a card, and leaving
+ * room for the name) so neighbouring wings share a corridor instead.
+ */
+export function trimOverlaps(regions: RegionBox[], cards: Map<Id, Box>) {
+  const inner = regions.map((r) => unionBox(r.pageIds.flatMap((id) => cards.get(id) ?? [])));
+  for (let i = 0; i < regions.length; i++) {
+    for (let j = i + 1; j < regions.length; j++) {
+      const a = regions[i];
+      const b = regions[j];
+      const ia = inner[i];
+      const ib = inner[j];
+      if (!ia || !ib || !overlaps(a, b, WALL_GAP - 1)) continue;
+      const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) + WALL_GAP;
+      const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) + WALL_GAP;
+      // Resolve along whichever axis needs the smaller pull, if the slack allows it.
+      const [lo, hi, ilo, ihi] = (ox <= oy ? a.x <= b.x : a.y <= b.y) ? [a, b, ia, ib] : [b, a, ib, ia];
+      if (ox <= oy) {
+        const slackLo = Math.max(0, lo.x + lo.w - (ilo.x + ilo.w) - WALL_MIN);
+        const slackHi = Math.max(0, ihi.x - hi.x - WALL_MIN);
+        if (slackLo + slackHi < ox) continue;
+        const takeHi = Math.min(slackHi, ox / 2);
+        const takeLo = ox - takeHi;
+        lo.w -= takeLo;
+        hi.x += takeHi;
+        hi.w -= takeHi;
+      } else {
+        const slackLo = Math.max(0, lo.y + lo.h - (ilo.y + ilo.h) - WALL_MIN);
+        const slackHi = Math.max(0, ihi.y - hi.y - HEAD_MIN);
+        if (slackLo + slackHi < oy) continue;
+        // The upper wing gives up its bottom margin first; the lower one's name band last.
+        const takeLo = Math.min(slackLo, oy);
+        const takeHi = oy - takeLo;
+        lo.h -= takeLo;
+        hi.y += takeHi;
+        hi.h -= takeHi;
+        hi.head -= takeHi;
+      }
+    }
   }
 }
 
