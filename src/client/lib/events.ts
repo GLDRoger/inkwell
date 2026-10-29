@@ -255,12 +255,9 @@ export function useServerEvents(): void {
     let attempt = 0;
     let everOpened = false;
     let disposed = false;
-    // Named and unnamed SSE messages can both arrive; dedupe identical payloads that come in twice.
-    let lastRaw = "";
-
+    // The server names every message, so each arrives through exactly one
+    // listener. Never dedupe: two identical diary.delta chunks are both ink.
     const onData = (raw: string) => {
-      if (raw === lastRaw) return;
-      lastRaw = raw;
       const event = parse(raw);
       if (event) emit(event);
     };
