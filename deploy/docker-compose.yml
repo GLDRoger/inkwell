@@ -1,0 +1,24 @@
+name: inkwell
+services:
+  inkwell:
+    image: inkwell:local
+    build:
+      context: ..
+    init: true
+    ports:
+      - "127.0.0.1:8790:8787"
+    env_file:
+      - /opt/inkwell/.env
+    environment:
+      NODE_ENV: production
+      DATA_DIR: /data
+      PORT: "8787"
+      TRUST_PROXY: "1"
+    volumes:
+      - /opt/inkwell/data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

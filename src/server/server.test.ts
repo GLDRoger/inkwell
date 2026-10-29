@@ -70,6 +70,20 @@ afterAll(async () => {
 });
 
 describe("session + seed", () => {
+  it("health and cookieless non-bootstrap requests do not seed workspaces", async () => {
+    const count = () => (services.db.prepare("SELECT count(*) AS n FROM workspaces").get() as { n: number }).n;
+    const before = count();
+    const health = await app.request("/api/health");
+    expect(health.status).toBe(200);
+    expect(health.headers.get("set-cookie")).toBeNull();
+    for (const url of ["/api/map", "/api/events", "/api/pages", "/api/nope"]) {
+      const result = await app.request(url);
+      expect(result.status).toBe(401);
+      expect(result.headers.get("set-cookie")).toBeNull();
+    }
+    expect(count()).toBe(before);
+  });
+
   it("creates a workspace on first request and seeds the demo notebook", async () => {
     const client = await newClient();
     const me = (await (await client.request("/api/me")).json()) as {
