@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
  * The opening lines are written by hand; the rest reads as a normal document.
  * Decided from the prefix only, so the cut doesn't move as more text streams in.
  */
-export const HAND_MIN = 90;
+export const HAND_MIN = 60;
 export const HAND_MAX = 240;
 
 export function handCut(text: string): number {
