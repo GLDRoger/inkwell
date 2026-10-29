@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import type { Id, MapGraph, Page } from "@shared/types";
@@ -104,11 +104,20 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const bannersRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
   const frontRef = useRef<HTMLDivElement>(null);
+  const backScaleRef = useRef<HTMLDivElement>(null);
+  const frontScaleRef = useRef<HTMLDivElement>(null);
+  const lastScale = useRef(NaN);
+  /** The scale cards and labels were last laid out at. */
+  const rendered = useRef(1);
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
+  const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const narrow = size.w > 0 && size.w < 640;
   const [detail, setDetail] = useState<Detail>("rooms");
   const detailRef = useRef(detail);
   const [visible, setVisible] = useState<string[]>([]);
+  const visibleRef = useRef<string[]>([]);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
 
@@ -130,38 +139,62 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const recull = useCallback((c: Cam, vw: number, vh: number) => {
     if (!vw) return;
     const v = visibleWorld(c, vw, vh);
-    const m = Math.max(v.w, v.h) * 0.35;
+    // Generous margin: cards are ready before they arrive, and small pans change nothing.
+    const m = Math.max(v.w, v.h) * 0.5;
     const out: string[] = [];
     for (const [id, b] of layoutRef.current.cards) {
       if (b.x + b.w < v.x - m || b.x > v.x + v.w + m || b.y + b.h < v.y - m || b.y > v.y + v.h + m) continue;
       out.push(id);
     }
-    setVisible((prev) => (sameList(prev, out) ? prev : out));
+    // Mounting cards that scroll into view is interruptible: the camera keeps its frame rate.
+    if (sameList(visibleRef.current, out)) return;
+    visibleRef.current = out;
+    startTransition(() => setVisible(out));
   }, []);
 
   useEffect(
     () =>
       camera.listen((c, vw, vh) => {
-        for (const el of [cardsRef.current, labelsRef.current, bannersRef.current]) {
-          if (!el) continue;
-          el.style.setProperty("--cx", String(c.x));
-          el.style.setProperty("--cy", String(c.y));
-          el.style.setProperty("--s", String(c.s));
-          el.style.setProperty("--hw", String(vw / 2));
-          el.style.setProperty("--hh", String(vh / 2));
-        }
-        const t = `translate(${vw / 2 - c.x * c.s}px, ${vh / 2 - c.y * c.s}px) scale(${c.s})`;
-        if (backRef.current) {
-          backRef.current.style.transform = t;
-          // Dash lengths are in world units; keep them steady on screen (stepped, so panning restyles nothing).
-          const k = (1 / c.s).toPrecision(2);
-          if (backRef.current.style.getPropertyValue("--k") !== k) backRef.current.style.setProperty("--k", k);
-        }
-        if (frontRef.current) frontRef.current.style.transform = t;
+        // Zoom is drawn in two speeds. Mid-gesture, layers that were rendered at
+        // `rendered.current` are scaled as bitmaps by the compositor (cheap, a
+        // touch soft); a moment after the zoom settles, or once the bitmap has
+        // been stretched by a third, everything re-renders crisply at the new
+        // scale. Panning is always a whole-pixel translate. Neither restyles a card.
+        const commit = () => {
+          rendered.current = camera.cam.s;
+          const s = String(camera.cam.s);
+          for (const el of [labelsRef.current, cardsRef.current, bannersRef.current]) el?.style.setProperty("--s", s);
+          for (const el of [backScaleRef.current, frontScaleRef.current]) if (el) el.style.transform = `scale(${s})`;
+          // Dash lengths are in world units; keep them steady on screen.
+          backScaleRef.current?.style.setProperty("--k", (1 / camera.cam.s).toPrecision(3));
+          place(camera.cam, camera.vw, camera.vh);
+        };
+        const place = (cam: Cam, w: number, h: number) => {
+          const ratio = cam.s / rendered.current;
+          const tx = w / 2 - cam.x * cam.s;
+          const ty = h / 2 - cam.y * cam.s;
+          const t =
+            ratio === 1
+              ? `translate3d(${Math.round(tx)}px, ${Math.round(ty)}px, 0)`
+              : `translate3d(${tx}px, ${ty}px, 0) scale(${ratio})`;
+          for (const el of [backRef.current, labelsRef.current, cardsRef.current, frontRef.current, bannersRef.current])
+            if (el) el.style.transform = t;
+        };
         const d = detailFor(c.s, vw);
+        if (c.s !== lastScale.current) {
+          const first = Number.isNaN(lastScale.current);
+          lastScale.current = c.s;
+          const ratio = c.s / rendered.current;
+          clearTimeout(zoomTimer.current);
+          if (first || reducedRef.current || ratio < 0.75 || ratio > 1.33 || d !== detailRef.current) commit();
+          else {
+            place(c, vw, vh);
+            zoomTimer.current = setTimeout(commit, 140);
+          }
+        } else place(c, vw, vh);
         if (d !== detailRef.current) {
           detailRef.current = d;
-          setDetail(d);
+          startTransition(() => setDetail(d));
         }
         recull(c, vw, vh);
       }),
@@ -182,19 +215,22 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     };
   }, [camera]);
 
-  const insets = useMemo<Insets>(
-    () => ({ top: narrow ? 56 : 64, right: 12, bottom: narrow ? 112 : 16, left: 12 }),
-    [narrow],
-  );
+  // The free part of the screen: below the shell's bar and our roster, left of an open diary.
+  const insets = useCallback((): Insets => {
+    const cs = rootRef.current ? getComputedStyle(rootRef.current) : null;
+    const px = (name: string) => parseFloat(cs?.getPropertyValue(name) ?? "") || 0;
+    return { top: px("--shell-top") + (narrow ? 56 : 64), right: px("--diary-inset") + 12, bottom: narrow ? 112 : 16, left: 12 };
+  }, [narrow]);
   const fitAll = useCallback(
-    () => fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, insets, narrow ? 8 : 32, 0.9),
+    () => fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, insets(), narrow ? 8 : 32, 0.9),
     [camera, insets, narrow],
   );
 
   const cameraFor = useCallback(
     (box: CardBox, level: Lod): Cam => {
       const s = scaleFor(level, camera.vw, camera.vh);
-      return { x: box.x + box.w / 2, y: box.y + box.h / 2 - (insets.top - insets.bottom) / 2 / s, s };
+      const i = insets();
+      return { x: box.x + box.w / 2 + (i.right - i.left) / 2 / s, y: box.y + box.h / 2 - (i.top - i.bottom) / 2 / s, s };
     },
     [camera, insets],
   );
@@ -512,7 +548,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
 
       <div ref={inkRef} className={css.ink}>
         <div ref={backRef} className={css.world}>
-          {state && <WorldBack layout={layout} links={state.links} />}
+          <div ref={backScaleRef} className={css.scale}>
+            {state && <WorldBack layout={layout} links={state.links} />}
+          </div>
         </div>
 
         <div ref={labelsRef} className={css.layer} aria-hidden>
@@ -562,6 +600,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         </div>
 
         <div ref={frontRef} className={css.world}>
+          <div ref={frontScaleRef} className={css.scale}>
           <svg
             className={css.worldSvg}
             style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
@@ -570,6 +609,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           >
             <Prints walks={walks} />
           </svg>
+          </div>
         </div>
 
         <div ref={bannersRef} className={css.layer} aria-hidden>
@@ -635,16 +675,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             />
           )}
 
-          {presenting && (
-            <p className={css.presents} role="status">
-              <span>Messrs {presenters}</span>
-              <span>are proud to present</span>
-              <b>The Map</b>
-            </p>
-          )}
         </div>
       )}
 
+      {presenting && (
+        <p className={css.presents} role="status">
+          <span>Messrs {presenters}</span>
+          <span>are proud to present</span>
+          <b>The Map</b>
+        </p>
+      )}
       {!state && !error && <p className={css.status}>Unrolling the map…</p>}
       {error && (
         <div className={css.status}>

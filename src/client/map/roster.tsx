@@ -46,7 +46,9 @@ export function Roster({
   return (
     <nav className={css.roster} data-map-control aria-label="Who's out on the map">
       <ul>
-        {agents.map(({ agent, walker, working }) => {
+        {agents.map(({ agent, walker, working: running }) => {
+          // A walker seen reading or writing is at work, even before its run's update arrives.
+          const working = running || (!!walker && walker.action !== "idle");
           const where = page(walker?.pageId);
           const doing = walker?.action && walker.action !== "idle" ? walker.action : working ? "working" : "";
           const line = working

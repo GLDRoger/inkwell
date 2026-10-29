@@ -1,10 +1,10 @@
 /*
- * The map. Regions, roads and footprints are drawn in world space on SVG
- * layers the camera transforms as a whole; rooms, labels and name banners
- * are placed in screen space from the camera variables on their layer
- * (--cx, --cy, --s, --hw, --hh), so text is always set at its true size and
- * only what a room shows changes with zoom. The camera writes those
- * variables directly; nothing re-renders per frame.
+ * The map. Every layer is moved as a whole by one composited translate, so
+ * panning repaints nothing. Regions, roads and footprints are SVG in world
+ * units under a scale(); rooms, labels and name banners are placed from the
+ * zoom variable --s on their layer, so text is always set at its true size
+ * and only what a room shows changes with zoom. The camera writes the
+ * translate and --s directly; nothing re-renders per frame.
  */
 
 @property --reveal {
@@ -80,25 +80,29 @@
   inset: 0;
 }
 
-.world {
+.world,
+.layer {
   position: absolute;
   left: 0;
   top: 0;
   width: 0;
   height: 0;
-  transform-origin: 0 0;
   pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* The zoom half of the world transform: repaints on zoom, never on pan. */
+.scale {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
 }
 
 .worldSvg {
   position: absolute;
   overflow: visible;
-  pointer-events: none;
-}
-
-.layer {
-  position: absolute;
-  inset: 0;
   pointer-events: none;
 }
 
@@ -191,8 +195,8 @@
   left: 0;
   top: 0;
   transform: translate(
-    round(calc(((var(--x) - var(--cx)) * var(--s) + var(--hw)) * 1px), 1px),
-    round(calc(((var(--y) - var(--cy)) * var(--s) + var(--hh)) * 1px), 1px)
+    round(calc(var(--x) * var(--s) * 1px), 1px),
+    round(calc(var(--y) * var(--s) * 1px), 1px)
   );
   width: calc(var(--w) * var(--s) * 1px);
   height: max(18px, calc(120 * var(--s) * 1px));
@@ -263,8 +267,8 @@
   top: 0;
   box-sizing: border-box;
   transform: translate(
-    round(calc(((var(--x) - var(--cx)) * var(--s) + var(--hw)) * 1px), 1px),
-    round(calc(((var(--y) - var(--cy)) * var(--s) + var(--hh)) * 1px), 1px)
+    round(calc(var(--x) * var(--s) * 1px), 1px),
+    round(calc(var(--y) * var(--s) * 1px), 1px)
   );
   width: round(calc(var(--w) * var(--s) * 1px), 1px);
   height: round(calc(var(--h) * var(--s) * 1px), 1px);
@@ -678,8 +682,8 @@
   left: 0;
   top: 0;
   transform: translate(
-      round(calc(((var(--ax, 0) - var(--cx)) * var(--s) + var(--hw)) * 1px), 1px),
-      round(calc(((var(--ay, 0) - var(--cy)) * var(--s) + var(--hh)) * 1px), 1px)
+      round(calc(var(--ax, 0) * var(--s) * 1px), 1px),
+      round(calc(var(--ay, 0) * var(--s) * 1px), 1px)
     )
     translate(-50%, calc(-100% + 9px));
   display: flex;
@@ -750,8 +754,8 @@
 .root[data-detail="near"] .banner {
   flex-direction: column-reverse;
   transform: translate(
-      round(calc(((var(--ax, 0) - var(--cx)) * var(--s) + var(--hw)) * 1px), 1px),
-      round(calc(((var(--ay, 0) - var(--cy)) * var(--s) + var(--hh)) * 1px), 1px)
+      round(calc(var(--ax, 0) * var(--s) * 1px), 1px),
+      round(calc(var(--ay, 0) * var(--s) * 1px), 1px)
     )
     translate(-50%, -9px);
 }
@@ -804,11 +808,12 @@
 
 /* ---------------------------------------------------------------- chrome */
 
+/* --shell-top and --diary-inset come from the app shell: the bar above, the diary on the right. */
 .roster {
   position: absolute;
-  top: 12px;
+  top: calc(var(--shell-top, 0px) + 12px);
   left: 12px;
-  right: 72px;
+  right: calc(var(--diary-inset, 0px) + 72px);
   pointer-events: none;
 }
 
@@ -903,8 +908,8 @@
 
 .find {
   position: absolute;
-  top: 14px;
-  right: 12px;
+  top: calc(var(--shell-top, 0px) + 14px);
+  right: calc(var(--diary-inset, 0px) + 12px);
   pointer-events: auto;
 }
 
@@ -964,7 +969,7 @@
 
 .dock {
   position: absolute;
-  right: 12px;
+  right: calc(var(--diary-inset, 0px) + 12px);
   bottom: 12px;
   display: flex;
   align-items: flex-end;
@@ -1071,23 +1076,26 @@
 .wash {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
   opacity: 0;
 }
 
-.root[data-reveal] .ink {
-  mask-image: radial-gradient(circle at 50% 52%, #000 var(--reveal), transparent calc(var(--reveal) + 24vmax));
-  animation: reveal 2600ms cubic-bezier(0.35, 0.05, 0.35, 1) both;
-}
-
+/*
+ * The map inks itself in from the centre: a parchment cover over everything
+ * with a widening hole, and a faint wet-ink ring where the ink is spreading.
+ * A cover rather than a mask, so composited layers can't escape it.
+ */
 .root[data-reveal] .wash {
   opacity: 1;
-  background: radial-gradient(
-    circle at 50% 52%,
-    transparent calc(var(--reveal) - 4vmax),
-    light-dark(rgb(95 55 20 / 0.12), rgb(255 228 185 / 0.06)) calc(var(--reveal) + 6vmax),
-    transparent calc(var(--reveal) + 20vmax)
-  );
+  background:
+    radial-gradient(
+      circle at 50% 52%,
+      transparent calc(var(--reveal) + 1vmax),
+      light-dark(rgb(95 55 20 / 0.085), rgb(255 228 185 / 0.05)) calc(var(--reveal) + 5vmax),
+      transparent calc(var(--reveal) + 10vmax)
+    ),
+    radial-gradient(circle at 50% 52%, transparent var(--reveal), var(--paper) calc(var(--reveal) + 20vmax));
   animation: reveal 2600ms cubic-bezier(0.35, 0.05, 0.35, 1) both;
 }
 
@@ -1125,8 +1133,7 @@
 /* ---------------------------------------------------------------- mischief managed */
 
 .ink,
-.chrome,
-.wash {
+.chrome {
   transition:
     opacity 1600ms ease,
     filter 1600ms ease;
@@ -1150,8 +1157,8 @@
 
 .presents {
   position: absolute;
-  top: 20%;
-  left: 50%;
+  top: calc(var(--shell-top, 0px) + 18%);
+  left: calc(50% - var(--diary-inset, 0px) / 2);
   translate: -50% 0;
   margin: 0;
   display: flex;
@@ -1164,6 +1171,7 @@
   color: var(--ink);
   background: radial-gradient(closest-side, color-mix(in oklab, var(--paper) 92%, transparent), transparent);
   pointer-events: none;
+  z-index: 4;
   animation: presents 6000ms ease both;
   white-space: nowrap;
 }
@@ -1200,8 +1208,13 @@
 /* ---------------------------------------------------------------- narrow */
 
 @media (max-width: 639px) {
+  /* The shell's search is right above; find stays on the F key. */
+  .find:not([data-open]) {
+    display: none;
+  }
+
   .roster {
-    right: 56px;
+    right: calc(var(--diary-inset, 0px) + 12px);
   }
 
   .chip {
@@ -1227,8 +1240,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ink,
-  .chrome,
-  .wash {
+  .chrome {
     transition-duration: 1ms;
   }
 

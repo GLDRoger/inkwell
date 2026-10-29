@@ -153,13 +153,16 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
   const cards = new Map<Id, CardBox>();
   const placed: Box[] = [];
 
-  // 1. Every page with a saved position goes exactly there.
+  // 1. Every page with a saved position goes there, unless that would cover a
+  //    card already placed: then it slides out the shortest way. Positions saved
+  //    for smaller cards, or photo imports of crowded notes, never stack.
   const pinnedGroups = new Set<string>();
   for (const g of groups) {
     for (const { page, depth } of g.entries) {
       if (!hasPos(page)) continue;
       pinnedGroups.add(g.id);
       const box: CardBox = { id: page.id, x: page.x!, y: page.y!, w: CARD_W, h: CARD_H, depth, regionId: g.id, pinned: true };
+      separate(box, placed);
       cards.set(page.id, box);
       placed.push(box);
     }
@@ -254,6 +257,23 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
 
   const bounds = unionBox(regions) ?? { x: 0, y: 0, w: 0, h: 0 };
   return { cards, regions, bounds };
+}
+
+/**
+ * Nudge `box` until it covers none of `placed` (with half a gap between),
+ * moving along whichever axis needs the smaller push each time.
+ */
+export function separate(box: Box, placed: Box[], pad = GAP / 2) {
+  for (let guard = 0; guard < 64; guard++) {
+    const hit = placed.find((b) => overlaps(b, box, pad - 1));
+    if (!hit) return;
+    const dx = box.x + box.w / 2 - (hit.x + hit.w / 2);
+    const dy = box.y + box.h / 2 - (hit.y + hit.h / 2);
+    const pushX = dx >= 0 ? hit.x + hit.w + pad - box.x : hit.x - pad - (box.x + box.w);
+    const pushY = dy >= 0 ? hit.y + hit.h + pad - box.y : hit.y - pad - (box.y + box.h);
+    if (Math.abs(pushX) <= Math.abs(pushY)) box.x += pushX;
+    else box.y += pushY;
+  }
 }
 
 /** Card centre. */

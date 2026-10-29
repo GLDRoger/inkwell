@@ -61,6 +61,22 @@ describe("layoutMap", () => {
     expect(l.regions[0].pinned).toBe(true);
   });
 
+  it("slides saved cards apart when their positions would stack them", () => {
+    const l = layoutMap([
+      page("hub", null, { x: -950, y: -380 }),
+      page("a", "hub", { x: -720, y: -520 }),
+      page("b", "hub", { x: -700, y: -220 }),
+      page("c", "hub", { x: -980, y: -120 }),
+    ]);
+    expect(l.cards.get("hub")).toMatchObject({ x: -950, y: -380 });
+    noOverlaps([...l.cards.values()]);
+    // Nobody is flung far: each card stays within a card's width of where it was saved.
+    for (const [id, x, y] of [["a", -720, -520], ["b", -700, -220], ["c", -980, -120]] as const) {
+      const c = l.cards.get(id)!;
+      expect(Math.hypot(c.x - x, c.y - y)).toBeLessThan(CARD_W + 60);
+    }
+  });
+
   it("places a new page in a hand-arranged region near its siblings without covering them", () => {
     const l = layoutMap([page("a", null, { x: 0, y: 0 }), page("a1", "a", { x: 348, y: 0 }), page("a2", "a")]);
     const a2 = l.cards.get("a2")!;
