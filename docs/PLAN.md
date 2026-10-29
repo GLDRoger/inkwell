@@ -76,3 +76,14 @@ One TypeScript app, one container.
 - `muse-voice-transcribe-1.0`: `POST /v1/asr/transcribe` multipart WAV 16/24 kHz ≤10 min, or realtime `wss://api.meta.ai/v1/asr/realtime`.
 - `sam-3.1`: via `/v1/responses` with `input_text` + `input_image`, returns boxes and masks (format: docs/sam/reading-segmentation, to verify).
 - Hackathon credit: $150 for a 10-day window. Rate limit 3,000 RPM / 4M TPM per model.
+
+## Checkpoint 2026-10-29 15:05 UTC (resume here)
+
+- Done and committed: scaffold, contract, tokens, Meta API facts; client app shell + editor + diary (first pass, a09ba8c, fb23004); map first pass (1aa5cf1).
+- In flight at checkpoint (T3 delegated tasks; they commit locally, don't push):
+  - Opus: finish server foundation from Muse's uncommitted `src/server/*` (Muse hit its quota).
+  - Opus: app/diary worker; Opus: map worker (uncommitted `src/client/map/*` was theirs).
+- On resume: read each worker's report, review diffs, run `npm run typecheck && npx vitest run`, `npm run dev`, look at it; push.
+- Next: agent runtime (`src/server/agents/**`, Muse: Spark tool calling with tool_choice "auto", live Yjs edits, footprints, diary streaming, ask_agent); media (`src/server/media/**`: transcribe, SAM 3.1 photo-to-cards, Muse Image covers); port the Spaces corpus to `scripts/corpus` and hill-climb; deploy to the Hostinger box; README, demo video script, submit by Nov 4 9 PM ET.
+- Needs from owner: `META_API_KEY` in `.env`; DNS A `inkwell.questili.com` → 76.13.246.244 (fallback `inkwell.76-13-246-244.sslip.io`).
+- Spaces prod note: restored after a 6-day outage (nightly backup refused when the app was SIGKILLed on stop, fence left closed). Root cause of the slow shutdown unknown; open sockets ruled out. Proposed: health alert + auto-recover when backup refuses before touching data.
