@@ -1,6 +1,7 @@
-import { useQuery, type QueryClient } from "@tanstack/react-query";
-import type { Id, MapGraph, Page, Run } from "@shared/types";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import type { DiaryEntry, Id, MapGraph, Page, Run } from "@shared/types";
 import { api, isNotFound } from "./api";
+import { mergeThread } from "./events";
 
 /** Query keys shared by the app, the events hook and the map. */
 export const keys = {
@@ -24,13 +25,16 @@ export const usePages = () => useQuery({ queryKey: keys.pages, queryFn: api.page
 export const usePage = (id: Id) => useQuery({ queryKey: keys.page(id), queryFn: () => api.page(id), retry });
 export const useAgents = () => useQuery({ queryKey: keys.agents, queryFn: api.agents, staleTime: 60_000, retry });
 export const useThreads = () => useQuery({ queryKey: keys.threads, queryFn: api.threads, retry });
-export const useThread = (threadId: Id | null) =>
-  useQuery({
+export function useThread(threadId: Id | null) {
+  const client = useQueryClient();
+  return useQuery({
     queryKey: keys.thread(threadId ?? "none"),
-    queryFn: () => api.thread(threadId!),
+    // Merge rather than replace, so a refetch mid-reply doesn't erase ink that already streamed in.
+    queryFn: async () => mergeThread(client.getQueryData<DiaryEntry[]>(keys.thread(threadId!)), await api.thread(threadId!)),
     enabled: !!threadId,
     retry,
   });
+}
 
 /**
  * A run's latest state. There's no GET /api/runs/:id, so runs come from the

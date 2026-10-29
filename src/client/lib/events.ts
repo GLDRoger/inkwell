@@ -133,6 +133,11 @@ function patchRun(client: QueryClient, id: Id, update: (run: Run) => Run, fresh?
   client.setQueryData<Run | null>(keys.run(id), (old) => (old ? update(old) : (fresh ?? old)));
 }
 
+/** A thread we only know from events is partial: fetch it in full when someone looks. */
+function markPartial(client: QueryClient, threadId: Id) {
+  queueMicrotask(() => void client.invalidateQueries({ queryKey: keys.thread(threadId), exact: true, refetchType: "active" }));
+}
+
 export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
   switch (e.type) {
     case "page.created":
@@ -160,6 +165,7 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
       return;
     case "diary.entry": {
       const { entry } = e;
+      if (!client.getQueryData(keys.thread(entry.threadId))) markPartial(client, entry.threadId);
       client.setQueryData<DiaryEntry[]>(keys.thread(entry.threadId), (old) => {
         const list = old ?? [];
         const merged = mergeEntry(list.find((x) => x.id === entry.id), entry);
@@ -178,6 +184,7 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
       return;
     }
     case "diary.delta":
+      if (!client.getQueryData(keys.thread(e.threadId))) markPartial(client, e.threadId);
       client.setQueryData<DiaryEntry[]>(keys.thread(e.threadId), (old) => {
         const list = old ?? [];
         const i = list.findIndex((x) => x.id === e.entryId);
@@ -204,6 +211,20 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
     case "presence":
       return;
   }
+}
+
+/**
+ * Merge a fetched thread with what's cached: the server's list is the truth for
+ * which entries exist, but text that streamed in ahead of it is kept.
+ */
+export function mergeThread(cached: DiaryEntry[] | undefined, fresh: DiaryEntry[]): DiaryEntry[] {
+  if (!cached?.length) return fresh;
+  const byId = new Map(cached.map((e) => [e.id, e]));
+  const merged = fresh.map((e) => mergeEntry(byId.get(e.id), e));
+  const known = new Set(fresh.map((e) => e.id));
+  // Entries only we know about (streamed, not yet persisted) stay.
+  for (const e of cached) if (!known.has(e.id)) merged.push(e);
+  return merged.sort(byCreated);
 }
 
 /** A diary.entry for an entry we've already streamed shouldn't wipe longer streamed text. */

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Actor, DiaryEntry, MapGraph, Page, Run } from "@shared/types";
-import { applyDelta, applyServerEvent, emit, subscribe } from "./events";
+import { applyDelta, applyServerEvent, emit, mergeThread, subscribe } from "./events";
 import { keys } from "./queries";
 
 const actor: Actor = { kind: "person", id: "u1", name: "Ada" };
@@ -104,5 +104,17 @@ describe("the bus", () => {
     emit({ type: "page.deleted", pageId: "y" });
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn.mock.calls[0][0]).toEqual({ type: "page.deleted", pageId: "x" });
+  });
+});
+
+describe("mergeThread", () => {
+  it("keeps streamed text a refetch hasn't caught up with, and entries only we know", () => {
+    const cached = [entry("e0", { role: "person", text: "Hi", createdAt: "2026-10-29T10:00:00Z" }), entry("e1", { text: "Hello, Ada. I read" }), entry("e2", { text: "x", createdAt: "2026-10-29T10:00:05Z" })];
+    const fresh = [entry("e0", { role: "person", text: "Hi", createdAt: "2026-10-29T10:00:00Z" }), entry("e1", { text: "" })];
+    expect(mergeThread(cached, fresh).map((e) => [e.id, e.text])).toEqual([["e0", "Hi"], ["e1", "Hello, Ada. I read"], ["e2", "x"]]);
+  });
+  it("takes the server's list when nothing is cached", () => {
+    const fresh = [entry("e1", { text: "Done." })];
+    expect(mergeThread(undefined, fresh)).toBe(fresh);
   });
 });
