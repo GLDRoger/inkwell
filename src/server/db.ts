@@ -170,6 +170,12 @@ export function openDatabase(explicitDataDir?: string): DatabaseHandle {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  // Existing installations gain activity tracking without rewriting their tables.
+  const columns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+  if (!columns.some(column => column.name === "last_seen_at")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT");
+  }
+  db.exec("CREATE TABLE IF NOT EXISTS pending_file_deletions (path TEXT PRIMARY KEY)");
 
   const row = db.prepare("SELECT version FROM schema_version LIMIT 1").get() as
     | { version: number }
@@ -689,4 +695,12 @@ export function getAttachmentRow(
     .prepare("SELECT * FROM attachments WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, id) as AttachmentRow | undefined;
   return row ?? null;
+}
+
+/** At most one activity write per session per hour; no unbounded in-memory cache. */
+export function touchSession(db: Db, sessionId: string): void {
+  const now = Date.now();
+  db.prepare(`UPDATE sessions SET last_seen_at = ? WHERE id = ?
+    AND COALESCE(last_seen_at, created_at) <= ?`)
+    .run(new Date(now).toISOString(), sessionId, new Date(now - 3_600_000).toISOString());
 }

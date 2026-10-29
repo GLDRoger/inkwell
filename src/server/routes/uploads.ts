@@ -6,6 +6,9 @@ import type { AppEnv } from "../session.ts";
 import type { Services } from "../services.ts";
 import { getAttachmentRow, insertAttachmentRow, newId } from "../db.ts";
 
+export const WORKSPACE_UPLOAD_QUOTA = 100 * 1024 * 1024;
+export const MIN_FREE_DISK_BYTES = 2 * 1024 * 1024 * 1024;
+
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -67,16 +70,33 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
         (path.extname(file.name).toLowerCase().match(/^\.[a-z0-9]{1,8}$/)?.[0] ?? "");
       const filename = `${id}${ext}`;
       const bytes = Buffer.from(await file.arrayBuffer());
-      await fs.promises.writeFile(path.join(uploadsDir, filename), bytes);
-
-      const attachment = insertAttachmentRow(db, workspaceId, {
-        id,
-        kind,
-        name: file.name || filename,
-        mime,
-        size: bytes.length,
-        path: filename,
-      });
+      const disk = await fs.promises.statfs(services.dataDir);
+      if (disk.bavail * disk.bsize - bytes.length < MIN_FREE_DISK_BYTES) {
+        return c.json({ error: "storage is low; uploads temporarily unavailable" }, 413);
+      }
+      // Reserve quota synchronously before the asynchronous write. Concurrent uploads
+      // see reservations too, so they cannot all pass the same remaining quota.
+      const attachment = db.transaction(() => {
+        const used = db.prepare("SELECT COALESCE(SUM(size), 0) AS bytes FROM attachments WHERE workspace_id = ?")
+          .get(workspaceId) as { bytes: number };
+        if (used.bytes + bytes.length > WORKSPACE_UPLOAD_QUOTA) return null;
+        return insertAttachmentRow(db, workspaceId, {
+          id,
+          kind,
+          name: file.name || filename,
+          mime,
+          size: bytes.length,
+          path: filename,
+        });
+      })();
+      if (!attachment) return c.json({ error: "workspace upload quota exceeded" }, 413);
+      try {
+        await fs.promises.writeFile(path.join(uploadsDir, filename), bytes, { flag: "wx" });
+      } catch (error) {
+        db.prepare("DELETE FROM attachments WHERE workspace_id = ? AND id = ?").run(workspaceId, id);
+        await fs.promises.rm(path.join(uploadsDir, filename), { force: true });
+        throw error;
+      }
       return c.json(attachment, 201);
     },
   );

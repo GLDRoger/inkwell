@@ -1,3 +1,4 @@
+import { jsonBodyLimit } from "../limits.ts";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { MapGraph } from "../../shared/types.ts";
@@ -43,7 +44,7 @@ export function createMapRoutes(services: Services): Hono<AppEnv> {
     return c.json(listAgents(db, c.get("ctx").workspaceId));
   });
 
-  app.post("/api/agents", async (c) => {
+  app.post("/api/agents", jsonBodyLimit(128 * 1024), async (c) => {
     const { workspaceId } = c.get("ctx");
     const body = await parseJsonBody(c, createAgentBody);
     if (!body.ok) return body.response;

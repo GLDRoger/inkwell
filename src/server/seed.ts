@@ -450,30 +450,34 @@ export function seedWorkspace(
   const resolve = (body: string) =>
     body.replace(/\{\{([a-z-]+)\}\}/g, (_m, key: string) => `/p/${ids.get(key) ?? key}`);
 
-  // Parents first (PAGES is ordered that way), then children.
-  for (const seed of PAGES) {
-    pages.createPage(workspaceId, actor, {
-      id: ids.get(seed.key)!,
-      parentId: seed.parentKey ? ids.get(seed.parentKey)! : null,
-      title: seed.title,
-      icon: seed.icon,
-      markdown: resolve(seed.body),
-      x: seed.x,
-      y: seed.y,
+  db.transaction(() => {
+    // Parents first (PAGES is ordered that way), then children.
+    for (const seed of PAGES) {
+      pages.createPage(workspaceId, actor, {
+        id: ids.get(seed.key)!,
+        parentId: seed.parentKey ? ids.get(seed.parentKey)! : null,
+        title: seed.title,
+        icon: seed.icon,
+        markdown: resolve(seed.body),
+        x: seed.x,
+        y: seed.y,
+      });
+    }
+
+    pages.rebuildLinks(workspaceId);
+
+    const agents = SEED_AGENTS.map((agent) =>
+      insertAgent(db, workspaceId, { ...agent }),
+    );
+
+    const thread = insertDiaryThread(db, workspaceId, "Welcome to Inkwell");
+    const atlas = agents.find((a) => a.name === "Atlas") ?? agents[0]!;
+    insertDiaryEntry(db, workspaceId, {
+      threadId: thread.id,
+      role: "agent",
+      agentId: atlas.id,
+      text: `Welcome to your notebook. I've laid out a demo map for you — a Lisbon trip in the west, a startup launch plan up north, reading notes in the south, and recipes out east.\n\nAsk me (or Scout, or Wren) to research, write, or tidy anything. Watch the map: you'll see our footprints as we work.`,
+      pageIds: [ids.get("lisbon")!, ids.get("startup")!],
     });
-  }
-
-  const agents = SEED_AGENTS.map((agent) =>
-    insertAgent(db, workspaceId, { ...agent }),
-  );
-
-  const thread = insertDiaryThread(db, workspaceId, "Welcome to Inkwell");
-  const atlas = agents.find((a) => a.name === "Atlas") ?? agents[0]!;
-  insertDiaryEntry(db, workspaceId, {
-    threadId: thread.id,
-    role: "agent",
-    agentId: atlas.id,
-    text: `Welcome to your notebook. I've laid out a demo map for you — a Lisbon trip in the west, a startup launch plan up north, reading notes in the south, and recipes out east.\n\nAsk me (or Scout, or Wren) to research, write, or tidy anything. Watch the map: you'll see our footprints as we work.`,
-    pageIds: [ids.get("lisbon")!, ids.get("startup")!],
-  });
+  })();
 }

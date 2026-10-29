@@ -1,3 +1,4 @@
+import { MAX_YDOC_BYTES } from "./limits.ts";
 import { generateKeyBetween } from "fractional-indexing";
 import type { Actor, Link, Page, PageWithBody } from "../shared/types.ts";
 import {
@@ -16,6 +17,11 @@ import {
   markdownToPlainText,
   markdownToYDocBytes,
 } from "./editor-schema.ts";
+
+export function isValidPosition(position: string): boolean {
+  if (!position || position.length > 128 || !/^[A-Za-z0-9]+$/.test(position)) return false;
+  try { generateKeyBetween(position, null); return true; } catch { return false; }
+}
 
 export class PageStoreError extends Error {
   status: number;
@@ -98,6 +104,7 @@ export interface PageStore {
     pageId: string,
     markdown: string,
   ) => Page | null;
+  rebuildLinks: (workspaceId: string) => void;
   countPages: (workspaceId: string) => number;
 }
 
@@ -206,6 +213,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   };
 
   const createPage: PageStore["createPage"] = (workspaceId, actor, input) => {
+    if (input.position !== undefined && !isValidPosition(input.position)) throw new PageStoreError("invalid position");
     const parentId = input.parentId ?? null;
     assertValidParent(workspaceId, parentId);
     const id = input.id ?? newId();
@@ -229,6 +237,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       updated_at: now,
       deleted_at: null,
     };
+    if (row.ydoc!.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("document exceeds 4 MB limit", 413);
     db.transaction(() => {
       db.prepare(
         `INSERT INTO pages (id, workspace_id, parent_id, title, icon, position, excerpt, x, y, cover_url, markdown, ydoc, updated_by, created_at, updated_at, deleted_at)
@@ -259,6 +268,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   };
 
   const updatePage: PageStore["updatePage"] = (workspaceId, actor, id, patch) => {
+    if (patch.position !== undefined && !isValidPosition(patch.position)) throw new PageStoreError("invalid position");
     const existing = getPageRow(workspaceId, id);
     if (!existing) return null;
     if (patch.parentId !== undefined) {
@@ -333,6 +343,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   };
 
   const syncPageBody: PageStore["syncPageBody"] = (workspaceId, pageId, body) => {
+    if (body.ydoc.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("document exceeds 4 MB limit", 413);
     const existing = getPageRow(workspaceId, pageId);
     if (!existing) return null;
     const markdownChanged = existing.markdown !== body.markdown;
@@ -456,6 +467,13 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
     },
     syncPageBody,
     setPageMarkdown,
+    rebuildLinks(workspaceId) {
+      db.transaction(() => {
+        const rows = db.prepare("SELECT id, markdown FROM pages WHERE workspace_id = ? AND deleted_at IS NULL")
+          .all(workspaceId) as { id: string; markdown: string }[];
+        for (const row of rows) syncLinks(workspaceId, row.id, row.markdown);
+      })();
+    },
     countPages(workspaceId) {
       const row = db
         .prepare(

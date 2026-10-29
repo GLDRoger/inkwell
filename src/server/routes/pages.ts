@@ -2,13 +2,14 @@ import { Hono, type Context } from "hono";
 import { z, type ZodType } from "zod";
 import type { AppEnv } from "../session.ts";
 import type { Services } from "../services.ts";
-import { PageStoreError } from "../pages.ts";
+import { jsonBodyLimit, PAGE_BODY_BYTES, MAX_MARKDOWN_CHARS } from "../limits.ts";
+import { isValidPosition, PageStoreError } from "../pages.ts";
 
 const createBody = z.object({
   parentId: z.string().nullable().optional(),
   title: z.string().max(500).optional(),
   icon: z.string().max(64).nullable().optional(),
-  markdown: z.string().max(1_000_000).optional(),
+  markdown: z.string().max(MAX_MARKDOWN_CHARS).optional(),
   x: z.number().nullable().optional(),
   y: z.number().nullable().optional(),
 });
@@ -17,7 +18,7 @@ const patchBody = z.object({
   title: z.string().max(500).optional(),
   icon: z.string().max(64).nullable().optional(),
   parentId: z.string().nullable().optional(),
-  position: z.string().max(128).optional(),
+  position: z.string().refine(isValidPosition, "invalid position").optional(),
   x: z.number().nullable().optional(),
   y: z.number().nullable().optional(),
 });
@@ -65,7 +66,7 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
     return c.json(pages.listPages(c.get("ctx").workspaceId));
   });
 
-  app.post("/api/pages", async (c) => {
+  app.post("/api/pages", jsonBodyLimit(PAGE_BODY_BYTES), async (c) => {
     const { workspaceId, person } = c.get("ctx");
     const body = await parseJsonBody(c, createBody);
     if (!body.ok) return body.response;
@@ -83,7 +84,7 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
     return c.json(page);
   });
 
-  app.patch("/api/pages/:id", async (c) => {
+  app.patch("/api/pages/:id", jsonBodyLimit(PAGE_BODY_BYTES), async (c) => {
     const { workspaceId, person } = c.get("ctx");
     const body = await parseJsonBody(c, patchBody);
     if (!body.ok) return body.response;

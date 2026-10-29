@@ -41,6 +41,7 @@ import {
   yDocToTiptapJSON,
 } from "./editor-schema.ts";
 import type { PageStore } from "./pages.ts";
+import { MAX_YDOC_BYTES, MAX_WS_PAYLOAD_BYTES } from "./limits.ts";
 import { getSessionFromCookieHeader } from "./session.ts";
 
 export { markdownToTiptapJSON, tiptapJSONToMarkdown } from "./editor-schema.ts";
@@ -132,11 +133,62 @@ export function createCollab(deps: {
 }): CollabService {
   const { db, pages } = deps;
 
+  let closing = false;
+  let closePromise: Promise<void> | undefined;
+  const storeFailures = new WeakMap<Y.Doc, unknown>();
+  // Serialize validation + application across peers, not just within one socket.
+  const locks = new WeakMap<Y.Doc, Promise<void>>();
+  const releases = new WeakMap<object, () => void>();
+  const acquire = async (document: Y.Doc) => {
+    const previous = locks.get(document) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    locks.set(document, previous.then(() => current));
+    await previous;
+    return release;
+  };
+  const validate = (document: Y.Doc) => {
+    if ([...document.share.keys()].some(key => key !== "default")) throw new Error("only the editor fragment is allowed");
+    const fragment = document.getXmlFragment("default");
+    if (fragment._map.size || fragment.toArray().some(child => !(child instanceof Y.XmlElement) && !(child instanceof Y.XmlText))) {
+      throw new Error("invalid editor fragment");
+    }
+    const bytes = Y.encodeStateAsUpdate(document);
+    if (bytes.byteLength > MAX_YDOC_BYTES) throw new Error("document exceeds 4 MB limit");
+    // A malformed editor tree must not poison later persistence callbacks.
+    yDocToMarkdown(document);
+    return bytes;
+  };
+  const preview = (document: Y.Doc, edit: (scratch: Y.Doc) => void) => {
+    const scratch = new Y.Doc();
+    try {
+      scratch.getXmlFragment("default");
+      Y.applyUpdate(scratch, Y.encodeStateAsUpdate(document));
+      edit(scratch);
+      return validate(scratch);
+    } finally { scratch.destroy(); }
+  };
+
   const hocuspocus = new Hocuspocus<CollabContext>({
     quiet: true,
     debounce: 1000,
-    maxDebounce: 5000,
+    maxDebounce: 3000,
     unloadImmediately: false,
+
+    async beforeHandleMessage({ document, connection }) {
+      releases.set(connection, await acquire(document));
+    },
+    async afterHandleMessage({ connection }) {
+      releases.get(connection)?.(); releases.delete(connection);
+    },
+    async beforeSync({ document, connection, type, payload }) {
+      if (type !== 1 && type !== 2) return;
+      try { preview(document, scratch => Y.applyUpdate(scratch, payload)); }
+      catch (error) {
+        connection.readOnly = true;
+        throw error;
+      }
+    },
 
     // The session cookie rides along on the WebSocket upgrade; the provider
     // always sends an (empty) Auth message, which triggers this hook.
@@ -153,6 +205,7 @@ export function createCollab(deps: {
         ? pages.getPageRow(context.workspaceId, documentName)
         : null;
       if (!row) throw new Error("document not found in workspace");
+      if (row.ydoc && row.ydoc.length > MAX_YDOC_BYTES) throw new Error("stored document exceeds 4 MB limit");
       if (row.ydoc && row.ydoc.length > 0) {
         try {
           Y.applyUpdate(document, new Uint8Array(row.ydoc));
@@ -165,17 +218,25 @@ export function createCollab(deps: {
     async onStoreDocument({ document, documentName, lastContext }) {
       const workspaceId = lastContext?.workspaceId;
       if (!workspaceId) return;
-      const ydoc = Buffer.from(Y.encodeStateAsUpdate(document));
-      const markdown = yDocToMarkdown(document);
-      pages.syncPageBody(workspaceId, documentName, {
-        ydoc,
-        markdown,
-        actor: lastContext?.actor ?? null,
-      });
+      try {
+        const ydoc = Buffer.from(validate(document));
+        const markdown = yDocToMarkdown(document);
+        pages.syncPageBody(workspaceId, documentName, {
+          ydoc,
+          markdown,
+          actor: lastContext?.actor ?? null,
+        });
+        storeFailures.delete(document);
+      } catch (error) {
+        // Hocuspocus logs store errors rather than rejecting its debounce promise.
+        // Remember the failure so shutdown cannot falsely report a durable flush.
+        storeFailures.set(document, error);
+        throw error;
+      }
     },
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   const handleUpgrade: CollabService["handleUpgrade"] = (req, socket, head) => {
     const pathname = (() => {
@@ -187,6 +248,7 @@ export function createCollab(deps: {
     })();
     if (pathname !== "/collab") return false;
 
+    if (closing) { socket.destroy(); return true; }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const headers = new Headers();
       for (const [key, value] of Object.entries(req.headers)) {
@@ -199,13 +261,25 @@ export function createCollab(deps: {
         ws as unknown as Parameters<typeof hocuspocus.handleConnection>[0],
         request,
       );
+      let windowStart = Date.now();
+      let messages = 0;
+      let windowBytes = 0;
       ws.on("message", (data: unknown) => {
+        if (closing || ws.readyState !== 1) return;
         const bytes =
           data instanceof Uint8Array
             ? data
             : Array.isArray(data)
               ? new Uint8Array(Buffer.concat(data as Buffer[]))
               : new Uint8Array(data as ArrayBuffer);
+        if (Date.now() - windowStart >= 1000) {
+          windowStart = Date.now(); messages = 0; windowBytes = 0;
+        }
+        // Gate BEFORE Hocuspocus queues messages (including unauthenticated frames).
+        messages++; windowBytes += bytes.byteLength;
+        if (messages > 120 || windowBytes > 4 * MAX_WS_PAYLOAD_BYTES) {
+          ws.close(1008, "update rate exceeded"); return;
+        }
         connection.handleMessage(bytes);
       });
       ws.on("close", (code: number, reason: Buffer) => {
@@ -224,11 +298,24 @@ export function createCollab(deps: {
   };
 
   const openDirect: CollabService["openDirect"] = async (pageId, workspaceId, actor) => {
+    if (closing) throw new Error("collaboration is shutting down");
     requirePage(pageId, workspaceId);
-    return hocuspocus.openDirectConnection(pageId, {
+    const connection = await hocuspocus.openDirectConnection(pageId, {
       workspaceId,
       actor: actor ?? SYSTEM_ACTOR,
     });
+    const originalTransact = connection.transact.bind(connection);
+    connection.transact = async fn => {
+      const document = connection.document;
+      if (!document || closing) throw new Error("direct connection closed");
+      const release = await acquire(document);
+      try {
+        // Run caller edits once on a scratch document; rejected edits never reach peers.
+        const update = preview(document, scratch => fn(scratch as HocusDocument));
+        await originalTransact(live => Y.applyUpdate(live, update));
+      } finally { release(); }
+    };
+    return connection;
   };
 
   const transact: CollabService["transact"] = async (pageId, workspaceId, fn, actor) => {
@@ -370,11 +457,34 @@ export function createCollab(deps: {
       return hocuspocus.documents.has(pageId);
     },
 
-    async close() {
-      for (const key of [...presences.keys()]) await hidePresence(key);
-      hocuspocus.flushPendingStores();
-      hocuspocus.closeConnections();
-      await new Promise<void>((resolve) => wss.close(() => resolve()));
+    close() {
+      if (closePromise) return closePromise;
+      closing = true;
+      closePromise = (async () => {
+        const documents = [...hocuspocus.documents.values()];
+        await Promise.all(documents.flatMap(doc => [...doc.connections.keys()].map(c => c.waitForPendingMessages())));
+        for (const key of [...presences.keys()]) await hidePresence(key);
+        hocuspocus.closeConnections();
+        // Don't let a peer withholding its close handshake hold shutdown open.
+        for (const ws of wss.clients) ws.terminate();
+        await new Promise<void>(resolve => wss.close(() => resolve()));
+        // flushPendingStores() returns void in 4.8: awaiting it does NOT await stores.
+        // Await the underlying debouncer and any already-running store hooks instead.
+        const deadline = Date.now() + 8000;
+        for (;;) {
+          await new Promise<void>(resolve => setImmediate(resolve));
+          await Promise.all(documents.map(doc => hocuspocus.debouncer.executeNow(`onStoreDocument-${doc.name}`)));
+          if (!documents.some(doc => hocuspocus.debouncer.isCurrentlyExecuting(`onStoreDocument-${doc.name}`)
+            || hocuspocus.debouncer.isDebounced(`onStoreDocument-${doc.name}`))) break;
+          if (Date.now() > deadline) throw new Error("timed out flushing collaboration stores");
+        }
+        for (const document of documents) {
+          if (storeFailures.has(document)) throw storeFailures.get(document);
+          document.destroy();
+        }
+        hocuspocus.documents.clear();
+      })();
+      return closePromise;
     },
   };
 }
