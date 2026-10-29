@@ -90,15 +90,8 @@ export function diaryReducer(state: DiaryState, action: DiaryAction): DiaryState
     }
     case "runUpdated":
       if (action.run.id !== state.runId || !ENDED.includes(action.run.status)) return state;
-      return {
-        ...state,
-        phase: "idle",
-        runId: null,
-        error:
-          action.run.status === "failed"
-            ? { kind: "failed", message: action.run.error ?? "The agent stopped with an error." }
-            : state.error,
-      };
+      // A failed run's reason shows under its reply in the thread, not as a second note here.
+      return { ...state, phase: "idle", runId: null };
     case "cancelled":
       return { ...state, phase: "idle", runId: null };
     case "dismissError":

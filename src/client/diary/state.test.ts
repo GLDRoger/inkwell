@@ -40,12 +40,13 @@ describe("diaryReducer", () => {
     expect(reduce(s, { type: "draftRestored" }).restoreDraft).toBeNull();
   });
 
-  it("surfaces a failed run and ignores other runs", () => {
+  it("settles on a failed run (the reply carries why) and ignores other runs", () => {
     let s = reduce(initialDiaryState, { type: "send", text: "x" }, { type: "sent", threadId: "t1", runId: "r1", entryId: "e0" });
     expect(reduce(s, { type: "runUpdated", run: run("failed", { id: "other" }) })).toBe(s);
     expect(reduce(s, { type: "runUpdated", run: run("running") })).toBe(s);
     s = reduce(s, { type: "runUpdated", run: run("failed", { error: "Model timed out" }) });
-    expect(s).toMatchObject({ phase: "idle", error: { kind: "failed", message: "Model timed out" } });
+    expect(s).toMatchObject({ phase: "idle", runId: null, error: null });
+    expect(isBusy(s)).toBe(false);
   });
 
   it("marks replies on other threads live without changing phase", () => {

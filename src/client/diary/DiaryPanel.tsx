@@ -10,7 +10,7 @@ import { setUi, useUi } from "../lib/ui";
 import { timeAgo } from "../lib/time";
 import { diaryReducer, initialDiaryState, isBusy } from "./state";
 import { Composer, type ComposerHandle } from "./Composer";
-import { Entries, Steps, isActiveRun } from "./Entries";
+import { Entries, InkDrops, isActiveRun } from "./Entries";
 import { Picker } from "./Picker";
 
 const NEW = "__new__";
@@ -35,18 +35,13 @@ function EmptyPage({ onPick, onPage }: { onPick(text: string): void; onPage: boo
   );
 }
 
-/** The ink gathering on the page while the agent thinks, with its steps so far. */
-function Gathering({ run, color }: { run: Run | null | undefined; color: string }) {
+/** The ink gathering on the page after you send, until the agent's reply begins. */
+function Gathering({ color }: { color: string }) {
   return (
-    <div className="gathering" role="status" style={{ ["--agent" as string]: color }}>
-      <span className="ink-drops" aria-hidden>
-        <span />
-        <span />
-        <span />
-      </span>
+    <p className="gathering" role="status">
+      <InkDrops color={color} />
       <span className="sr-only">The diary is answering</span>
-      {run && run.steps.length > 0 && <Steps run={{ ...run, status: "succeeded" }} />}
-    </div>
+    </p>
   );
 }
 
@@ -106,13 +101,13 @@ export function DiaryPanel() {
   const entries = thread.data ?? [];
   const lastRunId = useMemo(() => [...entries].reverse().find((e) => e.runId)?.runId ?? null, [entries]);
   const watchedRunId = state.runId ?? lastRunId;
-  const { data: watchedRun } = useRun(watchedRunId, client);
+  const { data: watchedRun } = useRun(watchedRunId);
   const busy = isBusy(state) || isActiveRun(watchedRun);
 
-  // Waiting for the first ink: we've sent, and no agent words have arrived after our entry yet.
+  // Waiting for the reply to begin: we've sent, and the agent's entry (which gathers its own ink) isn't here yet.
   const lastPerson = [...entries].reverse().find((e) => e.role === "person");
-  const replied = lastPerson ? entries.some((e) => e.role === "agent" && e.createdAt >= lastPerson.createdAt && e.text) : false;
-  const gathering = (state.phase === "sending" && !state.sinking) || ((state.phase === "waiting" || state.phase === "writing") && !replied);
+  const answered = lastPerson ? entries.some((e) => e.role === "agent" && e.createdAt >= lastPerson.createdAt) : false;
+  const gathering = (state.phase === "sending" && !state.sinking) || (state.phase === "waiting" && !answered);
   const replyAgent = agents.find((a) => a.id === (watchedRun?.agentId ?? state.agentId));
 
   // Keep the newest ink in view while it's being written, unless the reader scrolled up.
@@ -149,6 +144,9 @@ export function DiaryPanel() {
         void client.invalidateQueries({ queryKey: keys.threads, exact: true });
       }
       dispatch({ type: "sent", threadId: res.threadId, runId: res.runId, entryId: res.entry.id });
+      // A run can finish (say, with no API key) before this response lands; its run.updated already went by.
+      const run = client.getQueryData<Run | null>(keys.run(res.runId));
+      if (run) dispatch({ type: "runUpdated", run });
     } catch (e) {
       const status = e instanceof ApiError ? e.status : -1;
       dispatch({
@@ -254,7 +252,7 @@ export function DiaryPanel() {
             <EmptyPage onPage={!!contextPage} onPick={(t) => composer.current?.setText(t)} />
           )}
           <Entries entries={entries} agents={agents} liveIds={state.liveEntryIds} hiddenId={state.hiddenEntryId} onCancel={cancel} />
-          {gathering && <Gathering run={watchedRun} color={replyAgent?.color ?? "var(--wax)"} />}
+          {gathering && <Gathering color={replyAgent?.color ?? "var(--wax)"} />}
           {state.error && (
             <div className="diary-note" role="alert" data-kind={state.error.kind}>
               <p>{state.error.message}</p>

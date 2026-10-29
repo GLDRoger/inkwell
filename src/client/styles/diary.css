@@ -110,7 +110,19 @@
 }
 .step-map:hover { color: var(--agent-ink); background: var(--paper-sunken); }
 .step-status { display: flex; align-items: center; gap: 8px; margin: 6px 0 0; color: var(--ink-faint); }
-.step-failed { color: var(--failed); }
+.trail-toggle {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0 0 4px -3px; padding: 3px 6px 3px 3px; border: 0; border-radius: 6px;
+  background: none; color: var(--ink-faint); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.trail-toggle:hover { color: var(--ink-soft); background: var(--paper-sunken); }
+.trail-toggle:focus-visible { outline: 2px solid var(--wax); outline-offset: 1px; }
+.trail-chev { transition: transform 160ms var(--ease-ink); }
+.trail-toggle[aria-expanded="true"] .trail-chev { transform: rotate(90deg); }
+.trail-count { color: var(--ink-faint); opacity: 0.8; }
+.trail-count::before { content: "· "; }
+.steps ol { padding-left: 2px; }
+.step-note { color: var(--ink-soft); font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: var(--radius); background: var(--paper-sunken); }
+.step-note[data-status="cancelled"] { background: none; padding: 0; color: var(--ink-faint); }
 .walking { width: 6px; height: 6px; border-radius: 50%; background: var(--agent); animation: breathe 1.2s ease-in-out infinite; }
 .touched { list-style: none; margin: 8px 0 0; padding: 0; display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: 13px; }
 .touched li { display: inline-flex; align-items: center; gap: 2px; }

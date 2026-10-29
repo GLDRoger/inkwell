@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { DiaryEntry, Id, MapGraph, Page, Run } from "@shared/types";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DiaryEntry, Id, Page, Run } from "@shared/types";
 import { api, isNotFound } from "./api";
 import { mergeThread } from "./events";
 
@@ -37,21 +37,36 @@ export function useThread(threadId: Id | null) {
 }
 
 /**
- * A run's latest state. There's no GET /api/runs/:id, so runs come from the
- * map graph and from `run.updated` events (which write into this key).
+ * A run's latest state, from GET /api/runs/:id; `run.updated` events keep
+ * this key current, so it's fetched once and then patched live.
  */
-export function useRun(id: Id | null, client: QueryClient) {
+export function useRun(id: Id | null) {
+  const client = useQueryClient();
   return useQuery({
     queryKey: keys.run(id ?? "none"),
     enabled: !!id,
     staleTime: Infinity,
     retry,
     queryFn: async (): Promise<Run | null> => {
-      const graph: MapGraph | undefined =
-        client.getQueryData<MapGraph>(keys.map) ?? (await client.fetchQuery({ queryKey: keys.map, queryFn: api.map }));
-      return graph?.runs.find((r) => r.id === id) ?? null;
+      try {
+        // An event may have landed while this was in flight; never step a run backwards.
+        return newerRun(client.getQueryData<Run | null>(keys.run(id!)), await api.run(id!));
+      } catch (e) {
+        if (isNotFound(e)) return client.getQueryData<Run | null>(keys.run(id!)) ?? null;
+        throw e;
+      }
     },
   });
+}
+
+const ENDED: Run["status"][] = ["succeeded", "failed", "cancelled"];
+
+/** Of two snapshots of the same run, the later one: ended beats live, then more steps win. */
+export function newerRun(cached: Run | null | undefined, fetched: Run): Run {
+  if (!cached || cached.id !== fetched.id) return fetched;
+  const cachedEnded = ENDED.includes(cached.status);
+  if (cachedEnded !== ENDED.includes(fetched.status)) return cachedEnded ? cached : fetched;
+  return cached.steps.length > fetched.steps.length ? cached : fetched;
 }
 
 /** Ancestors of a page, root first. Guards against cycles. */

@@ -84,6 +84,7 @@ export const api = {
   thread: (threadId: Id) => request<DiaryEntry[]>(`/diary/${encodeURIComponent(threadId)}`),
   writeDiary: (body: DiaryPostBody) =>
     request<{ entry: DiaryEntry; runId: Id; threadId: Id }>("/diary", json("POST", body)),
+  run: (id: Id) => request<Run>(`/runs/${encodeURIComponent(id)}`),
   cancelRun: (id: Id) => request<Run>(`/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   upload: (file: File) => {
     const form = new FormData();
@@ -95,5 +96,9 @@ export const api = {
     form.append("audio", audio, "speech.wav");
     return request<{ text: string }>("/transcribe", { method: "POST", body: form });
   },
+  /** Muse Image paints a cover for the page; returns the page with its new coverUrl. */
+  illustrate: (id: Id) => request<Page>(`/pages/${encodeURIComponent(id)}/illustrate`, { method: "POST" }),
+  /** SAM 3.1 + vision turn an uploaded photo of notes into cards: a parent page, then one per note. */
+  importPhoto: (attachmentId: Id) => request<{ pages: Page[] }>("/import/photo", json("POST", { attachmentId })),
   presence: (pageId: Id | null) => request<void>("/presence", json("POST", { pageId })),
 };
