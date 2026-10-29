@@ -1,3 +1,4 @@
+import { AgentRuntime, type RuntimeOptions } from "./agents/runtime.ts";
 import { openDatabase, type DatabaseHandle } from "./db.ts";
 import { createEventBus, type EventBus } from "./events.ts";
 import { createPageStore, type PageStore } from "./pages.ts";
@@ -11,6 +12,7 @@ export interface Services {
   bus: EventBus;
   pages: PageStore;
   collab: CollabService;
+  runtime: AgentRuntime;
   close: () => Promise<void>;
 }
 
@@ -18,11 +20,12 @@ export interface Services {
  * Composition root. The agent runtime should use the same Services instance
  * as the HTTP server (via main.ts) so live documents and events are shared.
  */
-export function createServices(dataDir?: string): Services {
+export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions = {}): Services {
   const handle = openDatabase(dataDir);
   const bus = createEventBus();
   const pages = createPageStore({ db: handle.db, bus });
   const collab = createCollab({ db: handle.db, pages });
+  const runtime = new AgentRuntime({ db: handle.db, pages, collab, bus, uploadsDir: handle.uploadsDir }, runtimeOptions);
   return {
     handle,
     db: handle.db,
@@ -31,7 +34,9 @@ export function createServices(dataDir?: string): Services {
     bus,
     pages,
     collab,
+    runtime,
     async close() {
+      await runtime.close();
       await collab.close();
       handle.close();
     },

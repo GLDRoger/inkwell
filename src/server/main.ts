@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { serve, type ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { createDiaryRoutes } from "./routes/diary.ts";
+import { createRunRoutes } from "./routes/runs.ts";
 import { createEventsApp } from "./events.ts";
 import { createMapRoutes } from "./routes/map.ts";
 import { createPageRoutes } from "./routes/pages.ts";
@@ -25,6 +27,8 @@ export function createApp(
     createSessionMiddleware({ db: services.db, pages: services.pages }),
   );
 
+  app.route("/", createDiaryRoutes(services));
+  app.route("/", createRunRoutes(services));
   app.route("/", createPageRoutes(services));
   app.route("/", createMapRoutes(services));
   app.route("/", createUploadRoutes(services));
@@ -63,10 +67,10 @@ export function startServer(
 ): Promise<{ server: ServerType; port: number; close: () => Promise<void> }> {
   return new Promise((resolve) => {
     const server = serve({ fetch: app.fetch, port }, (info) => {
-      const close = () =>
-        new Promise<void>((done) => {
-          server.close(() => done());
-        });
+      const close = async () => {
+        await services.runtime.close();
+        await new Promise<void>((done) => server.close(() => done()));
+      };
       resolve({ server, port: info.port, close });
     });
     server.on("upgrade", (req, socket, head) => {
@@ -89,5 +93,8 @@ if (isMain) {
   const services = createServices();
   const app = createApp(services);
   const { port } = await startServer(services, app);
+  const stop = () => { void services.close().then(() => process.exit(0), () => process.exit(1)); };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
   console.log(`Inkwell server on :${port} (data: ${services.dataDir})`);
 }
