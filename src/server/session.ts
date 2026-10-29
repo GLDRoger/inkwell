@@ -3,7 +3,7 @@ import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import type { Actor } from "../shared/types.ts";
-import { newId, nowIso, type Db } from "./db.ts";
+import { newId, nowIso, touchSession, type Db } from "./db.ts";
 import { seedWorkspace } from "./seed.ts";
 import type { PageStore } from "./pages.ts";
 
@@ -40,6 +40,7 @@ export function getSession(db: Db, sessionId: string): SessionCtx | null {
   if (!sessionId) return null;
   const row = db.prepare(SELECT_SESSION).get(sessionId) as SessionRow | undefined;
   if (!row) return null;
+  touchSession(db, row.session_id);
   return {
     workspaceId: row.workspace_id,
     person: { kind: "person", id: row.person_id, name: row.person_name },

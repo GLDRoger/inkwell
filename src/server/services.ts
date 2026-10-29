@@ -1,4 +1,5 @@
 import { AgentRuntime, type RuntimeOptions } from "./agents/runtime.ts";
+import { startJanitor } from "./janitor.ts";
 import { openDatabase, type DatabaseHandle } from "./db.ts";
 import { createEventBus, type EventBus } from "./events.ts";
 import { createPageStore, type PageStore } from "./pages.ts";
@@ -26,7 +27,7 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
   const pages = createPageStore({ db: handle.db, bus });
   const collab = createCollab({ db: handle.db, pages });
   const runtime = new AgentRuntime({ db: handle.db, pages, collab, bus, uploadsDir: handle.uploadsDir }, runtimeOptions);
-  return {
+  const services: Services = {
     handle,
     db: handle.db,
     dataDir: handle.dataDir,
@@ -36,9 +37,12 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
     collab,
     runtime,
     async close() {
+      await stopJanitor();
       await runtime.close();
       await collab.close();
       handle.close();
     },
   };
+  const stopJanitor = startJanitor(services, { maxIdleDays: 14 });
+  return services;
 }

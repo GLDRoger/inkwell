@@ -12,6 +12,7 @@ import { createMapRoutes } from "./routes/map.ts";
 import { createPageRoutes } from "./routes/pages.ts";
 import { createUploadRoutes } from "./routes/uploads.ts";
 import { createServices, type Services } from "./services.ts";
+import { installShutdown } from "./shutdown.ts";
 import { createSessionMiddleware, type AppEnv } from "./session.ts";
 
 export function createApp(
@@ -34,7 +35,7 @@ export function createApp(
   app.route("/", createPageRoutes(services));
   app.route("/", createMapRoutes(services));
   app.route("/", createUploadRoutes(services));
-  app.route("/", createEventsApp(services.bus, options));
+  app.route("/", createEventsApp(services.bus, { ...options, pages: services.pages }));
 
   app.notFound((c) => {
     if (c.req.path.startsWith("/api/")) return c.json({ error: "not found" }, 404);
@@ -94,9 +95,10 @@ const isMain = (() => {
 if (isMain) {
   const services = createServices();
   const app = createApp(services);
-  const { port } = await startServer(services, app);
-  const stop = () => { void services.close().then(() => process.exit(0), () => process.exit(1)); };
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
+  const { port, server } = await startServer(services, app);
+  installShutdown({
+    services,
+    closeHttp: () => new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))),
+  });
   console.log(`Inkwell server on :${port} (data: ${services.dataDir})`);
 }

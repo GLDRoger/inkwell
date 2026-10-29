@@ -222,11 +222,12 @@ describe("SSE over HTTP", () => {
       await readSome();
       expect(buffer).toContain("presence");
 
-      await client.fetch("/api/pages", {
+      const created = await client.fetch("/api/pages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: "Streamed page" }),
       });
+      const streamedPageId = ((await created.json()) as { id: string }).id;
       // Activity in another workspace must not leak into this stream.
       await other.fetch("/api/pages", {
         method: "POST",
@@ -243,15 +244,18 @@ describe("SSE over HTTP", () => {
       expect(buffer).not.toContain("Other workspace secret");
 
       // Presence reporting round-trips into a presence event.
-      await client.fetch("/api/presence", {
+      // The stream above is live, so presence for a page in this workspace is accepted.
+      const presence = await client.fetch("/api/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId: "page-xyz" }),
+        body: JSON.stringify({ pageId: streamedPageId }),
       });
-      while (!buffer.includes("page-xyz") && Date.now() < deadline + 4000) {
+      expect(presence.status).toBe(204);
+      const presenceEvent = `"pageId":"${streamedPageId}"`;
+      while (!buffer.includes(presenceEvent) && Date.now() < deadline + 4000) {
         await readSome();
       }
-      expect(buffer).toContain("page-xyz");
+      expect(buffer).toContain(presenceEvent);
       // Heartbeat comments keep the stream alive (100ms in tests); wait for one.
       while (!buffer.includes(": heartbeat") && Date.now() < deadline + 8000) {
         await readSome();
