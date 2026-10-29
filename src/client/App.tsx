@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, type ComponentType } from "react";
+import { Component, lazy, Suspense, useEffect, type ComponentType, type ReactNode } from "react";
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useServerEvents } from "./lib/events";
 import { api, isNotFound } from "./lib/api";
@@ -17,6 +17,20 @@ const mapModules = import.meta.glob<{ MapView: ComponentType<MapViewProps> }>(".
 const loadMap = mapModules["./map/index.tsx"];
 const MapView = loadMap ? lazy(() => loadMap().then((m) => ({ default: m.MapView }))) : null;
 
+/** If the map canvas fails to load or crashes, fall back to the page list rather than a blank screen. */
+class MapBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error("[map] failed, showing the page list instead", error);
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
 function MapRoute() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -24,9 +38,11 @@ function MapRoute() {
   const onOpenPage = (id: string) => navigate(`/p/${id}`);
   if (!MapView) return <MapPlaceholder onOpenPage={onOpenPage} />;
   return (
-    <Suspense fallback={<div className="map-loading" aria-busy="true" />}>
-      <MapView onOpenPage={onOpenPage} focusPageId={focusPageId} />
-    </Suspense>
+    <MapBoundary fallback={<MapPlaceholder onOpenPage={onOpenPage} />}>
+      <Suspense fallback={<div className="map-loading" aria-busy="true" />}>
+        <MapView onOpenPage={onOpenPage} focusPageId={focusPageId} />
+      </Suspense>
+    </MapBoundary>
   );
 }
 

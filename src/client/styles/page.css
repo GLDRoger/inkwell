@@ -25,7 +25,8 @@
   display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px 4px 10px; border-radius: 999px; font-size: 13px;
   color: var(--ink-soft); background: color-mix(in srgb, var(--agent) 10%, var(--paper-raised));
 }
-.writer .hand-name { color: var(--agent); font-size: 17px; }
+.writer { --agent-ink: light-dark(var(--agent), color-mix(in oklab, var(--agent) 42%, #f1e6d2)); }
+.writer .hand-name { color: var(--agent-ink); font-size: 17px; }
 .writer-nib { width: 7px; height: 7px; border-radius: 50%; background: var(--agent); animation: breathe 1.4s ease-in-out infinite; }
 
 /* ------------------------------------------------------------ editor */
@@ -73,15 +74,15 @@
 .ProseMirror-selectednode { outline: 2px solid color-mix(in srgb, var(--wax) 40%, transparent); border-radius: 4px; }
 
 /* Wet ink: someone else's words, drying from their colour into the page's ink. */
-.ink-wet { animation: ink-dry 2.4s cubic-bezier(0.3, 0, 0.2, 1) both; }
+.ink-wet { --wet: light-dark(var(--wet-ink, var(--wax)), color-mix(in oklab, var(--wet-ink, var(--wax)) 42%, #f1e6d2)); animation: ink-dry 2.4s cubic-bezier(0.3, 0, 0.2, 1) both; }
 @keyframes ink-dry {
-  0% { color: var(--wet-ink, var(--wax)); text-shadow: 0 0 0.5px var(--wet-ink, var(--wax)), 0 0 7px color-mix(in srgb, var(--wet-ink, var(--wax)) 45%, transparent); }
-  45% { color: var(--wet-ink, var(--wax)); text-shadow: 0 0 0.3px var(--wet-ink, var(--wax)), 0 0 3px color-mix(in srgb, var(--wet-ink, var(--wax)) 20%, transparent); }
+  0% { color: var(--wet); text-shadow: 0 0 0.5px var(--wet), 0 0 7px color-mix(in srgb, var(--wet) 45%, transparent); }
+  45% { color: var(--wet); text-shadow: 0 0 0.3px var(--wet), 0 0 3px color-mix(in srgb, var(--wet) 20%, transparent); }
   100% { color: inherit; text-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ink-wet { animation: ink-dry-still 2.4s steps(1, end) both; }
-  @keyframes ink-dry-still { 0% { color: var(--wet-ink, var(--wax)); } 100% { color: inherit; } }
+  @keyframes ink-dry-still { 0% { color: var(--wet); } 100% { color: inherit; } }
 }
 
 /* Others' carets. Agents sign their name in their own hand. */
@@ -95,7 +96,7 @@
 }
 .caret-agent { border-left-width: 2px; }
 .caret-agent .caret-label {
-  background: transparent; color: var(--caret); font: 400 17px/1 var(--font-hand); padding: 0 0 2px; bottom: 95%;
+  background: transparent; color: light-dark(var(--caret), color-mix(in oklab, var(--caret) 42%, #f1e6d2)); font: 400 17px/1 var(--font-hand); padding: 0 0 2px; bottom: 95%;
 }
 .collaboration-carets__selection { background: color-mix(in srgb, currentColor 10%, transparent); }
 

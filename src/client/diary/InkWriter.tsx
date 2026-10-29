@@ -79,7 +79,7 @@ export function InkWriter({ text, color, live, streaming, onClick }: Props) {
   const writing = shown < text.length || streaming;
 
   return (
-    <div className="ink" style={{ ["--agent" as string]: color }} aria-busy={writing} onClick={onClick}>
+    <div className="ink" style={{ ["--agent" as string]: color }} aria-busy={writing} data-writing={writing && shown > cut} onClick={onClick}>
       {handFull.trim() && (
         <p className="ink-hand">
           <span className="sr-only">{handFull}</span>
@@ -92,7 +92,6 @@ export function InkWriter({ text, color, live, streaming, onClick }: Props) {
       {restHtml && (
         <div className="ink-body" dangerouslySetInnerHTML={{ __html: restHtml }} />
       )}
-      {writing && shown > cut && <span className="nib nib-body" aria-hidden />}
     </div>
   );
 }

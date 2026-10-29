@@ -265,7 +265,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             { value: null, label: "Any agent", detail: "The diary picks who's best for it", lead: <span className="agent-dot any" aria-hidden /> },
             ...agents.map((a) => ({
               value: a.id as string | null,
-              label: <span className="hand-name" style={{ color: a.color }}>{a.name}</span>,
+              label: <span className="hand-name agent-ink" style={{ ["--agent" as string]: a.color }}>{a.name}</span>,
               detail: a.description,
               lead: <span className="agent-dot" style={{ background: a.color }} aria-hidden />,
             })),

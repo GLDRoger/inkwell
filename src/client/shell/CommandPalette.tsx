@@ -39,6 +39,18 @@ export function rankPages(pages: Page[], q: string, limit = 8): Page[] {
   return scored.sort((a, b) => a[0] - b[0] || pageTitle(a[1]).localeCompare(pageTitle(b[1]))).slice(0, limit).map((x) => x[1]);
 }
 
+/** Search snippets come from markdown; show them as plain words. */
+export function plainSnippet(md: string): string {
+  return md
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/- \[[ xX]\]\s*/g, "")
+    .replace(/[*_`~]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function toggleTheme() {
   const root = document.documentElement;
   const current = root.dataset.theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -97,7 +109,7 @@ export function CommandPalette() {
         id: `page-${hit.page.id}`,
         section: "Pages",
         label: pageTitle(hit.page),
-        detail: hit.snippet,
+        detail: plainSnippet(hit.snippet),
         icon: <FileText size={16} />,
         run: go(hit.page.id),
       });

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { Footprints, Map as MapIcon, Square, TriangleAlert } from "lucide-react";
 import type { Agent, DiaryEntry, Run } from "@shared/types";
-import { useRun } from "../lib/queries";
+import { pageTitle, usePages, useRun } from "../lib/queries";
 import { InkWriter } from "./InkWriter";
 
 const ACTIVE: Run["status"][] = ["queued", "running"];
@@ -63,6 +63,27 @@ export function Steps({ run, agent, onCancel }: { run: Run; agent?: Agent; onCan
   );
 }
 
+/** Pages a reply touched, when there are no run steps to show: each opens the page or its spot on the map. */
+function Touched({ ids }: { ids: string[] }) {
+  const { data: pages } = usePages();
+  const unique = [...new Set(ids)];
+  return (
+    <ul className="touched" aria-label="Pages this touched">
+      {unique.map((id) => {
+        const p = pages?.find((x) => x.id === id);
+        return (
+          <li key={id}>
+            <Link to={`/p/${id}`} className="touched-page">{p ? pageTitle(p) : "A page"}</Link>
+            <Link to={`/?focus=${id}`} className="step-map" aria-label={`See ${p ? pageTitle(p) : "it"} on the map`} title="See it on the map">
+              <MapIcon size={13} aria-hidden />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function AgentEntry({
   entry,
   agent,
@@ -96,17 +117,9 @@ function AgentEntry({
           }
         }}
       />
-      {agent && entry.text && <p className="signature" style={{ color }}>{agent.name}</p>}
+      {agent && entry.text && <p className="signature" style={{ ["--agent" as string]: color }}>{agent.name}</p>}
       {run && <Steps run={run} agent={agent} onCancel={() => onCancel(run.id)} />}
-      {!run && entry.pageIds.length > 0 && (
-        <p className="touched">
-          {entry.pageIds.map((id) => (
-            <Link key={id} to={`/?focus=${id}`} className="step-map">
-              <MapIcon size={13} aria-hidden /> See it on the map
-            </Link>
-          ))}
-        </p>
-      )}
+      {!run && entry.pageIds.length > 0 && <Touched ids={entry.pageIds} />}
     </div>
   );
 }

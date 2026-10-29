@@ -148,7 +148,8 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
   );
 
   const updatedBy = page.updatedBy;
-  const agentColor = (id: string) => writers.find((w) => w.agent.id === id)?.agent.color;
+  const { data: agents } = useAgents();
+  const agentColor = (id: string) => agents?.find((a) => a.id === id)?.color;
 
   return (
     <article className="page" aria-labelledby="page-title-label">
@@ -185,7 +186,7 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
         <p className="page-meta">
           {updatedBy.kind === "agent" ? (
             <>
-              Last written by <span className="hand-name" style={{ color: agentColor(updatedBy.id) }}>{updatedBy.name}</span>
+              Last written by <span className="hand-name agent-ink" style={{ ["--agent" as string]: agentColor(updatedBy.id) ?? "var(--wax)" }}>{updatedBy.name}</span>
             </>
           ) : (
             <>Edited by {updatedBy.id === me?.person.id ? "you" : updatedBy.name}</>
