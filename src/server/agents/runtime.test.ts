@@ -78,6 +78,7 @@ describe("agent runtime", () => {
     const started = f.start();
     const result = await started.done;
     expect(result.run.status).toBe("succeeded");
+    expect(getRun(f.services.db, f.ws, result.run.id)?.pageId).toBe(pageId);
     expect(result.run.steps.map((s) => s.tool)).toEqual(["read_page", "rewrite_page"]);
     expect(result.run.steps.every((s) => s.ok)).toBe(true);
     expect(result.run.endedAt).toBeTruthy();
@@ -92,6 +93,28 @@ describe("agent runtime", () => {
     expect(hide).toHaveBeenCalledWith(`${f.agent.id}:${started.run.id}`);
     expect(model.doStreamCalls[0]?.toolChoice).toEqual({ type: "auto" });
     await live.disconnect();
+  });
+
+  it("keeps its last visited page after notebook-wide thinking and on the next no-page run", async () => {
+    let pageId = "";
+    let step = 0;
+    const f = fixture({ modelFactory: () => new MockLanguageModelV4({ doStream: async () => {
+      if (++step === 1) return call("read_page", { pageId });
+      if (step === 2) return call("list_pages", {});
+      return answer("Ready.");
+    } }) });
+    // Visit a different page from the one the run started at.
+    pageId = f.services.pages.createPage(f.ws, { kind: "agent", id: f.agent.id, name: f.agent.name }, { title: "Last stop" }).id;
+    const first = await f.start().done;
+    expect(first.run.pageId).toBe(pageId);
+    expect(f.events.filter((e) => e.type === "agent.moved").at(-1)).toMatchObject({
+      fromPageId: pageId, toPageId: null, action: "leaving",
+    });
+    const next = f.services.runtime.start({ workspaceId: f.ws, agentId: f.agent.id, prompt: "Hello" });
+    expect(next.run.pageId).toBe(pageId);
+    expect((await next.done).run.pageId).toBe(pageId);
+    // The same persisted run is used to rebuild the map after a reload.
+    expect(listRecentRuns(f.services.db, f.ws).find((r) => r.agentId === f.agent.id)?.pageId).toBe(pageId);
   });
 
   it("supports create, search, precise edits, rename, move and soft delete", async () => {
@@ -155,7 +178,7 @@ describe("agent runtime", () => {
   it("timeout fails a stalled run without leaving it active", async () => {
     const f = fixture({ timeoutMs: 30, modelFactory: () => new MockLanguageModelV4({ doStream: () => new Promise(() => {}) }) });
     const result = await f.start().done;
-    expect(result.run).toMatchObject({ status: "failed", error: "Agent run timed out.", pageId: null });
+    expect(result.run).toMatchObject({ status: "failed", error: "Agent run timed out.", pageId: f.page.id });
   });
 
   it("fails cleanly without META_API_KEY and never calls the network", async () => {
@@ -181,13 +204,13 @@ describe("agent runtime", () => {
       } }) };
     } });
     const f = fixture({ modelFactory: () => model });
-    pageId = f.page.id;
+    pageId = f.services.pages.createPage(f.ws, { kind: "agent", id: f.agent.id, name: f.agent.name }, { title: "Written before cancellation" }).id;
     const hide = vi.spyOn(f.services.collab, "hideAgentEverywhere");
     const started = f.start();
     await vi.waitFor(() => expect(f.events.some((e) => e.type === "diary.delta")).toBe(true));
     const cancelled = await f.services.runtime.cancel(f.ws, started.run.id);
     expect(cancelled?.status).toBe("cancelled");
-    expect(cancelled?.pageId).toBeNull();
+    expect(cancelled?.pageId).toBe(pageId);
     expect((await started.done).text).toContain("Working…\n\nRun cancelled.");
     expect(hide).toHaveBeenCalledWith(`${f.agent.id}:${started.run.id}`);
     expect(await f.services.runtime.cancel(f.ws, started.run.id)).toEqual(cancelled);
@@ -245,7 +268,7 @@ describe("agent runtime", () => {
     const started = f.start();
     await vi.waitFor(() => expect(child.doStreamCalls).toHaveLength(1));
     await f.services.runtime.cancel(f.ws, started.run.id);
-    expect(listRecentRuns(f.services.db, f.ws).map((r) => r.status)).toEqual(["cancelled", "cancelled"]);
+    expect(listRecentRuns(f.services.db, f.ws).filter((r) => r.id === started.run.id || r.parentRunId === started.run.id).map((r) => r.status)).toEqual(["cancelled", "cancelled"]);
   });
 
   it("reports step limits as incomplete rather than success", async () => {
@@ -331,7 +354,8 @@ describe("diary HTTP routes", () => {
     expect(["queued", "running"]).toContain(active.status);
     const cancelled = await app.request(`/api/runs/${runId}/cancel`, { method: "POST", headers });
     expect(cancelled.status).toBe(200);
-    expect(await cancelled.json()).toMatchObject({ status: "cancelled", pageId: null });
+    expect(active.pageId).toEqual(expect.any(String));
+    expect(await cancelled.json()).toMatchObject({ status: "cancelled", pageId: active.pageId });
   });
 
   it("rejects cross-workspace pages, threads, agents, attachments and run cancellation", async () => {

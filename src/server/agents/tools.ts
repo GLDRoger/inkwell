@@ -38,7 +38,8 @@ export function createAgentTools(ctx: ToolContext) {
     const from = getRun(s.db, ws, run.id)?.pageId ?? null;
     if (from && from !== id) await s.collab.hideAgent(from, ctx.presenceId);
     check();
-    const updated = updateRun(s.db, ws, run.id, { pageId: id });
+    // Notebook-wide tools change the action, not the last physical stop.
+    const updated = updateRun(s.db, ws, run.id, { pageId: id ?? from });
     if (updated) publish({ type: "run.updated", run: updated });
     publish({ type: "agent.moved", runId: run.id, agentId: agent.id, fromPageId: from, toPageId: id, action });
     if (id) {

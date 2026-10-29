@@ -106,6 +106,27 @@ describe("session + seed", () => {
     expect(titles).toContain("Recipes");
   });
 
+  it("attributes the demo pages to Atlas and seeds a completed run at each agent's hub", async () => {
+    const client = await newClient();
+    const map = await (await client.request("/api/map")).json() as MapGraph;
+    const atlas = map.agents.find((a) => a.name === "Atlas")!;
+    expect(map.pages.every((p) => p.updatedBy.kind === "agent" && p.updatedBy.id === atlas.id && p.updatedBy.name === "Atlas")).toBe(true);
+    expect(map.runs).toHaveLength(3);
+    const hubs: Record<string, string> = { Atlas: "Startup: launch plan", Scout: "Reading notes", Wren: "Trip to Lisbon" };
+    for (const agent of map.agents) {
+      const run = map.runs.find((r) => r.agentId === agent.id)!;
+      expect(run).toMatchObject({ status: "succeeded", error: null, endedAt: expect.any(String) });
+      expect(map.pages.find((p) => p.id === run.pageId)?.title).toBe(hubs[agent.name]);
+      expect(run.steps.length).toBeGreaterThanOrEqual(1);
+      expect(run.steps.length).toBeLessThanOrEqual(2);
+      expect(run.steps.every((s) => s.ok && s.pageId === run.pageId)).toBe(true);
+    }
+    const threads = await (await client.request("/api/diary")).json() as { id: string }[];
+    const entries = await (await client.request(`/api/diary/${threads[0]!.id}`)).json() as { agentId: string }[];
+    expect(entries[0]!.agentId).toBe(atlas.id);
+    expect((await (await client.request("/api/map")).json() as MapGraph).runs).toEqual(map.runs);
+  });
+
   it("resumes the same workspace with the cookie", async () => {
     const client = await newClient();
     const first = (await (await client.request("/api/me")).json()) as { workspaceId: string };
@@ -437,6 +458,32 @@ describe("runs", () => {
     const otherWs = ((await (await other.request("/api/me")).json()) as { workspaceId: string })
       .workspaceId;
     expect(updateRun(services.db, otherWs, run.id, { status: "failed" })).toBeNull();
+  });
+
+  it("keeps the latest run per agent and all active runs, beyond age and count cutoffs", async () => {
+    const client = await newClient();
+    const { workspaceId } = await (await client.request("/api/me")).json() as { workspaceId: string };
+    const map = await (await client.request("/api/map")).json() as MapGraph;
+    const agent = map.agents[0]!;
+    const activeIds: string[] = [];
+    const sameTime = "2000-01-01T00:00:00.000Z";
+    services.db.prepare("UPDATE runs SET created_at = ? WHERE workspace_id = ?").run(sameTime, workspaceId);
+    for (let i = 0; i < 55; i++) {
+      const run = insertRun(services.db, workspaceId, { agentId: agent.id, prompt: `Active ${i}`, status: i % 2 ? "queued" : "running" });
+      services.db.prepare("UPDATE runs SET created_at = ? WHERE id = ?").run(sameTime, run.id);
+      activeIds.push(run.id);
+    }
+    const latest = insertRun(services.db, workspaceId, { agentId: agent.id, prompt: "Latest" });
+    updateRun(services.db, workspaceId, latest.id, { status: "succeeded" });
+    services.db.prepare("UPDATE runs SET created_at = ? WHERE id = ?").run(sameTime, latest.id);
+    const runs = (await (await client.request("/api/map")).json() as MapGraph).runs;
+    expect(runs.map((r) => r.id)).toEqual([latest.id, ...activeIds.reverse(), ...map.runs.filter((r) => r.agentId !== agent.id).map((r) => r.id)]);
+    expect(new Set(runs.map((r) => r.id)).size).toBe(runs.length);
+    // Timestamp order wins over insertion order, including between agents.
+    const olderSeed = map.runs.find((r) => r.agentId !== agent.id)!;
+    services.db.prepare("UPDATE runs SET created_at = ? WHERE id = ?").run("2001-01-01T00:00:00.000Z", olderSeed.id);
+    const reordered = (await (await client.request("/api/map")).json() as MapGraph).runs;
+    expect(reordered.map((r) => r.id)).toEqual([olderSeed.id, ...runs.filter((r) => r.id !== olderSeed.id).map((r) => r.id)]);
   });
 
   it("answers unknown API routes with a JSON 404", async () => {

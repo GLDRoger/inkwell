@@ -501,19 +501,19 @@ export function insertDiaryEntry(
   return entry;
 }
 
-export function listRecentRuns(
-  db: Db,
-  workspaceId: string,
-  withinMs = 2 * 60 * 60 * 1000,
-): Run[] {
-  const since = new Date(Date.now() - withinMs).toISOString();
+/** Latest run per agent, plus every active run, with stable newest-first ordering. */
+export function listRecentRuns(db: Db, workspaceId: string): Run[] {
   const rows = db
     .prepare(
-      `SELECT * FROM runs WHERE workspace_id = ?
-       AND (status IN ('queued', 'running') OR created_at >= ?)
-       ORDER BY created_at DESC LIMIT 50`,
+      `WITH ranked AS (
+         SELECT *, rowid AS insertion_order,
+           ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY created_at DESC, rowid DESC) AS agent_rank
+         FROM runs WHERE workspace_id = ?
+       )
+       SELECT * FROM ranked WHERE agent_rank = 1 OR status IN ('queued', 'running')
+       ORDER BY created_at DESC, insertion_order DESC`,
     )
-    .all(workspaceId, since) as RunRow[];
+    .all(workspaceId) as RunRow[];
   return rows.map(rowToRun);
 }
 

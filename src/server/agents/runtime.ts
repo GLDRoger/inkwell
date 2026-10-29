@@ -3,7 +3,7 @@ import { streamText, isStepCount, type LanguageModel, type ModelMessage, type Us
 import type { Agent, DiaryEntry, Run, ServerEvent } from "../../shared/types.ts";
 import {
   attachmentFilePath, getAgent, getDiaryThread, getRun, insertDiaryEntry, insertRun,
-  listAgents, listDiaryEntries, updateDiaryEntry, updateRun,
+  listAgents, listDiaryEntries, listRecentRuns, updateDiaryEntry, updateRun,
 } from "../db.ts";
 import { createMetaModel, MISSING_META_KEY } from "./model.ts";
 import { createAgentTools, ToolFailure, type AgentServices } from "./tools.ts";
@@ -76,7 +76,9 @@ export class AgentRuntime {
     // not include future requests or another run's placeholder in this prompt.
     const history = input.threadId ? listDiaryEntries(s.db, ws, input.threadId).filter((e) => e.text).slice(-20) : [];
     const { run, entry } = s.db.transaction(() => {
-      const run = insertRun(s.db, ws, { ...input, pageId: input.pageId ?? null });
+      // Diary-only replies still rest where the agent last worked.
+      const lastPageId = listRecentRuns(s.db, ws).find((r) => r.agentId === agent.id)?.pageId;
+      const run = insertRun(s.db, ws, { ...input, pageId: input.pageId ?? lastPageId ?? null });
       const entry = input.threadId ? insertDiaryEntry(s.db, ws, {
         threadId: input.threadId, role: "agent", agentId: agent.id, text: "", runId: run.id,
       }) : null;
@@ -204,7 +206,7 @@ export class AgentRuntime {
     }
     const from = getRun(s.db, ws, original.id)?.pageId ?? null;
     this.publish(ws, { type: "agent.moved", runId: original.id, agentId: agent.id, fromPageId: from, toPageId: null, action: "leaving" });
-    const run = this.patch(ws, original.id, { status, error: failure, pageId: null });
+    const run = this.patch(ws, original.id, { status, error: failure });
     return { run, text, pageIds: [...touched] };
   }
 

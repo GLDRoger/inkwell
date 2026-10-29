@@ -1,8 +1,11 @@
 import type { Actor } from "../shared/types.ts";
 import {
+  appendRunStep,
   insertAgent,
   insertDiaryEntry,
   insertDiaryThread,
+  insertRun,
+  updateRun,
   newId,
   type Db,
 } from "./db.ts";
@@ -440,7 +443,7 @@ export const SEED_AGENTS = [
 export function seedWorkspace(
   deps: { db: Db; pages: PageStore },
   workspaceId: string,
-  actor: Actor,
+  _actor: Actor,
 ): void {
   const { db, pages } = deps;
   if (pages.countPages(workspaceId) > 0) return;
@@ -451,9 +454,12 @@ export function seedWorkspace(
     body.replace(/\{\{([a-z-]+)\}\}/g, (_m, key: string) => `/p/${ids.get(key) ?? key}`);
 
   db.transaction(() => {
+    const agents = SEED_AGENTS.map((agent) => insertAgent(db, workspaceId, { ...agent }));
+    const atlas = agents.find((a) => a.name === "Atlas")!;
+    const author: Actor = { kind: "agent", id: atlas.id, name: atlas.name };
     // Parents first (PAGES is ordered that way), then children.
     for (const seed of PAGES) {
-      pages.createPage(workspaceId, actor, {
+      pages.createPage(workspaceId, author, {
         id: ids.get(seed.key)!,
         parentId: seed.parentKey ? ids.get(seed.parentKey)! : null,
         title: seed.title,
@@ -466,12 +472,19 @@ export function seedWorkspace(
 
     pages.rebuildLinks(workspaceId);
 
-    const agents = SEED_AGENTS.map((agent) =>
-      insertAgent(db, workspaceId, { ...agent }),
-    );
-
     const thread = insertDiaryThread(db, workspaceId, "Welcome to Inkwell");
-    const atlas = agents.find((a) => a.name === "Atlas") ?? agents[0]!;
+    const stops: Record<string, { key: string; summary: string; tool: string }> = {
+      Atlas: { key: "startup", summary: "Laid out the demo map", tool: "move_page" },
+      Scout: { key: "reading", summary: "Gathered the demo reading notes", tool: "read_page" },
+      Wren: { key: "lisbon", summary: "Prepared the demo Lisbon trip notes", tool: "write_page" },
+    };
+    for (const agent of agents) {
+      const stop = stops[agent.name]!;
+      const pageId = ids.get(stop.key)!;
+      const run = insertRun(db, workspaceId, { agentId: agent.id, prompt: stop.summary, pageId });
+      appendRunStep(db, workspaceId, run.id, { tool: stop.tool, summary: stop.summary, pageId, ok: true });
+      updateRun(db, workspaceId, run.id, { status: "succeeded" });
+    }
     insertDiaryEntry(db, workspaceId, {
       threadId: thread.id,
       role: "agent",
