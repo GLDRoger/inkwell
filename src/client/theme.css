@@ -37,3 +37,15 @@
   --shadow-card: 0 1px 2px rgb(60 40 10 / 0.08), 0 4px 16px rgb(60 40 10 / 0.06);
   --ease-ink: cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+:root {
+  --panel-w: 440px;
+  --topbar-h: 52px;
+  --focus: light-dark(#8a2b1f, #e59a8a);
+  --overlay: light-dark(rgb(43 34 24 / 0.28), rgb(0 0 0 / 0.5));
+  --shadow-pop: 0 2px 6px rgb(40 25 5 / 0.1), 0 16px 48px rgb(40 25 5 / 0.18);
+  --font-hand-size: 23px;
+}

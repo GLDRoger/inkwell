@@ -1,0 +1,95 @@
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
+import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
+import { useServerEvents } from "./lib/events";
+import { api, isNotFound } from "./lib/api";
+import { getUi, setUi, useUi } from "./lib/ui";
+import { TopBar } from "./shell/TopBar";
+import { CommandPalette } from "./shell/CommandPalette";
+import { ConnectionNotice } from "./shell/ConnectionNotice";
+import { MapPlaceholder } from "./shell/MapPlaceholder";
+import { PageView } from "./page/PageView";
+import { DiaryPanel } from "./diary/DiaryPanel";
+
+type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
+
+// The map lives in ./map (built separately). Until that file exists, the glob is empty and we show a placeholder.
+const mapModules = import.meta.glob<{ MapView: ComponentType<MapViewProps> }>("./map/index.tsx");
+const loadMap = mapModules["./map/index.tsx"];
+const MapView = loadMap ? lazy(() => loadMap().then((m) => ({ default: m.MapView }))) : null;
+
+function MapRoute() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const focusPageId = params.get("focus") ?? undefined;
+  const onOpenPage = (id: string) => navigate(`/p/${id}`);
+  if (!MapView) return <MapPlaceholder onOpenPage={onOpenPage} />;
+  return (
+    <Suspense fallback={<div className="map-loading" aria-busy="true" />}>
+      <MapView onOpenPage={onOpenPage} focusPageId={focusPageId} />
+    </Suspense>
+  );
+}
+
+/** Tell the server which page this person is on, so the map can show them. */
+function usePresenceReport() {
+  const match = useMatch("/p/:id");
+  const pageId = match?.params.id ?? null;
+  useEffect(() => {
+    let stopped = false;
+    const send = () =>
+      api.presence(pageId).catch((e) => {
+        if (isNotFound(e)) stopped = true; // presence isn't built on this server; stay quiet
+      });
+    void send();
+    const timer = setInterval(() => !stopped && void send(), 45_000);
+    return () => clearInterval(timer);
+  }, [pageId]);
+}
+
+function useGlobalShortcuts() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setUi((s) => ({ paletteOpen: !s.paletteOpen }));
+      } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setUi((s) => ({ diaryOpen: !s.diaryOpen, paletteOpen: false }));
+      } else if (e.key === "Escape" && getUi().diaryOpen && !getUi().paletteOpen) {
+        const t = e.target as HTMLElement | null;
+        if (t?.closest(".diary")) setUi({ diaryOpen: false });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
+export function App() {
+  useServerEvents();
+  usePresenceReport();
+  useGlobalShortcuts();
+  const location = useLocation();
+  const onMap = location.pathname === "/";
+  const diaryOpen = useUi((s) => s.diaryOpen);
+
+  return (
+    <div className="app" data-route={onMap ? "map" : "page"} data-diary={diaryOpen ? "open" : "closed"}>
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <TopBar />
+      <main id="main" className="app-main" tabIndex={-1}>
+        <Routes>
+          <Route path="/" element={<MapRoute />} />
+          <Route path="/p/:id" element={<PageView />} />
+          <Route path="*" element={<MapRoute />} />
+        </Routes>
+      </main>
+      <DiaryPanel />
+      <CommandPalette />
+      <ConnectionNotice />
+    </div>
+  );
+}
