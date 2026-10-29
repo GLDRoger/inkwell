@@ -145,7 +145,9 @@ describe("page illustration", () => {
     const served = await app.request(updated.coverUrl!, { headers: { Cookie: cookie } });
     expect(served.status).toBe(200);
     expect(Buffer.from(await served.arrayBuffer())).toEqual(PNG);
-    expect((await app.request(updated.coverUrl!)).status).toBe(404);
+    const outsider = await app.request("/api/me");
+    const outsiderCookie = outsider.headers.get("set-cookie")!.split(";")[0]!;
+    expect((await app.request(updated.coverUrl!, { headers: { Cookie: outsiderCookie } })).status).toBe(404);
     const { body, url } = outgoing(0);
     expect(url).toBe("https://api.meta.ai/v1/images/generations");
     expect(body).toMatchObject({ model: "muse-image-1.0", output_format: "png", response_format: "b64_json" });
