@@ -19,7 +19,9 @@ schema/data rollback; never replace the data directory with an older copy.
 Install `nginx-inkwell.conf` as the Inkwell-only nginx site and enable it. Run
 `nginx -t` **before every reload**. On failure, restore the previous Inkwell
 site and stop. Do not modify other sites. Use certbot's nginx plugin to issue
-TLS for `inkwell.76-13-246-244.sslip.io`. Only add `inkwell.questili.com` to the
+TLS for `inkwell.76-13-246-244.sslip.io`, passing
+`--nginx-ctl /opt/inkwell/src/deploy/nginx-checked.sh` to ensure its internal
+reloads also run `nginx -t` first. Only add `inkwell.questili.com` to the
 certificate once its DNS A record points at `76.13.246.244` (and any AAAA
 record resolves correctly). Preserve certbot's resulting site on updates.
 
