@@ -132,3 +132,14 @@
   .people { display: none; }
   .palette { margin-top: 8px; }
 }
+
+/*
+ * Layout contract for the map (rendered inside .app at "/"):
+ *   --shell-top    height the floating top bar covers; start overlays below it
+ *   --diary-inset  width the open diary covers on the right (0 when closed or on mobile)
+ */
+.app { --shell-top: 0px; --diary-inset: 0px; }
+.app[data-route="map"] { --shell-top: calc(var(--topbar-h) + 10px); }
+@media (min-width: 641px) {
+  .app[data-diary="open"] { --diary-inset: calc(min(var(--panel-w), 100vw - 24px) + 12px); }
+}
