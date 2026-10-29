@@ -1,12 +1,18 @@
 import { Extension } from "@tiptap/core";
 import { isChangeOrigin } from "@tiptap/extension-collaboration";
-import { Plugin, PluginKey, type Transaction } from "@tiptap/pm/state";
+import { Plugin, PluginKey, type EditorState, type Transaction } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, ySyncPluginKey } from "@tiptap/y-tiptap";
+import type { RelativePosition } from "yjs";
 
 /**
  * Text that arrives from someone else (an agent writing through Yjs) appears
  * as wet ink in their colour and dries to the page's ink over a couple of
  * seconds. Only remote changes after the first sync are marked.
+ *
+ * Remote updates often replace a whole paragraph in ProseMirror, which would
+ * wipe ordinary decorations, so each wet stretch is anchored to Yjs relative
+ * positions and turned back into document positions when drawn.
  */
 export interface InkDryingOptions {
   /** False until the document has synced, so the initial load isn't painted wet. */
@@ -17,7 +23,15 @@ export interface InkDryingOptions {
   dryAfter: number;
 }
 
-export const inkDryingKey = new PluginKey<DecorationSet>("inkDrying");
+interface WetInk {
+  id: number;
+  from: RelativePosition;
+  /** Anchored on the last wet character, so text typed after it isn't swept in. */
+  last: RelativePosition;
+  color: string | null;
+}
+
+export const inkDryingKey = new PluginKey<WetInk[]>("inkDrying");
 let nextId = 0;
 
 /** The range in the new document that differs from the old one, or null if nothing was inserted. */
@@ -37,6 +51,22 @@ export function insertedRange(tr: Transaction): { from: number; to: number } | n
   return endB > start ? { from: start, to: endB } : null;
 }
 
+function decorate(state: EditorState, wet: WetInk[]): DecorationSet {
+  const sync = ySyncPluginKey.getState(state);
+  if (!wet.length || !sync?.binding) return DecorationSet.empty;
+  const decos: Decoration[] = [];
+  const size = state.doc.content.size;
+  for (const w of wet) {
+    const from = relativePositionToAbsolutePosition(sync.doc, sync.type, w.from, sync.binding.mapping);
+    const last = relativePositionToAbsolutePosition(sync.doc, sync.type, w.last, sync.binding.mapping);
+    if (from == null || last == null) continue;
+    const to = Math.min(size, last + 1);
+    if (to <= from) continue;
+    decos.push(Decoration.inline(from, to, { class: "ink-wet", style: w.color ? `--wet-ink: ${w.color}` : "" }, { inkId: w.id }));
+  }
+  return DecorationSet.create(state.doc, decos);
+}
+
 export const InkDrying = Extension.create<InkDryingOptions>({
   name: "inkDrying",
   addOptions() {
@@ -45,46 +75,40 @@ export const InkDrying = Extension.create<InkDryingOptions>({
   addProseMirrorPlugins() {
     const options = this.options;
     return [
-      new Plugin<DecorationSet>({
+      new Plugin<WetInk[]>({
         key: inkDryingKey,
         state: {
-          init: () => DecorationSet.empty,
-          apply(tr, set) {
-            let next = set.map(tr.mapping, tr.doc);
+          init: () => [],
+          apply(tr, wet, _old, next) {
             const dried = tr.getMeta(inkDryingKey) as number | undefined;
-            if (dried != null) next = next.remove(next.find(undefined, undefined, (spec) => spec.inkId === dried));
-            if (tr.docChanged && isChangeOrigin(tr) && options.isEnabled()) {
-              const range = insertedRange(tr);
-              if (range && tr.doc.textBetween(range.from, range.to, " ", " ").trim()) {
-                const color = options.getColor();
-                const deco = Decoration.inline(
-                  range.from,
-                  range.to,
-                  { class: "ink-wet", style: color ? `--wet-ink: ${color}` : "" },
-                  { inkId: nextId++, inclusiveEnd: false },
-                );
-                next = next.add(tr.doc, [deco]);
-              }
+            let out = dried != null ? wet.filter((w) => w.id !== dried) : wet;
+            if (!tr.docChanged || !isChangeOrigin(tr) || !options.isEnabled()) return out;
+            const range = insertedRange(tr);
+            const sync = ySyncPluginKey.getState(next);
+            if (!range || !sync?.binding || !tr.doc.textBetween(range.from, range.to, " ", " ").trim()) return out;
+            try {
+              const from = absolutePositionToRelativePosition(range.from, sync.type, sync.binding.mapping);
+              const last = absolutePositionToRelativePosition(Math.max(range.from, range.to - 1), sync.type, sync.binding.mapping);
+              out = [...out.slice(-80), { id: nextId++, from, last, color: options.getColor() }];
+            } catch {
+              /* positions not mapped yet (first render); skip this stroke */
             }
-            return next;
+            return out;
           },
         },
         props: {
-          decorations: (state) => inkDryingKey.getState(state),
+          decorations: (state) => decorate(state, inkDryingKey.getState(state) ?? []),
         },
         view() {
           const timers = new Map<number, ReturnType<typeof setTimeout>>();
           return {
             update(view) {
-              const set = inkDryingKey.getState(view.state);
-              for (const d of set?.find() ?? []) {
-                const id = d.spec.inkId as number;
-                if (timers.has(id)) continue;
+              for (const w of inkDryingKey.getState(view.state) ?? []) {
+                if (timers.has(w.id)) continue;
                 timers.set(
-                  id,
+                  w.id,
                   setTimeout(() => {
-                    timers.delete(id);
-                    if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(inkDryingKey, id).setMeta("addToHistory", false));
+                    if (!view.isDestroyed) view.dispatch(view.state.tr.setMeta(inkDryingKey, w.id).setMeta("addToHistory", false));
                   }, options.dryAfter),
                 );
               }
