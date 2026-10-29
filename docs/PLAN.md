@@ -65,7 +65,7 @@ One TypeScript app, one container.
 
 ## Status log
 
-- 2026-10-29: repo created, contract written, workers briefed.
+- 2026-10-29: repo created (github.com/GLDRoger/inkwell), contract written. Workers: Muse server foundation, Opus app+diary, Opus map. Deploy target chosen: Hostinger box, subdomain inkwell.questili.com (same host as Spaces, `ssh hostinger-hermes`; keep it separate from /opt/spaces).
 
 ## Meta Model API facts (verified 2026-10-29, dev.meta.ai/docs)
 
