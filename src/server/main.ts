@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { createDiaryRoutes } from "./routes/diary.ts";
 import { createRunRoutes } from "./routes/runs.ts";
 import { createEventsApp } from "./events.ts";
+import { createMediaRoutes } from "./media/index.ts";
 import { createMapRoutes } from "./routes/map.ts";
 import { createPageRoutes } from "./routes/pages.ts";
 import { createUploadRoutes } from "./routes/uploads.ts";
@@ -29,6 +30,7 @@ export function createApp(
 
   app.route("/", createDiaryRoutes(services));
   app.route("/", createRunRoutes(services));
+  app.route("/", createMediaRoutes(services));
   app.route("/", createPageRoutes(services));
   app.route("/", createMapRoutes(services));
   app.route("/", createUploadRoutes(services));
