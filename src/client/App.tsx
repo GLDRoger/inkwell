@@ -8,7 +8,6 @@ import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
 import { ConnectionNotice } from "./shell/ConnectionNotice";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
-import { PageView } from "./page/PageView";
 import { DiaryPanel } from "./diary/DiaryPanel";
 
 type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
@@ -17,6 +16,8 @@ type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
 const mapModules = import.meta.glob<{ MapView: ComponentType<MapViewProps> }>("./map/index.tsx");
 const loadMap = mapModules["./map/index.tsx"];
 const MapView = loadMap ? lazy(() => loadMap().then((m) => ({ default: m.MapView }))) : null;
+// The editor stack (Tiptap, Yjs) loads only when a page opens.
+const PageView = lazy(() => import("./page/PageView").then((m) => ({ default: m.PageView })));
 
 /** If the map canvas fails to load or crashes, fall back to the page list rather than a blank screen. */
 class MapBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
@@ -121,7 +122,14 @@ function Shell() {
       <main id="main" className="app-main" tabIndex={-1}>
         <Routes>
           <Route path="/" element={<MapRoute />} />
-          <Route path="/p/:id" element={<PageView />} />
+          <Route
+            path="/p/:id"
+            element={
+              <Suspense fallback={<div className="page-scroll" aria-busy="true" />}>
+                <PageView />
+              </Suspense>
+            }
+          />
           <Route path="*" element={<MapRoute />} />
         </Routes>
       </main>
