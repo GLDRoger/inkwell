@@ -66,3 +66,13 @@ One TypeScript app, one container.
 ## Status log
 
 - 2026-10-29: repo created, contract written, workers briefed.
+
+## Meta Model API facts (verified 2026-10-29, dev.meta.ai/docs)
+
+- Base `https://api.meta.ai/v1`, `Authorization: Bearer`. Chat Completions, Responses and Messages APIs.
+- `muse-spark-1.3`: text/image/video/audio/PDF in, 1M context, parallel tool calls. **`tool_choice` must be `"auto"`** (others 400). No `stop`, `n>1`, `logprobs`. Use `max_completion_tokens`. `reasoning_effort` minimal..xhigh.
+- `muse-wonder-1.0` (preview): stronger, $4/$20 per M.
+- `muse-image-1.0`: `/v1/images/generations` and `/edits`, $0.01/image.
+- `muse-voice-transcribe-1.0`: `POST /v1/asr/transcribe` multipart WAV 16/24 kHz ≤10 min, or realtime `wss://api.meta.ai/v1/asr/realtime`.
+- `sam-3.1`: via `/v1/responses` with `input_text` + `input_image`, returns boxes and masks (format: docs/sam/reading-segmentation, to verify).
+- Hackathon credit: $150 for a 10-day window. Rate limit 3,000 RPM / 4M TPM per model.
