@@ -167,3 +167,11 @@ test("key check, visitor keys and the demo work against the fake", async () => {
     fs.rmSync(appDir, { recursive: true, force: true });
   }
 });
+
+test("organise: \"don't move or rename them\" renames nothing", async () => {
+  const before = titles().sort();
+  const r = await ask("Atlas", "Tidy up the recipes: link them, don't move or rename them.");
+  assert.equal(r.run.status, "succeeded", r.run.error ?? "");
+  assert.ok(!r.tools.includes("rename_page"));
+  assert.deepEqual(titles().sort(), before);
+});

@@ -10,12 +10,15 @@ import {
   bodyJson, decodeResponse, endpointOf, requestNote, requestVersions, scrub,
   type Cassette, type CassetteStep, type Exchange, type Stream, type Usage,
 } from "./cassette.ts";
+import { withFirstByteWatchdog } from "../agents/model.ts";
 import { ensureDemoWorkspace } from "./notebook.ts";
 import { playScenario, type Transport } from "./play.ts";
 import { publicStep, type ScenarioDefinition } from "./scenario.ts";
 
-export function recordingTransport(options: { fetch?: typeof globalThis.fetch; secrets: string[] }): Transport & { steps: CassetteStep[] } {
-  const real = options.fetch ?? globalThis.fetch;
+export function recordingTransport(options: { fetch?: typeof globalThis.fetch; secrets: string[]; firstByteMs?: number }): Transport & { steps: CassetteStep[] } {
+  // Meta sometimes stalls before its first byte; a silent call is asked again (once).
+  // An abandoned attempt throws before it is captured, so the cassette only holds answers.
+  const real = withFirstByteWatchdog(options.fetch ?? globalThis.fetch, { timeoutMs: options.firstByteMs });
   const steps: CassetteStep[] = [];
   let current: CassetteStep | undefined;
   const capture = (stream: Stream): typeof globalThis.fetch => async (url, init) => {

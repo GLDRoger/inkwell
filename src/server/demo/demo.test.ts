@@ -19,7 +19,7 @@ import { startFakeMeta } from "../../../scripts/rehearsal/fake-meta.mjs";
 import type { Cassette } from "./cassette.ts";
 import { IdTranslator } from "./cassette.ts";
 import { CASSETTES_DIR, loadCassette, replayTransport } from "./player.ts";
-import { recordScenario } from "./record.ts";
+import { recordScenario, recordingTransport } from "./record.ts";
 import { LISBON_TOUR } from "./scenario.ts";
 
 const tmp = (name: string) => fs.mkdtempSync(path.join(os.tmpdir(), `inkwell-demo-${name}-`));
@@ -184,6 +184,21 @@ describe("replay in the demo notebook", () => {
       await harness.close();
     }
   }, 30_000);
+});
+
+describe("recording transport", () => {
+  it("asks a silent Meta call again and keeps only the answer", async () => {
+    let calls = 0;
+    const transport = recordingTransport({ secrets: [], firstByteMs: 20, fetch: (_url, init) => {
+      if (++calls === 1) return new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+      return Promise.resolve(Response.json({ ok: true }));
+    } });
+    transport.beginStep(0, LISBON_TOUR.steps[0]!);
+    const fetch = transport.forRun("run");
+    expect(await (await fetch("https://api.meta.ai/v1/chat/completions", { method: "POST", body: "{}" })).json()).toEqual({ ok: true });
+    expect(calls).toBe(2);
+    expect(transport.steps[0]!.streams[0]!.exchanges).toHaveLength(1);
+  });
 });
 
 describe("replay transport", () => {

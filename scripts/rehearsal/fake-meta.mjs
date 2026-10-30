@@ -397,7 +397,8 @@ function planTurn(c) {
   if (intent.kind === "organise") {
     const p = prompt.toLowerCase();
     const title = quotedTitle(prompt);
-    if (/renam/.test(p)) {
+    // "don't move or rename them" is not a request to rename.
+    if (/renam/.test(p) && !/\b(?:don'?t|do not|never|without)\s+(?:\w+\s+){0,3}renam/.test(p)) {
       const renamed = done(steps, "rename_page")[0];
       const next = title ?? `${page.title} (${new Date().getFullYear()})`;
       if (!renamed) return { call: { name: "rename_page", args: { pageId: page.id, title: next } } };
