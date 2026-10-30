@@ -1,5 +1,5 @@
 import { AgentRuntime, type RuntimeOptions } from "./agents/runtime.ts";
-import { startJanitor } from "./janitor.ts";
+import { IDLE_WORKSPACE_DAYS, startJanitor } from "./janitor.ts";
 import { openDatabase, type DatabaseHandle } from "./db.ts";
 import { createEventBus, type EventBus } from "./events.ts";
 import { createPageStore, type PageStore } from "./pages.ts";
@@ -43,6 +43,6 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
       handle.close();
     },
   };
-  const stopJanitor = startJanitor(services, { maxIdleDays: 14 });
+  const stopJanitor = startJanitor(services, { maxIdleDays: IDLE_WORKSPACE_DAYS });
   return services;
 }

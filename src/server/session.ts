@@ -130,11 +130,16 @@ function clientIp(c: Context): string {
   return ip.startsWith("::ffff:") ? ip.slice(7) : ip;
 }
 
+/** New notebooks one IP may create per hour: high enough for an office behind one NAT. */
+export const NEW_WORKSPACES_PER_IP_HOUR = 300;
+
 export function createSessionMiddleware(deps: {
   db: Db;
   pages: PageStore;
+  newWorkspacesPerHour?: number;
 }): MiddlewareHandler<AppEnv> {
   const hour = 60 * 60 * 1000;
+  const perHour = deps.newWorkspacesPerHour ?? NEW_WORKSPACES_PER_IP_HOUR;
   const buckets = new Map<string, { count: number; expiresAt: number }>();
   let lastCleanup = 0;
 
@@ -148,7 +153,7 @@ export function createSessionMiddleware(deps: {
       // retries, preflights and unknown paths cannot seed extra notebooks.
       // Do not coalesce by IP/UA: unrelated visitors behind a NAT share both.
       if (c.req.method !== "GET" || c.req.path !== "/api/me") {
-        return c.json({ error: "session required; open /api/me first" }, 401);
+        return c.json({ error: "Your session has expired. Reload the page to continue.", code: "session_required" }, 401);
       }
       const now = Date.now();
       if (now - lastCleanup >= 60_000) {
@@ -164,9 +169,9 @@ export function createSessionMiddleware(deps: {
         bucket = undefined;
       }
       // Bound limiter memory without evicting active limits under IP churn.
-      if ((bucket && bucket.count >= 30) || (!bucket && buckets.size >= 10_000)) {
+      if ((bucket && bucket.count >= perHour) || (!bucket && buckets.size >= 10_000)) {
         c.header("Retry-After", String(Math.max(1, Math.ceil(((bucket?.expiresAt ?? now + 60_000) - now) / 1000))));
-        return c.json({ error: "too many new workspaces; try again later" }, 429);
+        return c.json({ error: "Too many new notebooks were opened from your network. Try again later.", code: "rate_limited" }, 429);
       }
       if (!bucket) {
         bucket = { count: 0, expiresAt: now + hour };

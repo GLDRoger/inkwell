@@ -2,6 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Services } from './services.ts';
 
+/** Notebooks nobody has opened for this long are deleted (testers come back after weeks). */
+export const IDLE_WORKSPACE_DAYS = 90;
+
 /** Delete only idle workspaces; filesystem cleanup is durably retried after DB commit. */
 export async function cleanIdleWorkspaces(services: Services, options: { maxIdleDays: number }): Promise<number> {
   if (!Number.isFinite(options.maxIdleDays) || options.maxIdleDays <= 0) throw new Error('maxIdleDays must be positive');

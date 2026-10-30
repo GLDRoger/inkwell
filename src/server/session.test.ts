@@ -5,7 +5,8 @@ import path from "node:path";
 import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServices, type Services } from "./services.ts";
-import { createSessionMiddleware, type AppEnv } from "./session.ts";
+import { createSessionMiddleware, NEW_WORKSPACES_PER_IP_HOUR, type AppEnv } from "./session.ts";
+import { IDLE_WORKSPACE_DAYS } from "./janitor.ts";
 
 let services: Services;
 let app: Hono<AppEnv>;
@@ -20,7 +21,8 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "inkwell-session-"));
   services = createServices(dir);
   app = new Hono<AppEnv>();
-  app.use("/api/*", createSessionMiddleware(services));
+  // A small cap keeps the limiter tests fast; the production default is checked below.
+  app.use("/api/*", createSessionMiddleware({ ...services, newWorkspacesPerHour: 30 }));
   app.get("/api/health", (c) => c.json({ ok: true }));
   app.all("/api/*", (c) => c.json(c.get("ctx")));
 });
@@ -39,7 +41,7 @@ describe("anonymous session bootstrap", () => {
     expect(count()).toBe(1);
     for (const response of results.slice(1)) {
       expect(response.headers.get("set-cookie")).toBeNull();
-      expect(await response.json()).toEqual({ error: "session required; open /api/me first" });
+      expect(await response.json()).toEqual({ error: "Your session has expired. Reload the page to continue.", code: "session_required" });
     }
     for (const method of ["POST", "HEAD", "OPTIONS"]) {
       expect((await request("/api/me", {}, undefined, method)).status).toBe(401);
@@ -68,6 +70,15 @@ describe("anonymous session bootstrap", () => {
     expect(count()).toBe(2);
   });
 
+  it("by default lets an office behind one NAT open 300 notebooks an hour, and keeps idle ones 90 days", async () => {
+    expect(NEW_WORKSPACES_PER_IP_HOUR).toBe(300);
+    expect(IDLE_WORKSPACE_DAYS).toBe(90);
+    const office = new Hono<AppEnv>();
+    office.use("/api/*", createSessionMiddleware({ db: services.db, pages: services.pages }));
+    office.all("/api/*", (c) => c.json(c.get("ctx")));
+    for (let i = 0; i < 35; i++) expect((await office.request("/api/me", {}, env())).status).toBe(200);
+  });
+
   it("caps creation at 30/IP/hour, not existing sessions, and expires the bucket", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     const first = await request();
@@ -75,7 +86,7 @@ describe("anonymous session bootstrap", () => {
     for (let i = 1; i < 30; i++) expect((await request()).status).toBe(200);
     const denied = await request();
     expect(denied.status).toBe(429);
-    expect(await denied.json()).toEqual({ error: "too many new workspaces; try again later" });
+    expect(await denied.json()).toEqual({ error: "Too many new notebooks were opened from your network. Try again later.", code: "rate_limited" });
     expect(denied.headers.get("retry-after")).toBe("3600");
     expect(denied.headers.get("set-cookie")).toBeNull();
     expect(count()).toBe(30);
