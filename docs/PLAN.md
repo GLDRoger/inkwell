@@ -107,3 +107,9 @@ Goal: ready to hand to the client for internal testing. Every screen, flow and l
 - Diary: raw server error text shown (`diary/DiaryPanel.tsx:160`) — map to plain copy.
 - Offline: "edits kept here" overstates; collab doc is memory-only — add y-indexeddb or fix the copy.
 - Visual: follow docs/DESIGN.md (restrained; HP is functionality + easter eggs only).
+
+### Browser audit 2026-10-30 (full report: /tmp/inkwell-audit/, shots in /tmp/inkwell-audit/shots/)
+- P0: Enter in a page loses edits — `collab.ts` validate rejects y-tiptap `__tiptap_position_migrations:*` keys. Orchestrator fixes after the server worker commits; SyncPill must show an error when the connection is dropped.
+- Map round: double-click/one-step open + hint; agent banners off titles; chrome collisions (minimap, compass, photo/find vs chips); one search (drop Find or merge); mobile tap targets ≥44px; tab order.
+- Diary round: "page" ambiguity → "conversations"; label/move tool icons; focus after attach; consistent error copy; own messages not placeholder-grey; provenance lines ("Painted by Muse Image", "Read by SAM 3.1 + Muse Spark").
+- Shell/page round: palette filters actions as you type (theme toggle findable); first-run guidance (open diary on first visit with Atlas's note); private-notebook explanation on foreign links; delete with in-app confirm + undo toast; child-excerpt overflow; one "Last edited by"; "You" not "Visitor 2152"; unknown URL 404.
