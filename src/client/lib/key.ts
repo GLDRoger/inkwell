@@ -54,10 +54,12 @@ export function saveKey(raw: string, model: TextModelId = state.model) {
   publish();
 }
 
+/** Forget the key and the model choice: the next visitor on this browser starts from the default. */
 export function forgetKey() {
-  state = { ...state, key: null };
+  state = { key: null, model: DEFAULT_MODEL };
   try {
     localStorage.removeItem(KEY_STORAGE);
+    localStorage.removeItem(MODEL_STORAGE);
   } catch {
     /* nothing stored */
   }
