@@ -117,11 +117,9 @@
 .ink-body th, .ink-body td { border-bottom: 1px solid var(--rule); padding: 5px 8px; text-align: left; }
 .ink-body input[type="checkbox"] { margin-right: 6px; }
 
-/* The settle: a short crossfade from the hand into plain text (view transitions, where supported). */
-::view-transition-group(*.ink-settle) { animation-duration: 420ms; animation-timing-function: var(--ease-ink); }
-::view-transition-old(*.ink-settle) { animation: 260ms var(--ease-in-out) both settle-out; }
-::view-transition-new(*.ink-settle) { animation: 420ms var(--ease-ink) both settle-in; }
-@keyframes settle-out { to { opacity: 0; filter: blur(2px); } }
+/* The settle: the hand fades out completely (180ms, HAND_OUT_MS in InkWriter), then the plain text fades in. No overlap, no double exposure. */
+.ink[data-fade="out"] > * { opacity: 0; transition: opacity 180ms var(--ease-in-out); }
+.ink[data-fade="in"] > .ink-body { animation: settle-in 260ms var(--ease-ink) both; }
 @keyframes settle-in { from { opacity: 0; } }
 
 /* Signature and provenance under a reply */

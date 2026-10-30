@@ -86,7 +86,7 @@
 }
 .quill-button:hover { background: color-mix(in oklab, var(--ink) 86%, var(--paper)); }
 .quill-button:active { transform: scale(0.97); }
-.quill-button[aria-pressed="true"] { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow-chrome); }
+.quill-button[aria-expanded="true"] { background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow-chrome); }
 .working-dot {
   position: absolute; top: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%;
   background: var(--working); border: 2px solid var(--paper); animation: breathe 1.6s ease-in-out infinite;

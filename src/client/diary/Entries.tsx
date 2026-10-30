@@ -8,7 +8,7 @@ import { splitFailure } from "./reply";
 import { COPY, modelName } from "./copy";
 import { runRecovery } from "./errors";
 import type { QuoteAuthor } from "./ink";
-import { stopNote, tidyReply, workDone, type NotePart } from "./tidy";
+import { failNote, stopNote, tidyReply, workDone, type NotePart } from "./tidy";
 
 /** What a failed reply's button does: send the same request again, or ask the agent to carry on. */
 export type Recovery = "retry" | "continue";
@@ -131,11 +131,16 @@ function Touched({ ids }: { ids: string[] }) {
   );
 }
 
-/** "Stopped. Wren had already made Packing list.", with each page a link. */
-function StopNote({ run, agents }: { run: Run; agents: Agent[] }) {
+/**
+ * "Stopped. Wren had already made Packing list.", or for a failed run
+ * "Muse Spark stopped partway. Scout had already made Summary.", with each page a link.
+ */
+function WorkNote({ run, agents, reason }: { run: Run; agents: Agent[]; reason?: string }) {
   const { data: graph } = useMap();
   const { data: pages } = usePages();
-  const parts = stopNote(workDone(run, graph?.runs ?? []), (id) => agents.find((a) => a.id === id)?.name ?? "The agent");
+  const work = workDone(run, graph?.runs ?? []);
+  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? "The agent";
+  const parts = reason === undefined ? stopNote(work, nameOf) : failNote(reason, work, nameOf);
   return (
     <>
       {parts.map((p: NotePart, i) => {
@@ -211,13 +216,13 @@ function AgentEntry({
   if (run?.status === "cancelled")
     note = (
       <span className="step-note-text">
-        <StopNote run={run} agents={agents} />
+        <WorkNote run={run} agents={agents} />
       </span>
     );
   else if (split.note)
     note = (
       <>
-        <span className="step-note-text">{split.note}</span>
+        <span className="step-note-text">{run ? <WorkNote run={run} agents={agents} reason={split.note} /> : split.note}</span>
         {how && recoverable && onRecover && (
           <button type="button" className="link-button recover" onClick={() => onRecover(entry, run!, how)}>
             <RotateCcw size={12} aria-hidden /> {how === "retry" ? COPY.tryAgain : COPY.carryOn}

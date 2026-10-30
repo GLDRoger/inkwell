@@ -14,7 +14,7 @@ import { Entries, InkDrops, isActiveRun, type Recovery } from "./Entries";
 import { Picker } from "./Picker";
 import { COPY, STARTERS_NOTEBOOK, STARTERS_PAGE } from "./copy";
 import { cancelErrorCopy, sendErrorCopy } from "./errors";
-import { hasIntroduced, isWelcomeThread, markIntroduced, shouldIntroduce } from "./intro";
+import { hasIntroduced, isWelcomeThread, markIntroduced, openDuringNudge, sendThreadId, shouldIntroduce, showNudge } from "./intro";
 
 const NEW = "__new__";
 
@@ -170,6 +170,7 @@ export function DiaryPanel() {
   const { data: pages } = usePages();
   const pageMatch = useMatch("/p/:id");
   const pageId = pageMatch?.params.id ?? null;
+  const onMap = !!useMatch("/");
   const contextPage = pageId && contextDismissed !== pageId ? pages?.find((p) => p.id === pageId) : undefined;
   const threadList = threads.data ?? [];
   const currentThread = threadList.find((t) => t.id === state.threadId);
@@ -179,14 +180,15 @@ export function DiaryPanel() {
   useEffect(() => {
     if (chosen.current || !threads.data) return;
     chosen.current = true;
-    if (pageId && intro.phase === "idle") return;
+    if (pageId && intro.phase !== "reveal") return;
     const first = intro.phase !== "idle" ? threads.data.find((t) => isWelcomeThread(t.title)) ?? threads.data[0] : threads.data[0];
     if (first) dispatch({ type: "selectThread", threadId: first.id });
   }, [threads.data, intro.phase]);
 
   // Opened on a page: a new conversation about this page (or the one already started from it), not the last one from elsewhere.
+  // The phone nudge doesn't count: someone who opens the diary on a page wants that page's conversation, not the welcome note.
   useEffect(() => {
-    if (!open || !pageId || busy || intro.phase !== "idle") return;
+    if (!open || !pageId || busy || intro.phase === "reveal") return;
     const there = pageThreads.current.get(pageId) ?? null;
     chosen.current = true;
     if (state.threadId !== there) {
@@ -195,9 +197,12 @@ export function DiaryPanel() {
     }
   }, [open]);
 
-  // Someone opened the diary themselves while the phone nudge was showing.
+  // Someone opened the diary themselves while the phone nudge was showing: the note on the map, the page's conversation on a page.
   useEffect(() => {
-    if (open && intro.phase === "nudge") intro.reveal();
+    if (open && intro.phase === "nudge") {
+      if (openDuringNudge(!!pageId) === "dismiss") intro.dismiss();
+      else intro.reveal();
+    }
   }, [open, intro.phase]);
 
   // In time order: an agent's reply placeholder can reach the cache before the message it answers.
@@ -264,6 +269,11 @@ export function DiaryPanel() {
   const { data: watchedRun } = useRun(watchedRunId);
   const busy = isBusy(state) || isActiveRun(watchedRun);
 
+  // The run ended while we weren't listening (the server restarted, the stream dropped): the refetched run settles the composer.
+  useEffect(() => {
+    if (watchedRun && watchedRun.id === state.runId && !isActiveRun(watchedRun)) dispatch({ type: "runUpdated", run: watchedRun });
+  }, [watchedRun, state.runId]);
+
   // Waiting for the reply to begin: we've sent, and the agent's entry (which gathers its own ink) isn't here yet.
   const lastPerson = [...entries].reverse().find((e) => e.role === "person");
   const answered = lastPerson ? entries.some((e) => e.role === "agent" && e.createdAt >= lastPerson.createdAt) : false;
@@ -291,9 +301,11 @@ export function DiaryPanel() {
     dispatch({ type: "send", text, quiet: !!again });
     setNote(null);
     pinned.current = true;
+    // The first real request under Atlas's welcome note starts its own conversation, named after the request.
+    const threadId = sendThreadId({ threadId: state.threadId, title: currentThread?.title, retry: !!again });
     try {
       const res = await api.writeDiary({
-        threadId: state.threadId ?? undefined,
+        threadId,
         text,
         agentId: again?.agentId ?? state.agentId ?? undefined,
         attachmentIds: attachments.length ? attachments.map((a) => a.id) : undefined,
@@ -304,6 +316,10 @@ export function DiaryPanel() {
         old?.some((e) => e.id === res.entry.id) ? old : [...(old ?? []), res.entry],
       );
       if (!client.getQueryData<DiaryThread[]>(keys.threads)?.some((t) => t.id === res.threadId)) {
+        // A new conversation is named after its first request (as the server does), so the title doesn't flash "Untitled".
+        client.setQueryData<DiaryThread[]>(keys.threads, (old) =>
+          old?.some((t) => t.id === res.threadId) ? old : [{ id: res.threadId, title: text.slice(0, 80), updatedAt: res.entry.createdAt }, ...(old ?? [])],
+        );
         void client.invalidateQueries({ queryKey: keys.threads, exact: true });
       }
       dispatch({ type: "sent", threadId: res.threadId, runId: res.runId, entryId: res.entry.id });
@@ -356,10 +372,10 @@ export function DiaryPanel() {
 
   return (
     <>
-      {intro.phase === "nudge" && !open && (
+      {showNudge({ phase: intro.phase, open, onMap }) && (
         <IntroNudge agent={nudgeAgent} onOpen={intro.reveal} onDismiss={intro.dismiss} />
       )}
-      <aside ref={panel} className="diary" aria-label="Diary" data-open={open} inert={!open} aria-hidden={!open}>
+      <aside ref={panel} id="diary" className="diary" aria-label="Diary" data-open={open} inert={!open} aria-hidden={!open}>
         <header className="diary-head">
           <Picker
             label={COPY.conversations}

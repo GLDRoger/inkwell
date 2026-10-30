@@ -1,5 +1,4 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import { prefersReducedMotion } from "../lib/ui";
 import { handCut, handSegments, maskIncomplete, renderMarkdown, revealRate, sliceSegments, type HandSegment, type QuoteAuthor } from "./ink";
 
@@ -22,6 +21,8 @@ interface Props {
 /** Replies already written out once this visit: switching conversations doesn't write them again. */
 const written = new Set<string>();
 const SETTLE_AFTER_MS = 650;
+/** The hand fades out completely before the serif fades in, so the two never overlap (keep in step with diary.css). */
+const HAND_OUT_MS = 180;
 
 /** Reveal `text` at a handwriting pace. Returns how many characters are visible. */
 function useReveal(text: string, live: boolean): number {
@@ -90,8 +91,6 @@ const snapToWord = (s: string, end: number) => {
   return space > 0 ? space : end;
 };
 
-type DocWithTransitions = Document & { startViewTransition?: (cb: () => void) => unknown };
-
 /**
  * An agent's reply. While it arrives it writes itself out in the agent's hand;
  * a moment after the last word it settles into plain, readable text. Replies
@@ -100,6 +99,8 @@ type DocWithTransitions = Document & { startViewTransition?: (cb: () => void) =>
 export function InkWriter({ id, text, color, live, streaming, quoteBy, onClick, onSettled }: Props) {
   const writes = live && !written.has(id) && !prefersReducedMotion();
   const [settled, setSettled] = useState(!writes);
+  /** "out": the hand is fading away; "in": the settled text is fading in. */
+  const [fade, setFade] = useState<"out" | "in" | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const shown = useReveal(text, writes && !settled);
   const done = shown >= text.length && !streaming;
@@ -108,23 +109,21 @@ export function InkWriter({ id, text, color, live, streaming, quoteBy, onClick, 
 
   useEffect(() => {
     if (settled || !done) return;
+    let swap: ReturnType<typeof setTimeout> | undefined;
     const t = setTimeout(() => {
       written.add(id);
-      const settle = () => setSettled(true);
-      const doc = document as DocWithTransitions;
-      const el = root.current;
-      if (doc.startViewTransition && el && !prefersReducedMotion()) {
-        el.style.setProperty("view-transition-name", `ink-${id.replace(/[^\w-]/g, "")}`);
-        el.style.setProperty("view-transition-class", "ink-settle");
-        const vt = doc.startViewTransition(() => flushSync(settle)) as { finished?: Promise<void> };
-        void vt.finished?.finally(() => {
-          el.style.removeProperty("view-transition-name");
-          el.style.removeProperty("view-transition-class");
-        });
-      } else settle();
       settledCb.current?.();
+      if (prefersReducedMotion()) return setSettled(true);
+      setFade("out");
+      swap = setTimeout(() => {
+        setSettled(true);
+        setFade("in");
+      }, HAND_OUT_MS);
     }, SETTLE_AFTER_MS);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(swap);
+    };
   }, [done, settled, id]);
 
   // A live reply that was already written once (you switched away and back): it's settled already.
@@ -156,11 +155,12 @@ export function InkWriter({ id, text, color, live, streaming, quoteBy, onClick, 
       style={{ ["--agent" as string]: color }}
       aria-busy={writing}
       data-settled={settled}
+      data-fade={fade ?? undefined}
       data-writing={writing && shown > cut}
       onClick={onClick}
     >
       {settled ? (
-        <div className="ink-body" dangerouslySetInnerHTML={{ __html: settledHtml }} />
+        <div className="ink-body" dangerouslySetInnerHTML={{ __html: settledHtml }} onAnimationEnd={() => setFade(null)} />
       ) : (
         <>
           {handText.trim() && (

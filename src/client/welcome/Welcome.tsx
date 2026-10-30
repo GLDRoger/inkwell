@@ -59,6 +59,7 @@ export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }
   const [phase, setPhase] = useState<Phase>(reduced ? "intro" : "mark");
   const rootRef = useRef<HTMLDivElement>(null);
   const leaving = useRef(false);
+  const ctaRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (phase !== "mark") return;
@@ -88,6 +89,11 @@ export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" || (e.key === "Enter" && e.target === rootRef.current)) enter();
+      // A modal: Tab stays on its one button (the notebook underneath is inert, but focus could still leave for the page body).
+      else if (e.key === "Tab" && !leaving.current) {
+        e.preventDefault();
+        if (phase !== "mark") ctaRef.current?.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -158,7 +164,7 @@ export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }
           A notebook that writes&nbsp;back.
         </h1>
         <p className="welcome-line">Write a request. Watch it get done across your pages.</p>
-        <button type="button" className="welcome-cta" onClick={enter} tabIndex={phase === "mark" ? -1 : 0}>
+        <button ref={ctaRef} type="button" className="welcome-cta" onClick={enter} tabIndex={phase === "mark" ? -1 : 0}>
           Open your notebook
           <ArrowRight size={16} aria-hidden />
         </button>

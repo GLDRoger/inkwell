@@ -91,14 +91,17 @@ export function TopBar() {
         <button
           type="button"
           className="quill-button"
-          aria-pressed={diaryOpen}
-          aria-label={diaryOpen ? "Close the diary" : "Open the diary"}
+          // Always named "Diary" (the label hides on phones); the panel's own X is "Close the diary", and aria-expanded says whether it's open.
+          aria-label={working ? "Diary, an agent is working" : "Diary"}
+          aria-expanded={diaryOpen}
+          aria-controls="diary"
+          aria-keyshortcuts="Meta+J Control+J"
           title={`The diary (${mod}J)`}
           onClick={() => setUi((s) => ({ diaryOpen: !s.diaryOpen }))}
         >
           <NotebookPen size={16} aria-hidden />
           <span className="quill-label">Diary</span>
-          {working && <span className="working-dot" aria-label="An agent is working" />}
+          {working && <span className="working-dot" aria-hidden />}
         </button>
       </div>
     </header>

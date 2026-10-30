@@ -18,12 +18,12 @@ export const COPY = {
   transcribedBy: "Transcribed by Muse Voice",
   send: "Send",
   stop: "Stop",
-  saved: "Your words are saved.",
+  saved: "Your request is saved.",
   tryAgain: "Try again",
   carryOn: "Continue",
   /** Sent when someone taps Continue under a reply that ran out of time or steps. */
   continueRequest: "Please continue from where you stopped.",
-  notConnected: "The agents aren't connected yet, so they can't write back. Your words are saved.",
+  notConnected: "The agents aren't connected yet, so they can't write back. Your request is saved.",
 } as const;
 
 /** "Ask Scout, Wren or Atlas…", or "Ask Wren…" once someone is picked. */

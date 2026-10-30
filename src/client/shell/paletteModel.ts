@@ -11,7 +11,8 @@ import { pageTitle } from "../lib/queries";
  * - "Ask an agent: …" and "New page …" are always offered explicitly for
  *   typed text. They're only the Enter default when nothing else matches.
  * - Pages that only mention the words (full-text search) come last, so the
- *   highlighted row doesn't jump when those results arrive.
+ *   highlighted row doesn't jump when those results arrive. They're
+ *   "Mentioned in" when they have every word you typed, else "Related".
  */
 
 export type ActionId = "diary" | "new" | "map" | "photo" | "cover" | "theme" | "about" | "welcome";
@@ -23,7 +24,7 @@ export interface ActionDef {
   keywords: string[];
 }
 
-export type Section = "Pages" | "Actions" | "Ask or create" | "Mentioned in";
+export type Section = "Pages" | "Actions" | "Ask or create" | "Mentioned in" | "Related";
 
 export type Entry =
   | { kind: "page"; section: Section; page: Page; detail?: string }
@@ -113,6 +114,14 @@ export function plainSnippet(md: string): string {
     .trim();
 }
 
+/** Does the page's title or snippet contain every word typed (each as the start of a word)? */
+export function mentionsAll(hit: { page: Page; snippet: string }, q: string): boolean {
+  const typed = words(q);
+  if (!typed.length) return false;
+  const have = words(`${pageTitle(hit.page)} ${plainSnippet(hit.snippet)}`);
+  return typed.every((t) => have.some((w) => w.startsWith(t)));
+}
+
 export interface PaletteInput {
   q: string;
   pages: Page[];
@@ -147,12 +156,15 @@ export function paletteEntries({ q, pages, hits = [], actions }: PaletteInput): 
   const create: Entry[] = [{ kind: "ask", section: "Ask or create", text }];
   if (!pages.some((p) => pageTitle(p).toLowerCase() === text.toLowerCase())) create.push({ kind: "new-titled", section: "Ask or create", text });
 
+  // The server returns pages with every word when there are any, else pages with some of them.
+  // One word is always a real mention; for more, a hit showing them all means the rest have them too.
+  const section: Section = words(text).length <= 1 || hits.some((h) => mentionsAll(h, text)) ? "Mentioned in" : "Related";
   const shown = new Set(titled.map((p) => p.id));
   const mentioned: Entry[] = [];
   for (const hit of hits) {
     if (shown.has(hit.page.id) || mentioned.length >= 5) continue;
     shown.add(hit.page.id);
-    mentioned.push({ kind: "page", section: "Mentioned in", page: hit.page, detail: plainSnippet(hit.snippet) });
+    mentioned.push({ kind: "page", section, page: hit.page, detail: plainSnippet(hit.snippet) });
   }
 
   return [...(actionsFirst ? [...actionEntries, ...pageEntries] : [...pageEntries, ...actionEntries]), ...create, ...mentioned];

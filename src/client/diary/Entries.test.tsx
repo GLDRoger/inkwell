@@ -68,6 +68,14 @@ describe("a failed reply", () => {
     expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
   });
 
+  it("says which pages it had already made before it failed, and still offers Try again", () => {
+    const failed = run("failed", { error: MODEL_FAILED, steps: [step("search_pages", "Searched for launch"), step("create_page", "Created Summary: Startup: launch plan", "p1")] });
+    show(reply(`Drafting the summary now\n\n${MODEL_FAILED}`), failed, { pages: [{ id: "p1", title: "Summary: Startup: launch plan", icon: null } as Partial<Page>] });
+    expect(document.querySelector(".step-note-text")?.textContent).toBe("Muse Spark stopped partway. Scout had already made Summary: Startup: launch plan.");
+    expect(screen.getByRole("link", { name: "Summary: Startup: launch plan" }).getAttribute("href")).toBe("/p/p1");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
   it("only offers Try again on the latest reply", () => {
     show(reply(MODEL_FAILED), run("failed", { error: MODEL_FAILED }), { recoverable: false });
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();

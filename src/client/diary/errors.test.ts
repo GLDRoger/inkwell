@@ -43,7 +43,7 @@ describe("sendErrorCopy", () => {
 describe("runErrorCopy", () => {
   it("explains a missing key in the diary's voice", () => {
     expect(runErrorCopy("The Meta API key isn't configured. Set META_API_KEY to let the agents work.")).toBe(
-      "The agents aren't connected yet, so they can't write back. Your words are saved.",
+      "The agents aren't connected yet, so they can't write back. Your request is saved.",
     );
   });
   it("names the model when the provider fails", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Run, RunStep } from "@shared/types";
-import { isFiller, noteText, splitFiller, stopNote, stripQuotedFiller, tidyReply, workDone } from "./tidy";
+import { failNote, isFiller, noteText, splitFiller, stopNote, stripQuotedFiller, tidyReply, workDone } from "./tidy";
 
 const step = (tool: string, summary: string, pageId: string | null = null, ok = true): RunStep => ({ at: "", tool, summary, pageId, ok });
 const run = (status: Run["status"], steps: RunStep[] = [], extra: Partial<Run> = {}): Run => ({
@@ -101,5 +101,22 @@ describe("nested reports", () => {
     expect(stripQuotedFiller("> I found X and handed it to Scout. Their report:\n>\n> > Searching the notebook.\n> >\n> > From X: five days.")).toBe(
       "> I found X and handed it to Scout. Their report:\n>\n> > From X: five days.",
     );
+  });
+});
+
+describe("failNote", () => {
+  const nameOf = (id: string) => (id === "scout" ? "Scout" : "Wren");
+  it("says what a failed run had already made, like a stop does", () => {
+    const work = workDone(run("failed", [step("create_page", "Created Summary: Startup: launch plan", "p1")]));
+    expect(noteText(failNote("Muse Spark couldn't finish this one.", work, nameOf))).toBe(
+      "Muse Spark stopped partway. Scout had already made Summary: Startup: launch plan.",
+    );
+    expect(failNote("Inkwell restarted while this was being written.", work, nameOf)).toContainEqual({ pageId: "p1", title: "Summary: Startup: launch plan" });
+    expect(noteText(failNote("Inkwell restarted while this was being written.", work, nameOf))).toBe(
+      "Inkwell restarted while this was being written. Scout had already made Summary: Startup: launch plan.",
+    );
+  });
+  it("gives just the reason when nothing changed", () => {
+    expect(noteText(failNote("Muse Spark couldn't finish this one.", workDone(run("failed", searched)), nameOf))).toBe("Muse Spark couldn't finish this one.");
   });
 });

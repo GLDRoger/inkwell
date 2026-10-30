@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Page } from "@shared/types";
-import { actionDefs, actionScore, entryKey, paletteEntries, plainSnippet, rankPages } from "./paletteModel";
+import { actionDefs, actionScore, entryKey, mentionsAll, paletteEntries, plainSnippet, rankPages } from "./paletteModel";
 
 const p = (id: string, title: string, updatedAt = "2026-10-29T10:00:00Z"): Page => ({
   id, title, parentId: null, icon: null, position: "a", excerpt: "", x: null, y: null, coverUrl: null,
@@ -76,6 +76,15 @@ describe("palette entries", () => {
   it("shows full-text hits last, so the highlighted row doesn't jump when they arrive", () => {
     const keys = keysFor("custard", [{ page: pages[0], snippet: "pastel de nata, custard tarts" }]);
     expect(keys).toEqual(["ask", "new-titled", "page-1"]);
+  });
+
+  it("calls hits 'Related' unless they have every word typed", () => {
+    const sectionOf = (q: string, hits: { page: Page; snippet: string }[]) =>
+      paletteEntries({ q, pages, actions, hits }).filter((e) => e.kind === "page" && e.page.id === hits[0].page.id).map((e) => e.section);
+    expect(sectionOf("Audit test page", [{ page: pages[0], snippet: "This page is the hub; the details live in the child pages." }])).toEqual(["Related"]);
+    expect(sectionOf("custard tarts", [{ page: pages[0], snippet: "pastel de nata, custard tarts" }])).toEqual(["Mentioned in"]);
+    expect(sectionOf("custard", [{ page: pages[0], snippet: "a list of desserts" }])).toEqual(["Mentioned in"]);
+    expect(mentionsAll({ page: pages[0], snippet: "Pastéis, custard tartlets" }, "custard tart")).toBe(true);
   });
 
   it("doesn't offer to make a page whose title already exists", () => {

@@ -136,7 +136,23 @@ const listOf = (refs: PageRef[]): NotePart[] => {
 /** "Stopped. Wren had already made Packing list." */
 export function stopNote(work: Work[], nameOf: (agentId: string) => string): NotePart[] {
   if (!work.length) return ["Stopped before any pages changed."];
-  const parts: NotePart[] = ["Stopped."];
+  return workNote("Stopped.", work, nameOf);
+}
+
+/**
+ * A failed run's note: why it ended, then what it had already done, so a
+ * Try again doesn't look like it starts from nothing. "Muse Spark stopped
+ * partway. Scout had already made Summary." Without any changes, just the reason.
+ */
+export function failNote(reason: string, work: Work[], nameOf: (agentId: string) => string): NotePart[] {
+  if (!work.length) return [reason];
+  // "couldn't finish this one" reads oddly beside pages it did make.
+  const lead = /^Muse Spark couldn't finish this one\.$/.test(reason) ? "Muse Spark stopped partway." : reason;
+  return workNote(lead, work, nameOf);
+}
+
+function workNote(lead: string, work: Work[], nameOf: (agentId: string) => string): NotePart[] {
+  const parts: NotePart[] = [lead];
   for (const w of work) {
     const clauses: NotePart[][] = [];
     if (w.made.length) clauses.push(["made ", ...listOf(w.made)]);
