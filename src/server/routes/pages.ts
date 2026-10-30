@@ -60,8 +60,8 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
   app.get("/api/me", (c) => {
     const { workspaceId, person } = c.get("ctx");
     // Lets the client say "not connected yet" before someone picks a photo or records.
-    const modelsConnected = Boolean(process.env.META_API_KEY?.trim());
-    return c.json({ workspaceId, person, modelsConnected });
+    const metaConnected = Boolean(process.env.META_API_KEY?.trim());
+    return c.json({ workspaceId, person, metaConnected });
   });
 
   app.get("/api/pages", (c) => {

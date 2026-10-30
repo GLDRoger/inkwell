@@ -72,8 +72,8 @@ export interface DiaryPostBody {
 }
 
 export const api = {
-  /** `modelsConnected` is false when the server has no Meta API key (AI actions will refuse). */
-  me: () => request<{ workspaceId: Id; person: Actor; modelsConnected?: boolean }>("/me"),
+  /** `metaConnected` is false when the server has no Meta API key (AI actions will refuse). */
+  me: () => request<{ workspaceId: Id; person: Actor; metaConnected?: boolean }>("/me"),
   map: () => request<MapGraph>("/map"),
   pages: () => request<Page[]>("/pages"),
   page: (id: Id) => request<PageWithBody>(`/pages/${encodeURIComponent(id)}`),

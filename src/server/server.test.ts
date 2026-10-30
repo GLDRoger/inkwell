@@ -89,11 +89,11 @@ describe("session + seed", () => {
     const me = (await (await client.request("/api/me")).json()) as {
       workspaceId: string;
       person: { name: string };
-      modelsConnected: boolean;
+      metaConnected: boolean;
     };
     expect(me.workspaceId).toBeTruthy();
     expect(me.person.name).toMatch(/^Visitor /);
-    expect(me.modelsConnected).toBe(Boolean(process.env.META_API_KEY?.trim()));
+    expect(me.metaConnected).toBe(Boolean(process.env.META_API_KEY?.trim()));
 
     const map = (await (await client.request("/api/map")).json()) as MapGraph;
     expect(map.pages.length).toBeGreaterThanOrEqual(14);

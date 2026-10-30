@@ -141,7 +141,7 @@ export function pickPhoto(onFile: (file: File) => void) {
 
 // ---------------------------------------------------------------- are Meta's models connected?
 
-/** What the server says about its Meta models: a `metaConnected` flag on GET /api/me, once the server sends one. */
+/** What the server says about its Meta models: the `metaConnected` flag on GET /api/me. */
 export type MeWithModels = { metaConnected?: boolean } | null | undefined;
 
 /** A media request came back "not connected" (503) during this visit. */
