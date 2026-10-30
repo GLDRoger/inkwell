@@ -1,90 +1,89 @@
 # Inkwell: submission draft
 
-Draft for a typical Cerebral Valley form, not a verified copy of the live form. Paste only after resolving the relevant TODOs below.
+Draft answers for the submission form. The form's exact fields haven't been checked; paste only after the TODOs at the bottom are resolved.
 
 ## Project name
 
 Inkwell
 
-## Tagline
+## Tagline (≤ 70 characters)
 
-A notebook that writes back, with a living map of your agents at work.
+A notebook that writes back, with a map of your agents at work.
 
 ## Short description (~150 words)
 
-Inkwell is a notebook that writes back. It combines Notion-style pages with ChatGPT-style agents that can act on those pages. The diary takes its cue from Tom Riddle's diary: a request sinks into the paper, and a reply writes itself in ink. The home screen borrows from the Marauder's Map. Pages become places; agents leave named footprints as they read and edit.
+Inkwell is a notebook that writes back. You write a request in its diary, the reply writes itself in the agent's hand, and the agent does the work in your pages: drafting, editing, linking, filing. While it works, its footprints walk across a map of your notebook, so you can see which page it is reading and which it is changing. Open that page and the new words arrive in front of you as wet ink that dries.
 
-Muse Spark powers notebook tools and handoffs between agents. Changes reach the same live document the person is editing. Muse Voice Transcribe turns speech into a draft to review before sending. Server endpoints combine SAM 3.1 and Spark vision to turn photographed notes into cards, and use Muse Image to paint page covers. Their client controls are wired in source; browser and live-model verification remain outstanding.
+Three agents run on Muse Spark: Scout researches, Wren writes, Atlas organises, and they can hand work to each other. Muse Voice turns speech into a request you check before sending. SAM 3.1 and Muse Spark turn a photo of sticky notes into pages on the map. Muse Image makes page covers.
 
-The intended users are students, researchers and small teams working across scattered notes. Inkwell keeps the work in the notebook and makes the agent's path visible.
+It is for anyone whose plans live in scattered notes: a trip, a launch, a reading list. The work stays in the notebook, and you can watch it happen.
 
 ## Full description (~500 words)
 
-Inkwell starts with a familiar problem: a notebook holds useful material, but turning that material into a plan often means moving it into a separate chat and copying the answer back. We wanted the assistant to work where the notes already live, while showing enough of its activity for the person to follow along.
+Most AI help with notes happens somewhere else. You copy material into a chat, get an answer, and paste it back. Inkwell puts the assistant inside the notebook and shows you what it is doing there.
 
-The result is a notebook that writes back. Its diary is inspired by Tom Riddle's diary: you write a request, the ink sinks into the paper, and an answer appears in the agent's handwriting. The pages are editable documents with headings, lists and links. The agent can change them, not just discuss them. A person can keep the editor open while an agent's changes arrive.
+The diary is the way in. It borrows one idea from Tom Riddle's diary: you write, your ink sinks into the page, and a reply writes itself back. You can ask a particular agent, or leave it on Any agent and Inkwell picks one from what you asked for. Scout researches, Wren writes and Atlas organises. They don't just answer. They search, read, create, edit, rename, move and link pages, and they can ask each other for help. A handoff is a real child run with its own footprints, drawing on the same budget, and its report comes back quoted inside the first agent's reply.
 
-The home screen is a living map inspired by the Marauder's Map. Every page has a place. Zoom out to see the notebook's structure, zoom in to read an excerpt, and open the full page when needed. Named footprints move between pages in response to agent activity. The diary also lists tool steps with links, so a walk across the map has a corresponding record of operations.
+The home screen borrows one idea from the Marauder's Map: you can see where everyone is. Every page is a card in a group, and each agent walks between them as it reads, writes and thinks. A greeting says what the agents did since you were last there. New pages arrive with an icon. Double-click a card and you are in the page, a live document where the agent's words appear in its colour, with its name on the caret, and dry to ordinary ink.
 
-Muse Spark powers three seeded agents: Scout researches, Wren writes, and Atlas organises. They use tools to search and read pages, create linked material, make targeted edits, rename or move pages, and request help from another agent. A handoff creates a child run linked to its parent. Runs have time, step and tool limits, and cancellation propagates to active child work. Stopping a run does not roll back completed edits.
+People type while agents write, so agents have to prove they have seen the latest text. Every read returns a version, and an edit with an old version is refused, so an agent never writes over what you just typed. Runs have step, token and time limits, can be stopped, survive a server restart as an honest "interrupted" note with Try again, and say plainly when they ran out of room, with a Continue button.
 
-Meta's other models extend the input and output paths. Muse Voice Transcribe turns a microphone recording into text that the person can review before sending. A server-side photo workflow asks SAM 3.1 for note regions, then gives the original image and those boxes to Spark vision for transcription. It creates a parent page and positioned note cards in one transaction. If segmentation is unavailable, vision can supply its own regions. Muse Image generates a parchment-style cover from a page title and excerpt. The diary exposes photo import and the page toolbar exposes cover generation. These controls still need a live-model browser rehearsal.
+Meta's models cover the other ways in. Muse Voice transcribes a spoken request into the composer so you can check it before it goes. Photo to cards sends a picture of sticky notes to SAM 3.1, which finds each note; Muse Spark reads the notes using those regions, and each becomes a page placed about where it was in the photo. Muse Image makes covers that show on the page and its map card. Each feature names its model in the interface: "Written with Muse Spark", "Transcribed by Muse Voice", "Read by SAM 3.1 + Muse Spark".
 
-Underneath, Inkwell is one TypeScript application with a React client, a Hono server and SQLite storage. Tiptap, Yjs and Hocuspocus keep live documents connected. Server-sent events carry diary text, page updates and movement. Agents edit the live document through server-side tools rather than maintaining a separate copy that must later be pasted into the editor.
+Inkwell is one TypeScript app: React and Tiptap on the client, Hono, SQLite, Yjs and Hocuspocus on the server, and the Vercel AI SDK against the Meta Model API. Agents edit the same Yjs documents the editor uses, so there is no separate copy to merge.
 
-“Build for Your World” means helping people work with the material they already have: study notes, research pages, project plans and photographed workshop notes. Students, researchers and small teams are our intended audience, not a claim of existing adoption. The repository includes a twelve-case agent corpus that checks persisted outcomes and streaming behaviour. Real-model quality, latency and usefulness still need recorded evaluation. Our next step is to verify those paths, check the media controls and test whether visible agent activity helps people spot and correct mistakes.
+"Build for Your World" here means the material people already have: a trip in five open tabs, a launch plan, a reading list, a desk full of sticky notes. Inkwell is built for students, small teams and anyone planning something, though we haven't tested it with them yet. Next we want to run it against the real models at scale, measure where agents go wrong, and add a way to review and undo an agent's edits.
 
 ## How Meta models are used
 
-- **Muse Spark (`muse-spark-1.3`):** streamed diary responses and notebook tool calls. The runtime uses the Vercel AI SDK with an OpenAI-compatible provider adapter. It also uses Spark's image input to transcribe photographed notes.
-- **Muse Voice Transcribe (`muse-voice-transcribe-1.0`):** browser recording is converted to WAV and sent through the server to `/asr/transcribe`. The transcript fills the composer; the person decides when to send it.
-- **SAM 3.1 (`sam-3.1`):** `/responses` returns candidate note regions. The importer parses bounding boxes and supplies them to Spark. It does not crop images or use segmentation masks. Vision-only fallback is supported.
-- **Muse Image (`muse-image-1.0`):** `/images/generations` returns a PNG illustration. The server stores it as a workspace attachment and updates the page cover.
-
-The [README model table](../README.md#meta-models-in-the-code) links to each implementation. **TODO:** verify these configured model paths with the actual credentials and capture live outputs. Mocked tests are not provider certification or a quality result.
+- **Muse Spark (`muse-spark-1.3`):** the three agents. Streamed replies and eleven notebook tools through the OpenAI-compatible chat API, with `tool_choice: "auto"` and `max_completion_tokens` as the API requires. Also reads images attached to a diary request, and reads the text of photographed notes. Code: [`src/server/agents/`](../src/server/agents/).
+- **Muse Voice Transcribe (`muse-voice-transcribe-1.0`):** the browser records 16 kHz WAV; the server checks the format and calls `/asr/transcribe`. The text fills the composer for review. Code: [`recorder.ts`](../src/client/diary/recorder.ts), [`transcribe.ts`](../src/server/media/transcribe.ts).
+- **SAM 3.1 (`sam-3.1`):** called through `/responses` with the photo and the prompt "each sticky note or distinct block of handwriting". Its boxes go to Muse Spark with the image and set where each card lands. Masks aren't used. Code: [`photo.ts`](../src/server/media/photo.ts), [`boxes.ts`](../src/server/media/boxes.ts).
+- **Muse Image (`muse-image-1.0`):** `/images/generations` makes a cover from a page's title and excerpt, stored as an attachment. It also made the welcome screen's photographs ([`scripts/paint-objects.mjs`](../scripts/paint-objects.mjs)). Code: [`illustrate.ts`](../src/server/media/illustrate.ts).
 
 ## Technical depth
 
-- **One document for human and agent edits.** Server tools write through Yjs into the document connected to the Tiptap editor. Per-page locks serialize competing agent writes.
-- **Visible execution.** Page operations publish movement events and persisted run steps. SSE carries those events and streamed diary deltas; the map renders footprints from them.
-- **Bounded handoffs.** `ask_agent` waits for a child result, records parentage and shares family budgets. Parent cancellation reaches active descendants.
-- **Targeted edits.** The exact-match editing tool rejects missing or ambiguous matches. Long reads return continuation offsets rather than silently truncating the page.
-- **Transactional photo import.** The parent and note cards commit together. Page events are buffered until commit, so a failed import does not publish phantom cards.
-- **Outcome-based evaluation.** The corpus reads persisted pages and diary entries, follows child runs, and compares streamed deltas with final text. Its fake-server tests validate the harness, not model ability.
+- **Agents and people in one live document.** Agent tools write through Yjs into the document the Tiptap editor is connected to. Remote text is drawn as wet ink anchored to Yjs relative positions, so it survives paragraph rewrites while it dries.
+- **Version-checked edits.** `read_page` returns a hash of the page's markdown; `edit_page` and `rewrite_page` refuse a stale version. `edit_page` needs one exact match and rejects ambiguous ones. Blocks that can't round-trip through markdown (complex table cells) are refused rather than flattened.
+- **Visible execution.** Each tool call publishes an `agent.moved` event (reading, writing, thinking, leaving) and a run step. Server-sent events carry them with the diary's streamed text; the map turns them into footprints.
+- **Bounded handoffs.** `ask_agent` starts a child run and waits for it. Parent and children share one tool-call budget; a child gets a share of its parent's tokens and time and returns what it didn't use. Handoffs stop three levels deep, and stopping a parent stops its children.
+- **Recovery.** On boot, any run still marked running is closed as "Interrupted by a server restart". Shutdown flushes live documents to SQLite.
+- **Transactional photo import.** The parent page and every note card commit together, and page events wait for the commit, so a failed import leaves nothing behind.
+- **Testing without a key.** 387 unit and integration tests with mocked models; a local stand-in for the Meta API (`npm run rehearse`) that makes real tool calls so every flow runs in a browser; and a twelve-case corpus that checks what was saved through the public API.
 
 ## Challenges
 
-- **Keeping model output and notebook state aligned:** diary text, live documents, persisted pages and map events are different channels. The implementation gives them shared page and run IDs and tests the resulting state rather than trusting a final “done” message.
-- **Handling concurrent work:** parallel tool calls are serialized within a run; page-level agent locks and run-specific carets avoid mixing independent agent operations. This is not a claim that conflicting human and agent edits always preserve intent.
-- **Adapting model protocols:** agent requests need a provider adapter, transcription uses WAV and multipart settings, and SAM output requires box parsing. The code tests these shapes with fixtures. Live compatibility remains a TODO.
-- **Showing failure honestly:** failed, cancelled and limited runs have explicit states. Photo import can fall back to vision, so a successful import alone cannot establish that SAM worked.
+- **Agents and people writing at once.** An agent works from what it last read, and a person may have typed since. Every read now returns a version and every stale write is refused, with per-page locks between agents.
+- **Making streamed ink match the saved page.** Diary text, page edits, map events and the database travel on different channels. We gave them shared run and page IDs and test the saved state rather than the agent's "done".
+- **Fitting the Meta API's shape.** Tool choice must be `auto`, the token limit field differs, transcription wants multipart WAV, and SAM returns boxes as tokens in streamed text. Each has an adapter and tests against fixtures of those shapes; none has run against the live API yet.
+- **Keeping the look quiet.** The first version looked like parchment. We kept the Harry Potter ideas in what the app does and moved the look to a plain modern notebook ([`DESIGN.md`](DESIGN.md)).
 
 ## What's next
 
-1. Verify the full diary-to-edit loop and all media paths with live Meta responses; publish a dated corpus report and review output quality by hand.
-2. Rehearse photo import and cover generation in the browser, including progress, failure and retry states. Check the deployed build matches the verified source.
-3. Test the workflow with students, researchers and small teams. Ask whether footprints and linked steps help them understand and correct changes.
-4. Add a review-and-undo workflow for agent edits, then evaluate an optional local-model mode. Neither is claimed as a completed feature here.
+1. Run every model path and the corpus against the real API, read the output by hand, and fix what breaks.
+2. A review step for agent edits: see the change, accept or undo it.
+3. Photo to cards should say when SAM found nothing and Muse Spark did the work alone.
+4. Put Inkwell in front of students and small teams and see whether watching the agents helps them catch mistakes.
+5. Accounts and sharing, so a notebook isn't tied to one browser.
 
 ## Track
 
-Indie. **TODO:** confirm eligibility and the exact track label in the submission form.
+**TODO:** confirm the track and eligibility in the form.
 
 ## Links
 
-- Live app: https://inkwell.76-13-246-244.sslip.io
-- Public repository: https://github.com/GLDRoger/inkwell
-- Video: **TODO: upload the final 2:30 demo and insert its public URL.**
-- Recording script: [DEMO.md](DEMO.md)
-- Evaluation instructions: [scripts/corpus/README.md](../scripts/corpus/README.md)
+- Live app: https://inkwell.76-13-246-244.sslip.io (custom domain to follow)
+- Repository: https://github.com/GLDRoger/inkwell
+- Video: **TODO**
+- Demo script: [DEMO.md](DEMO.md)
 
 ## Before submitting
 
-- [ ] **TODO: confirm the official form, eligibility, track and deadline.** The supplied brief and project plan say November 4, 2026, 9:00 PM ET; theme “Build for Your World”; weights Impact 30%, Meta tooling 25%, Technical depth 20%, Demo 25%. These have not been checked against an official event page in this documentation pass.
-- [ ] **TODO: verify live credentials and each model path.** Capture an actual tool-using agent run, Wren handoff, voice transcript, SAM-backed photo import and generated PNG. Record any vision-only fallback accurately.
-- [ ] **TODO: run the live-model corpus and review quality.** Retain its report and tested revision. Do not invent a pass rate, latency, token cost, user count or time-saving metric.
-- [ ] **TODO: verify the media controls and deployed revision.** The photo-import and Paint a cover controls were being added concurrently during this documentation pass. The source has call sites; a working browser flow is not yet established here. Use the labelled API fallback if the recording build lacks those controls.
-- [ ] **TODO: record, caption and publish the video.** Check the final duration, readability and public viewing permissions; label shortened waits.
-- [ ] **TODO: rehearse the public build in a fresh browser.** The app root returned HTTP 200 and `/api/health` returned `{"ok":true}` during the documentation pass. That is reachability evidence only, not proof of the editor, streaming, media, model quality or deployed revision.
-- [ ] **TODO: validate impact with intended users.** Intended audience and expected benefit are hypotheses. No adoption or measured productivity result is claimed.
-- [ ] **TODO: add submitter/team details and any required AI-assistance disclosure.** This documentation pass used GPT-6 Astra. Confirm code-author details separately; do not infer them from this draft.
+- [ ] **TODO: live smoke of each model.** Set `META_API_KEY` locally and on the host, run `node --env-file=.env scripts/smoke-meta.mjs` (5/5), then try each flow in the browser: an agent run with tool calls, a Wren handoff, a voice transcript, Photo to cards with SAM boxes confirmed in the log, and a cover.
+- [ ] **TODO: corpus run.** `npm run corpus` against the real API with a throwaway `DATA_DIR`; keep the report and the commit it ran on. Don't quote a pass rate, latency or cost until it exists.
+- [ ] **TODO: redeploy.** The host was last deployed at `36d1631`, before round 2, and has no key set. Deploy the commit being submitted.
+- [ ] **TODO: record the demo** following [DEMO.md](DEMO.md) with real models, caption it, upload it, and add the link above.
+- [ ] **TODO: team details** for the form.
+- [ ] **TODO: AI-assistance disclosure.** Code and docs were written with AI coding agents (Claude Opus, Muse, GPT); confirm the exact wording the form asks for and who reviewed what.
+- [ ] **TODO: confirm the form, track and deadline** against the official event page (our notes: November 4, 2026, 9:00 PM ET; impact 30%, Meta tooling 25%, technical depth 20%, demo 25%).
+- [ ] **Optional before recording:** change the cover prompt in `illustrate.ts` away from "antique parchment map vignette", and make the photo notice honest when SAM returns no boxes.

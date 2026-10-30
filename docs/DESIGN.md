@@ -31,7 +31,7 @@ All tokens live in `src/client/theme.css`. Use the tokens; don't hard-code colou
   | `--agent-wren` | `#3b7a58` sage | `#86c9a2` |
   | `--agent-atlas` | `#6b56a8` violet | `#b3a3ec` |
 
-  Atlas moves from navy to violet so it can't be mistaken for the link accent. Agent colours come from the server (`agents.color`, seeded in `src/server/seed.ts`), so the next server round should change the seed to `#c0602f`, `#3b7a58` and `#6b56a8`. For dark mode, lift a server colour with `color-mix(in oklab, <colour> 55%, #f2f1ed)` rather than a parchment cream.
+  Atlas moves from navy to violet so it can't be mistaken for the link accent. Agent colours come from the server (`agents.color`, seeded in `src/server/seed.ts`), and the seed uses `#c0602f`, `#3b7a58` and `#6b56a8`. For dark mode, lift a server colour with `color-mix(in oklab, <colour> 55%, #f2f1ed)` rather than a parchment cream.
 - **People** (`PERSON_INKS` in `lib/ui.ts`) stay in the same calm range.
 
 ## Type
@@ -46,7 +46,7 @@ All tokens live in `src/client/theme.css`. Use the tokens; don't hard-code colou
 - **Map area names** are huge, faint and italic: Newsreader italic at weight 300–400, `--ink-faint` at around 35–50% opacity, normal letter-spacing, sentence case. No small caps, no letter-spaced capitals, no flourishes.
 - **Body.** Inter 15–16px, line-height 1.55–1.6. Headings inside pages use Newsreader 500.
 - **Handwriting.** Keep it, but only in three places: an agent's signature under a diary reply, the agent's name on its caret while it edits, and the reply while it is being written. Once a reply has finished writing, it can stay in the hand or settle into Newsreader italic. Never use it for buttons, chips, labels or the map's agent roster. Elsewhere, write agent names in Inter 500 in the agent's colour.
-- **Loading.** `index.html` loads Inter, Newsreader and Cedarville Cursive in one Google Fonts request with `display=swap` and preconnects. The map no longer needs its own font request (see Next rounds).
+- **Loading.** `index.html` loads Inter, Newsreader and Cedarville Cursive in one Google Fonts request with `display=swap` and preconnects. The map has no font request of its own.
 
 ## Shape and depth
 
@@ -110,31 +110,17 @@ Dark mode is the same notebook at night: a neutral near-black (`#121211`) with w
 - More than one accent colour, coloured primary buttons, gradients on chrome.
 - Handwriting outside its three places.
 
-## Next rounds (not changed here)
+## Rounds since the tokens
 
-These files belong to other workers. After this round's token changes they look half-converted:
+The map, diary and page rounds have landed (map 36d1631 and 294987f, diary 825636e and ff65184, page 5e6036d and d4dcdef, shell ec9d28f). What changed:
 
-- **Map** (`src/client/map/**`):
-  - Remove the layers that draw parchment: `.paper` radial stains and the inset vignette (`--map-stain` and `--map-glow` are now transparent, and `--map-paper-deep` equals the paper), `.mottle`, the fold creases (the visible vertical and horizontal bands), and the compass rose.
-  - Drop the `map/fonts.ts` request for IM Fell English; `--font-map` now points at Newsreader.
-  - Turn area names into big, faint Newsreader italic in sentence case, with no flourishes and no letter-spacing.
-  - Replace the double-rule region frames and hand-drawn room boxes with nothing: an area is just its name and the cards near it.
-  - Make page cards white `--paper-raised` with `--shadow-card` and `--radius-lg`, an Inter 550 title and an Inter excerpt.
-  - Restyle the minimap as a white pill card; its blocks currently render as dark grey squares, and should be `--rule` with agent dots.
-  - Write agent chips as Inter names in the agent's colour (no handwriting), on white pills.
-  - Footprints can stay: they are the magic. Draw them in the agent colour at 50–70% opacity.
-  - Remove `--fallback-ink: #8a2b1f` (oxblood) and use `--ink-faint`.
-  - Consider a centred greeting on the map ("Good evening." plus one line about what the agents did), in the knowspace pattern.
-- **Diary** (`src/client/diary/**`, `styles/diary.css`):
-  - The diary title is 40px handwriting in `--wax` and rotated; make it a Newsreader 28–32px headline, upright, in `--ink`.
-  - The handwriting placeholder and "sinking ink" effects can stay subtle, but the soaking colour should be `--ink-soft`, not the accent.
-  - The Stop button uses `--wax` as a fill; use `--ink`.
-  - Apply the handwriting rule above.
-- **Page** (`src/client/page/**`, `styles/page.css`):
-  - Set the page title to Newsreader 400, 40–44px, −0.03em; at 600 it is too heavy in Newsreader.
-  - Set prose h1–h3 to weight 500.
-  - Links use the new blue `--wax` with a dotted underline; consider a solid 1px underline at 35% instead.
-  - The cover placeholder gradient uses `--wax`, so it now turns blue; make it neutral.
-  - "Paint a cover" should read "Make a cover" (the palette already says this).
-  - In `illustrate.ts`, the prompt still asks for "antique parchment map vignette" covers; ask for a calm editorial photograph or flat illustration instead (server round).
-- **Server seed**: change the agent colours as listed above.
+- **Map** (`src/client/map/**`): the parchment layers, fold creases, compass rose and IM Fell request are gone. Area names are large, faint Newsreader italic in sentence case. Cards are white with `--shadow-card`, and agent and photo pages carry an icon. Agents sit on white pills with their names in Inter. The map opens with a centred greeting ("Good morning.") and a line about what the agents did since you were last there. A double-click (or double tap) opens a page. "Photo to cards" is a chrome pill.
+- **Diary** (`src/client/diary/**`, `styles/diary.css`): an upright Newsreader title; threads are "conversations". Handwriting is used only for a reply while it writes, the signature and the caret name. Finished replies show quiet provenance ("Written with Muse Spark"), and the composer says "Transcribed by Muse Voice". Failed replies offer Try again or Continue. Atlas's welcome note and three starter requests open the diary on a first visit.
+- **Page** (`src/client/page/**`, `styles/page.css`): Newsreader 400 title at 42px and −0.03em; links have a solid 1px underline at 35%; the cover placeholder is neutral; "Make a cover" replaces "Paint a cover"; deleting has an Undo notice.
+- **Server seed**: agent colours are `#c0602f`, `#3b7a58` and `#6b56a8`.
+
+## Still open
+
+- **Cover prompt.** `src/server/media/illustrate.ts` still asks Muse Image for an "antique parchment map vignette". Ask for a calm editorial photograph or flat illustration that matches the welcome objects.
+- **Photo notice.** "Read by SAM 3.1 + Muse Spark" shows even when SAM returned no boxes and Muse Spark found the notes alone (`src/client/lib/media.ts`). It should name only the models that did the work.
+- **Map round 2** (in progress): the map's overview and labels are being reworked in `src/client/map/**`; see the round-2 list in `docs/PLAN.md`.
