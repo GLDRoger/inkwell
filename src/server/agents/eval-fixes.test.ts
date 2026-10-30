@@ -155,6 +155,17 @@ describe("first-byte watchdog", () => {
     expect(calls).toBe(2);
   });
 
+  it("gives the retry twice as long", async () => {
+    let calls = 0;
+    const fetch = withFirstByteWatchdog(async (url, init) => {
+      if (++calls === 1) return silent(url, init);
+      await new Promise((resolve) => setTimeout(resolve, 60)); // slower than the first wait, within the second
+      return sse("OK");
+    }, { timeoutMs: 40 });
+    expect(await (await fetch("http://x")).text()).toContain("OK");
+    expect(calls).toBe(2);
+  });
+
   it("also watches the body: headers alone aren't a first byte", async () => {
     let calls = 0;
     const fetch = withFirstByteWatchdog(async (url, init) => {

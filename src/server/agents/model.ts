@@ -37,10 +37,12 @@ export const NO_FIRST_BYTE = "Muse didn't start answering in time. Try again in 
 
 /**
  * A model step that hasn't sent a single byte after `timeoutMs` is abandoned and
- * asked again, once; a second silence fails the step with NO_FIRST_BYTE (a plain
- * error, so the SDK doesn't retry it again). A stalled upstream then costs a live
- * demo about a minute, not the whole run's time budget. The caller's abort signal
- * still ends the request and its body at any point.
+ * asked again, once, with twice the patience; a second silence fails the step with
+ * NO_FIRST_BYTE (a plain error, so the SDK doesn't retry it again). Meta sometimes
+ * stalls 30-60 s before answering a short step (corpus, 2026-10-30): a fresh request
+ * usually answers at once, and the longer second wait covers a slow one. A stalled
+ * upstream then costs a live demo at most ~1.5 minutes, not the run's whole time
+ * budget. The caller's abort signal still ends the request and its body at any point.
  */
 export function withFirstByteWatchdog(inner: typeof globalThis.fetch,
   { timeoutMs = FIRST_BYTE_TIMEOUT_MS, retries = 1 } = {}): typeof globalThis.fetch {
@@ -53,7 +55,7 @@ export function withFirstByteWatchdog(inner: typeof globalThis.fetch,
       outer?.addEventListener("abort", forward, { once: true });
       const release = () => outer?.removeEventListener("abort", forward);
       let silent = false;
-      const timer = setTimeout(() => { silent = true; controller.abort(new Error(NO_FIRST_BYTE)); }, timeoutMs);
+      const timer = setTimeout(() => { silent = true; controller.abort(new Error(NO_FIRST_BYTE)); }, timeoutMs * (attempt + 1));
       try {
         const response = await inner(url, { ...init, signal: controller.signal });
         if (!response.body) { clearTimeout(timer); release(); return response; }
