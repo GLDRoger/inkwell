@@ -11,11 +11,11 @@ export function MapPlaceholder({ onOpenPage }: { onOpenPage(id: string): void })
   return (
     <section className="map-placeholder" aria-labelledby="map-placeholder-title">
       <div className="map-placeholder-inner">
-        <p className="eyebrow">The map is being drawn</p>
+        <p className="eyebrow">Your pages</p>
         <h1 id="map-placeholder-title">Your notebook</h1>
         {isLoading && (
           <p className="muted" aria-busy="true">
-            <Loader2 className="spin" size={16} aria-hidden /> Unfolding the parchment…
+            <Loader2 className="spin" size={16} aria-hidden /> Loading your pages…
           </p>
         )}
         {!!error && (

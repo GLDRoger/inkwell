@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CornerDownLeft, FilePlus2, FileText, Feather, Map as MapIcon, Paintbrush, ScanText, SunMoon } from "lucide-react";
+import { CornerDownLeft, FilePlus2, FileText, ImagePlus, Map as MapIcon, NotebookPen, ScanText, SunMoon } from "lucide-react";
 import type { Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { keys, pageTitle, usePages } from "../lib/queries";
@@ -123,7 +123,7 @@ export function CommandPalette() {
         id: "ask",
         section: "Actions",
         label: <>Ask an agent: <em>“{text}”</em></>,
-        icon: <Feather size={16} />,
+        icon: <NotebookPen size={16} />,
         run: () => openDiaryWith(text),
       });
       out.push({
@@ -137,7 +137,7 @@ export function CommandPalette() {
         },
       });
     } else {
-      out.push({ id: "diary", section: "Actions", label: "Write in the diary", icon: <Feather size={16} />, run: () => setUi({ paletteOpen: false, diaryOpen: true }) });
+      out.push({ id: "diary", section: "Actions", label: "Open the diary", icon: <NotebookPen size={16} />, run: () => setUi({ paletteOpen: false, diaryOpen: true }) });
       out.push({ id: "new", section: "Actions", label: "New page", icon: <FilePlus2 size={16} />, run: () => (close(), create.mutate({})) });
     }
     out.push({ id: "map", section: "Actions", label: "Open the map", icon: <MapIcon size={16} />, run: () => (close(), navigate("/")) });
@@ -147,8 +147,8 @@ export function CommandPalette() {
       out.push({
         id: "cover",
         section: "Actions",
-        label: <>{here.coverUrl ? "Paint a new cover for" : "Paint a cover for"} <em>“{pageTitle(here)}”</em></>,
-        icon: <Paintbrush size={16} />,
+        label: <>{here.coverUrl ? "Make a new cover for" : "Make a cover for"} <em>“{pageTitle(here)}”</em></>,
+        icon: <ImagePlus size={16} />,
         run: () => (close(), void paintCover(here)),
       });
     out.push({ id: "theme", section: "Actions", label: "Switch light / dark", icon: <SunMoon size={16} />, run: () => (toggleTheme(), close()) });

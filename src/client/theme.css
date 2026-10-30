@@ -1,41 +1,61 @@
 /*
- * Design tokens. Shared by the app and the map; the app worker owns this file
- * and may tune values, but keep the names stable.
+ * Design tokens. Shared by the app and the map; keep the names stable and tune
+ * the values. docs/DESIGN.md explains every token and how to use it.
  *
- * Direction: Notion/ChatGPT calm and legible for everyday work; the magic is in
- * the ink: parchment surfaces, iron-gall ink, agents' handwriting, footprints.
+ * Direction: a calm, modern notebook. Warm near-white paper, near-black ink,
+ * one display serif, one sans, lots of air. The magic is in what moves (agents
+ * writing, footprints), never in costume.
  */
 :root {
   color-scheme: light dark;
 
-  --paper: light-dark(#f7f2e7, #1b1814);
-  --paper-raised: light-dark(#fdfaf3, #24201b);
-  --paper-sunken: light-dark(#efe7d6, #15120f);
-  --rule: light-dark(#e2d8c3, #3a332a);
-  --rule-strong: light-dark(#cbbd9f, #50473a);
+  /* Surfaces */
+  --paper: light-dark(#f8f7f4, #121211);
+  --paper-raised: light-dark(#ffffff, #1b1b19);
+  --paper-sunken: light-dark(#f0eee9, #0c0c0b);
+  --rule: light-dark(#e8e5df, #292825);
+  --rule-strong: light-dark(#d5d1c9, #3b3a36);
 
-  --ink: light-dark(#2b2218, #ece3d2);
-  --ink-soft: light-dark(#5d5040, #b9ad98);
-  --ink-faint: light-dark(#8d806c, #857a68);
+  /* Text */
+  --ink: light-dark(#161513, #edece8);
+  --ink-soft: light-dark(#5d5b56, #b3b1ab);
+  --ink-faint: light-dark(#8e8b84, #7e7c77);
 
-  /* Accent: oxblood sealing wax. */
-  --wax: light-dark(#8a2b1f, #d0705f);
-  --wax-soft: light-dark(#f3ddd5, #3b2420);
+  /* The one accent: a deep ink blue. Links, focus, selection, a live caret. Never a fill for big areas. */
+  --wax: light-dark(#2d4ec0, #93a8f4);
+  --wax-soft: light-dark(#e9edfb, #1d2340);
 
   /* Status */
-  --working: light-dark(#2f6b4f, #7cc4a0);
-  --waiting: light-dark(#a06a12, #e0b25c);
-  --failed: light-dark(#a3271b, #ef8a7c);
+  --working: light-dark(#2f7a55, #7cc9a0);
+  --waiting: light-dark(#9a6a12, #e3b866);
+  --failed: light-dark(#b23a2c, #f08f80);
+
+  /* Agents (the seeded three). Calm, distinguishable, and never used for chrome. */
+  --agent-scout: light-dark(#c0602f, #eb9a6e);
+  --agent-wren: light-dark(#3b7a58, #86c9a2);
+  --agent-atlas: light-dark(#6b56a8, #b3a3ec);
 
   --font-ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: "Fraunces", "Iowan Old Style", Georgia, serif;
-  /* Agents write in this hand. */
+  --font-serif: "Newsreader", "Iowan Old Style", "Charter", Georgia, serif;
+  --font-display: var(--font-serif);
+  /* The agents' hand. The one bit of magic: agent signatures and live writing only. */
   --font-hand: "Cedarville Cursive", "Segoe Script", cursive;
 
-  --radius: 8px;
-  --radius-lg: 14px;
-  --shadow-card: 0 1px 2px rgb(60 40 10 / 0.08), 0 4px 16px rgb(60 40 10 / 0.06);
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px light-dark(rgb(22 21 19 / 0.04), rgb(0 0 0 / 0.3)),
+    0 6px 24px light-dark(rgb(22 21 19 / 0.06), rgb(0 0 0 / 0.35));
+  --shadow-chrome: 0 0 0 1px light-dark(rgb(22 21 19 / 0.05), rgb(255 255 255 / 0.06)),
+    0 2px 10px light-dark(rgb(22 21 19 / 0.06), rgb(0 0 0 / 0.4));
+
   --ease-ink: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur: 240ms;
+  --dur-slow: 700ms;
 }
 
 :root[data-theme="light"] { color-scheme: light; }
@@ -43,30 +63,33 @@
 
 :root {
   --panel-w: 440px;
-  --topbar-h: 52px;
-  --focus: light-dark(#8a2b1f, #e59a8a);
-  --overlay: light-dark(rgb(43 34 24 / 0.28), rgb(0 0 0 / 0.5));
-  --shadow-pop: 0 2px 6px rgb(40 25 5 / 0.1), 0 16px 48px rgb(40 25 5 / 0.18);
+  --topbar-h: 56px;
+  --focus: light-dark(#2d4ec0, #93a8f4);
+  --overlay: light-dark(rgb(22 21 19 / 0.18), rgb(0 0 0 / 0.55));
+  --shadow-pop: 0 0 0 1px light-dark(rgb(22 21 19 / 0.05), rgb(255 255 255 / 0.06)),
+    0 4px 12px light-dark(rgb(22 21 19 / 0.05), rgb(0 0 0 / 0.3)),
+    0 24px 64px light-dark(rgb(22 21 19 / 0.12), rgb(0 0 0 / 0.5));
   --font-hand-size: 23px;
 }
 
 /*
- * The map's own parchment and ink. The map is a sheet of old parchment by
- * day and the same sheet by candlelight at night (warm brown, gold-cream
- * ink), never flat black. The map re-points --paper/--ink at these inside
- * itself; nothing else needs to use them.
+ * The map's surface. Same paper and ink as the rest of the app: no parchment,
+ * stains, glow or vignette. The map re-points --paper/--ink at these inside
+ * itself. Stain and glow are transparent on purpose; the next map round should
+ * delete the layers that use them.
  */
 :root {
-  --map-paper: light-dark(#efe1c1, #35291c);
-  --map-paper-deep: light-dark(#d6bd93, #110b06);
-  --map-stain: light-dark(rgb(150 100 35 / 0.16), rgb(0 0 0 / 0.32));
-  --map-glow: light-dark(rgb(255 250 232 / 0.55), rgb(255 184 100 / 0.15));
-  --map-sheet: light-dark(#f7eed8, #403223);
-  --map-page: light-dark(#fcf7ec, #3a2d20);
-  --map-ink: light-dark(#38230f, #f0dfbb);
-  --map-ink-soft: light-dark(#5f452b, #d0bb95);
-  --map-ink-faint: light-dark(#86704f, #9e8a6b);
-  --map-rule: light-dark(#dcc9a4, #4b3d2d);
-  --font-map: "IM Fell English", "Fraunces", "Iowan Old Style", Georgia, serif;
-  --font-map-caps: "IM Fell English SC", "IM Fell English", "Fraunces", Georgia, serif;
+  --map-paper: light-dark(#f8f7f4, #121211);
+  --map-paper-deep: light-dark(#f8f7f4, #121211);
+  --map-stain: transparent;
+  --map-glow: transparent;
+  --map-sheet: light-dark(#ffffff, #1b1b19);
+  --map-page: light-dark(#ffffff, #1b1b19);
+  --map-ink: light-dark(#161513, #edece8);
+  --map-ink-soft: light-dark(#5d5b56, #b3b1ab);
+  --map-ink-faint: light-dark(#8e8b84, #7e7c77);
+  --map-rule: light-dark(#e8e5df, #292825);
+  /* Area names: the display serif, italic, set very large and faint by the map. */
+  --font-map: var(--font-serif);
+  --font-map-caps: var(--font-serif);
 }

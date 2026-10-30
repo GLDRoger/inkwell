@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, type ComponentType, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useServerEvents } from "./lib/events";
 import { api, isNotFound } from "./lib/api";
@@ -8,6 +8,9 @@ import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
 import { ConnectionNotice } from "./shell/ConnectionNotice";
 import { Notices } from "./shell/Notices";
+import { Mark } from "./shell/Mark";
+import { Welcome } from "./welcome/Welcome";
+import { hasSeenWelcome, markWelcomeSeen, shouldShowWelcome, withoutWelcomeParam } from "./welcome/show";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
 import { DiaryPanel } from "./diary/DiaryPanel";
 
@@ -91,10 +94,47 @@ function useGlobalShortcuts() {
  */
 export function App() {
   const me = useMe();
-  if (me.data) return <Shell />;
+  const welcome = useWelcome();
+  return (
+    <>
+      {me.data ? <Shell welcome={welcome.phase} /> : <SessionGate me={me} />}
+      {welcome.phase && <Welcome onLeave={welcome.leave} onDone={welcome.done} />}
+    </>
+  );
+}
+
+/** First visit only (see welcome/show.ts); the map loads underneath while it plays. */
+function useWelcome() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [phase, setPhase] = useState<"open" | "leaving" | null>(() =>
+    shouldShowWelcome({
+      pathname: location.pathname,
+      search: location.search,
+      seen: hasSeenWelcome(),
+      automated: navigator.webdriver,
+    })
+      ? "open"
+      : null,
+  );
+  return {
+    phase,
+    leave: () => {
+      markWelcomeSeen();
+      setPhase("leaving");
+    },
+    done: () => {
+      setPhase(null);
+      if (new URLSearchParams(location.search).has("welcome"))
+        navigate({ pathname: location.pathname, search: withoutWelcomeParam(location.search) }, { replace: true });
+    },
+  };
+}
+
+function SessionGate({ me }: { me: ReturnType<typeof useMe> }) {
   return (
     <div className="session-gate" role={me.error ? "alert" : "status"} aria-busy={!me.error}>
-      <p className="session-gate-mark">Inkwell</p>
+      <p className="session-gate-mark"><Mark size={36} /></p>
       {me.error ? (
         <p>
           Couldn't open your notebook. <button className="link-button" onClick={() => me.refetch()}>Try again</button>
@@ -106,7 +146,7 @@ export function App() {
   );
 }
 
-function Shell() {
+function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
   useServerEvents();
   usePresenceReport();
   useGlobalShortcuts();
@@ -115,7 +155,13 @@ function Shell() {
   const diaryOpen = useUi((s) => s.diaryOpen);
 
   return (
-    <div className="app" data-route={onMap ? "map" : "page"} data-diary={diaryOpen ? "open" : "closed"}>
+    <div
+      className="app"
+      data-route={onMap ? "map" : "page"}
+      data-diary={diaryOpen ? "open" : "closed"}
+      data-welcome={welcome ?? undefined}
+      inert={welcome != null}
+    >
       <a className="skip-link" href="#main">
         Skip to content
       </a>

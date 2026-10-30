@@ -1,8 +1,9 @@
 import { Link, useMatch } from "react-router-dom";
-import { ChevronRight, Feather, Map as MapIcon, Search } from "lucide-react";
+import { ChevronRight, Map as MapIcon, NotebookPen, Search } from "lucide-react";
 import { ancestorsOf, pageTitle, useMap, useMe, usePages } from "../lib/queries";
 import { usePresence } from "../lib/events";
 import { isMac, personColor, setUi, useUi } from "../lib/ui";
+import { Mark } from "./Mark";
 
 function Breadcrumbs({ id }: { id: string }) {
   const { data: pages } = usePages();
@@ -70,17 +71,20 @@ export function TopBar() {
           </>
         ) : (
           <Link to="/" className="brand" aria-label="Inkwell, the map">
-            Inkwell
+            <Mark size={22} />
+            <span className="brand-name">Inkwell</span>
           </Link>
         )}
       </div>
-      <div className="topbar-end">
-        <People />
+      <div className="topbar-center">
         <button type="button" className="search-trigger" onClick={() => setUi({ paletteOpen: true })}>
           <Search size={16} aria-hidden />
-          <span className="search-trigger-label">Search or ask</span>
+          <span className="search-trigger-label">Search your pages or ask an agent…</span>
           <kbd>{mod}K</kbd>
         </button>
+      </div>
+      <div className="topbar-end">
+        <People />
         <button
           type="button"
           className="quill-button"
@@ -89,7 +93,7 @@ export function TopBar() {
           title={`The diary (${mod}J)`}
           onClick={() => setUi((s) => ({ diaryOpen: !s.diaryOpen }))}
         >
-          <Feather size={18} aria-hidden />
+          <NotebookPen size={16} aria-hidden />
           <span className="quill-label">Diary</span>
           {working && <span className="working-dot" aria-label="An agent is working" />}
         </button>
