@@ -65,14 +65,14 @@ export const LISBON_TOUR: ScenarioDefinition = {
       caption: "Photo to cards: SAM 3.1 finds each sticky note and Muse Wonder reads the handwriting.",
       model: "sam-3.1+muse-wonder",
       action: { kind: "photo", image: "sticky-notes.jpg" },
-      minMs: 12_000,
+      minMs: 14_000,
     },
     {
       id: "cover",
       caption: "Muse Image makes a cover for the new Lisbon plan.",
       model: "muse-image",
       action: { kind: "cover", title: /lisbon/i },
-      minMs: 12_000,
+      minMs: 14_000,
     },
     {
       id: "tidy",
@@ -81,7 +81,7 @@ export const LISBON_TOUR: ScenarioDefinition = {
       action: {
         kind: "ask", agent: "Atlas",
         prompt: "Can you tidy up after today?",
-        guidance: "For this request: today's new pages are the Lisbon plan, the reading summary, the job post and the photo cards. Call list_pages once, read only those pages and the area pages they belong to, and don't ask other agents. Link each new page from its area page and back. The photo cards stay under Photo notes with their titles: link them, don't move or rename them.",
+        guidance: "For this request: today's new pages are the Lisbon plan, the reading summary, the job post and the photo cards. Call list_pages once, read only those pages and the area pages they belong to, and don't ask other agents. Link each new page from its area page and back. Only add links: don't move or rename any page, and leave the photo cards under Photo notes with their titles.",
       },
     },
   ],

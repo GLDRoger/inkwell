@@ -15,7 +15,9 @@ import { ensureDemoWorkspace } from "./notebook.ts";
 import { playScenario, type Transport } from "./play.ts";
 import { publicStep, type ScenarioDefinition } from "./scenario.ts";
 
-export function recordingTransport(options: { fetch?: typeof globalThis.fetch; secrets: string[]; firstByteMs?: number }): Transport & { steps: CassetteStep[] } {
+export function recordingTransport(options: {
+  fetch?: typeof globalThis.fetch; secrets: string[]; firstByteMs?: number; serverErrorRetries?: number; retryDelayMs?: number;
+}): Transport & { steps: CassetteStep[] } {
   // Meta sometimes stalls 30-90 s before its first byte; a silent call is asked again
   // (twice, waiting longer each time: a recording can afford patience, a live demo can't).
   // An abandoned attempt throws before it is captured, so the cassette only holds answers.
@@ -23,8 +25,16 @@ export function recordingTransport(options: { fetch?: typeof globalThis.fetch; s
   const steps: CassetteStep[] = [];
   let current: CassetteStep | undefined;
   const capture = (stream: Stream): typeof globalThis.fetch => async (url, init) => {
-    const started = performance.now();
-    const response = await real(url, init);
+    let started = performance.now();
+    let response = await real(url, init);
+    // Meta sometimes answers 503 under load; a recording waits and asks again rather than
+    // keep a failure that every demo would replay. Only the answer is captured.
+    for (let attempt = 1; response.status >= 500 && attempt <= (options.serverErrorRetries ?? 4); attempt++) {
+      await response.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, (options.retryDelayMs ?? 2000) * attempt));
+      started = performance.now();
+      response = await real(url, init);
+    }
     const raw = await response.text();
     const path = endpointOf(url as string | URL | Request);
     const body = bodyJson(init) as { model?: string } | undefined;

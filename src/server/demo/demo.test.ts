@@ -235,6 +235,19 @@ describe("recording transport", () => {
   });
 });
 
+describe("recording transport, server errors", () => {
+  it("waits out a 503 and keeps only the answer", async () => {
+    let calls = 0;
+    const transport = recordingTransport({ secrets: [], retryDelayMs: 1, fetch: () =>
+      Promise.resolve(++calls < 3 ? Response.json({ error: { message: "busy" } }, { status: 503 }) : Response.json({ ok: true })) });
+    transport.beginStep(0, LISBON_TOUR.steps[0]!);
+    const response = await transport.forRun("run")("https://api.meta.ai/v1/chat/completions", { method: "POST", body: "{}" });
+    expect(await response.json()).toEqual({ ok: true });
+    expect(calls).toBe(3);
+    expect(transport.steps[0]!.streams[0]!.exchanges.map((e) => e.status)).toEqual([200]);
+  });
+});
+
 describe("replay transport", () => {
   it("answers no further media call once the demo has stopped", async () => {
     const recorded: Cassette = { ...cassette, steps: [{ id: "photo", streams: [{ kind: "media", exchanges: [
@@ -270,18 +283,18 @@ describe("replay pacing", () => {
     response: { type: "chat-stream", text: "", toolCalls: tools.map((name, i) => ({ id: `c${i}`, name, arguments: "{}" })), finishReason: null } });
   const pace = { scale: 1 };
 
-  it("thinks at the recorded pace after a write, and reads on briskly after reads", () => {
-    expect(pacedDelay(chat(40_000), pace, { elapsed: 0 })).toBe(3500);
-    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["create_page"]), elapsed: 0 })).toBe(3500);
-    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["read_page", "search_pages"]), elapsed: 0 })).toBe(1100);
-    expect(pacedDelay(chat(1000), pace, { previous: chat(2000, ["list_pages"]), elapsed: 0 })).toBe(600);
-    // A mixed batch that writes still gets thinking time.
-    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["read_page", "edit_page"]), elapsed: 0 })).toBe(3500);
+  it("reads on briskly, and keeps thinking time for replies that write or answer", () => {
+    expect(pacedDelay(chat(40_000), pace, { elapsed: 0 })).toBe(5500);
+    expect(pacedDelay(chat(40_000, ["create_page"]), pace, { elapsed: 0 })).toBe(5500);
+    expect(pacedDelay(chat(40_000, ["read_page", "search_pages"]), pace, { elapsed: 0 })).toBe(1500);
+    expect(pacedDelay(chat(1000, ["list_pages"]), pace, { elapsed: 0 })).toBe(800);
+    // A batch that also writes keeps its thinking time.
+    expect(pacedDelay(chat(40_000, ["read_page", "edit_page"]), pace, { elapsed: 0 })).toBe(5500);
   });
 
   it("plays a step that has outrun its budget at a brisk beat", () => {
     expect(pacedDelay(chat(40_000), pace, { elapsed: STEP_BUDGET_MS + 1 })).toBe(400);
-    expect(pacedDelay(chat(40_000), { scale: 2 }, { elapsed: STEP_BUDGET_MS + 1 })).toBe(7000);
+    expect(pacedDelay(chat(40_000), { scale: 2 }, { elapsed: 2 * STEP_BUDGET_MS + 1 })).toBe(800);
     expect(pacedDelay(chat(40_000), { scale: 0 }, { elapsed: 0 })).toBe(0);
   });
 

@@ -223,7 +223,7 @@ export interface ReplayPace {
 /** How long a replayed exchange waits before answering: a fraction of the real time, bounded. */
 export function replayDelay(exchange: Exchange, pace: ReplayPace): number {
   const bounds: Record<string, [number, number, number]> = {
-    "/chat/completions": [0.8, 1200, 3500],
+    "/chat/completions": [1, 2000, 5500],
     "/responses": [0.5, 900, 2500],
     "/images/generations": [0.25, 1500, 3500],
     "/asr/transcribe": [0.5, 600, 1500],
@@ -236,25 +236,24 @@ export function replayDelay(exchange: Exchange, pace: ReplayPace): number {
 const READ_ONLY_TOOLS = new Set(["list_pages", "read_page", "search_pages"]);
 
 /** A step's replay delays shrink to a beat once it has been on screen this long (before pace). */
-export const STEP_BUDGET_MS = 24_000;
+export const STEP_BUDGET_MS = 30_000;
 
 export interface ReplayContext {
-  /** The exchange answered just before this one in the same run, if any. */
-  previous?: Exchange;
   /** Milliseconds since the step began. */
   elapsed: number;
 }
 
 /**
- * The delay for an exchange in context. Long read-only tool chains (list, read, search)
- * move on at a reading pace rather than a thinking pace, and a step that has run past its
- * budget plays its remaining replies at a brisk beat, so nothing sits as dead air.
+ * The delay for an exchange in context. A reply that only looks further (list, read,
+ * search) comes at a reading pace, so long read chains don't sit as dead air; replies
+ * that write or answer keep their thinking time. A step that has run past its budget
+ * plays its remaining replies at a brisk beat.
  */
 export function pacedDelay(exchange: Exchange, pace: ReplayPace, context: ReplayContext): number {
   let ms = replayDelay(exchange, pace);
-  const calls = context.previous?.response.type === "chat-stream" ? context.previous.response.toolCalls : [];
+  const calls = exchange.response.type === "chat-stream" ? exchange.response.toolCalls : [];
   if (calls.length && calls.every((call) => READ_ONLY_TOOLS.has(call.name))) {
-    ms = Math.min(ms, Math.round(Math.max(600, Math.min(1100, exchange.ms * 0.3)) * pace.scale));
+    ms = Math.min(ms, Math.round(Math.max(800, Math.min(1500, exchange.ms * 0.3)) * pace.scale));
   }
   if (context.elapsed > STEP_BUDGET_MS * pace.scale) ms = Math.min(ms, Math.round(400 * pace.scale));
   return ms;
