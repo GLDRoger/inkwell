@@ -97,7 +97,7 @@ Dark mode is the same notebook at night: a neutral near-black (`#121211`) with w
   - Line: "Write a request. Watch it get done across your pages."
   - Button: "Open your notebook".
 - The objects are photographic cut-outs of things from the demo notebook's world: a boarding pass to Lisbon, a pastel de nata, an espresso, a sourdough loaf, a paperback, a fountain pen, sticky notes, a phone with a chart, a film camera, a pilea, an azulejo tile, reading glasses, a lemon, a tin of sardines. Wide screens show 14 objects; phones show 6, in a row above and a row below the text.
-- `scripts/paint-objects.mjs` paints and optimises them from one prompt list (shared style: studio light from the upper left, transparent background). It uses Meta Muse Image by default; pass `--provider openai` to use OpenAI. The output is alpha WebP, 400px on the long side, 7–50 KB each. To add an object, add it to the prompt list, then to `welcome/objects.ts` with its aspect ratio and position.
+- `scripts/paint-objects.mjs` paints them with Meta Muse Image (`muse-image-1.0`) from one prompt list (studio light from the upper left, on a plain grey backdrop, since Muse Image can't return transparency), then cuts each object out locally (Apple Vision outline + a soft matte). The output is alpha WebP, 400px on the long side, 9–37 KB each. All 14 shipped objects are Muse Image. To add an object, add it to the prompt list, then to `welcome/objects.ts` with its aspect ratio and position.
 
 ## Don't
 
