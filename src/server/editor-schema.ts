@@ -29,6 +29,20 @@ export function getEditorSchema(): Schema {
 }
 
 const markdownManager = new MarkdownManager({ extensions: editorExtensions });
+// The stock serializer HTML-escapes every &, < and >, so agents read "fish &amp; chips"
+// and their exact-match edits miss text the person sees as "fish & chips". Escape only
+// what the parser could mistake for HTML: "<" opening a tag-like run and "&" opening an
+// entity. Everything else round-trips as typed.
+type TextEncoder = { encodeTextForMarkdown(text: string, node: JSONContent, parent?: JSONContent): string };
+const stockEncode = (markdownManager as unknown as TextEncoder).encodeTextForMarkdown.bind(markdownManager);
+(markdownManager as unknown as TextEncoder).encodeTextForMarkdown = (text, node, parent) => {
+  const encoded = stockEncode(text, node, parent);
+  if (encoded === text) return encoded; // inside code: left literal by the stock encoder
+  return encoded
+    .replace(/(?<!^|\n)&gt;/g, ">") // a leading ">" would start a blockquote
+    .replace(/&lt;(?![A-Za-z/!?])/g, "<")
+    .replace(/&amp;(?!#?\w+;)/g, "&");
+};
 const transformer = TiptapTransformer.extensions(editorExtensions);
 
 export function emptyDocJSON(): JSONContent {
