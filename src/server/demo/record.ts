@@ -16,9 +16,10 @@ import { playScenario, type Transport } from "./play.ts";
 import { publicStep, type ScenarioDefinition } from "./scenario.ts";
 
 export function recordingTransport(options: { fetch?: typeof globalThis.fetch; secrets: string[]; firstByteMs?: number }): Transport & { steps: CassetteStep[] } {
-  // Meta sometimes stalls before its first byte; a silent call is asked again (once).
+  // Meta sometimes stalls 30-90 s before its first byte; a silent call is asked again
+  // (twice, waiting longer each time: a recording can afford patience, a live demo can't).
   // An abandoned attempt throws before it is captured, so the cassette only holds answers.
-  const real = withFirstByteWatchdog(options.fetch ?? globalThis.fetch, { timeoutMs: options.firstByteMs });
+  const real = withFirstByteWatchdog(options.fetch ?? globalThis.fetch, { timeoutMs: options.firstByteMs ?? 60_000, retries: 2 });
   const steps: CassetteStep[] = [];
   let current: CassetteStep | undefined;
   const capture = (stream: Stream): typeof globalThis.fetch => async (url, init) => {

@@ -3,7 +3,8 @@
 //
 //   node --env-file=.env scripts/demo/record.mjs            # real Meta API (META_API_KEY, META_BASE_URL)
 //   node scripts/demo/record.mjs --fake                     # the rehearsal fake, no key needed
-//   options: --scenario lisbon-tour  --out <file>  --model muse-wonder-1.0
+//   options: --scenario lisbon-tour  --out <file>  --model muse-wonder-1.0  --dump (print what the agents wrote)
+//            --force (write the cassette even if a run failed)
 //
 // Plays the scenario in a scratch notebook (a temp data dir, deleted afterwards),
 // captures every Meta exchange in order and writes src/server/demo/cassettes/<id>.json.
@@ -75,6 +76,8 @@ try {
   for (const run of runs) {
     if (run.status !== "succeeded") { failed = true; say(`[record] a run ${run.status}: ${run.error}`); }
   }
+  // A failed run would replay as a failure in every demo: keep the old cassette instead.
+  if (failed && !process.argv.includes("--force")) throw new Error("not writing the cassette: a run failed (record again, or pass --force)");
   const { externalizeImages } = await import("../../src/server/demo/cassette.ts");
   const images = new Map();
   externalizeImages(cassette, (name, bytes) => images.set(name, bytes));
