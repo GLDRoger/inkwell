@@ -8,7 +8,7 @@ import { useServerEvent } from "../lib/events";
 import { timeAgo, useNow } from "../lib/time";
 import { useCollab } from "./collab";
 import { PageEditor } from "./Editor";
-import { syncView } from "./syncState";
+import { syncView, warnBeforeUnload } from "./syncState";
 import { isUntouchedSeed } from "./title";
 
 /**
@@ -22,23 +22,25 @@ export type PageSync = Omit<ReturnType<typeof useCollab>, "collab">;
 
 export function SyncPill(props: PageSync & { readOnly?: boolean }) {
   const browserOnline = useBrowserOnline();
-  const busy = props.unsynced > 0 || !props.everSynced || props.status !== "connected";
+  const readOnly = !!props.readOnly;
+  const busy = !readOnly && (props.unsynced > 0 || !props.everSynced || props.status !== "connected");
   // Tick while something is pending, so "Saving…" can turn into "Not saving" and "Reconnecting…" into "Offline".
   const now = useNow(busy ? 1_000 : 60_000);
-  const view = syncView({ ...props, now, browserOnline });
+  const view = syncView({ ...props, now, browserOnline, readOnly });
   // Edits the server hasn't got yet live only in this tab: ask before a reload or close throws them away.
-  const unsaved = props.unsynced > 0;
+  // Watching the demo there's nothing of yours to lose, so never ask.
+  const unsaved = warnBeforeUnload({ unsynced: props.unsynced, readOnly });
   useEffect(() => {
     if (!unsaved) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
-  // Watching the recorded demo: there's nothing of yours to save, only whether it's live.
-  if (props.readOnly && view.tone !== "bad")
+  // Watching the recorded demo: there's nothing of yours to save, so never an error or a warning.
+  if (readOnly)
     return (
       <span className="sync-pill" data-tone="quiet" role="status">
-        <span>{props.everSynced ? "Read only" : "Opening…"}</span>
+        <span>{view.label}</span>
       </span>
     );
   return (

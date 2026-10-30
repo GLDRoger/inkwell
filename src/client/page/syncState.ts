@@ -19,6 +19,12 @@ export interface SyncInput {
   now: number;
   /** The browser thinks it has a network (navigator.onLine). Defaults to true. */
   browserOnline?: boolean;
+  /**
+   * Watching, not writing (the recorded demo). Nothing here is the viewer's
+   * to save: the server ignores local changes (the editor's own normalising,
+   * say), so they never count as unsaved work.
+   */
+  readOnly?: boolean;
 }
 
 export type SyncTone = "quiet" | "busy" | "bad";
@@ -52,6 +58,7 @@ export function offlineMessage(kind: OfflineKind, where: "page" | "map"): string
 }
 
 export function syncView(s: SyncInput): SyncView {
+  if (s.readOnly) return s.everSynced ? { tone: "quiet", label: "Read only" } : { tone: "quiet", label: "Opening…" };
   if (s.status === "denied")
     return { tone: "bad", label: "Can't open", detail: "This page isn't in your notebook, so it can't be edited here." };
 
@@ -79,4 +86,9 @@ export function syncView(s: SyncInput): SyncView {
     };
   if (s.unsynced > 0 || !s.synced) return { tone: "busy", label: "Saving…" };
   return { tone: "quiet", label: "Saved" };
+}
+
+/** Ask before a reload or close only when there are edits of yours the server hasn't got. */
+export function warnBeforeUnload(s: Pick<SyncInput, "unsynced" | "readOnly">): boolean {
+  return !s.readOnly && s.unsynced > 0;
 }

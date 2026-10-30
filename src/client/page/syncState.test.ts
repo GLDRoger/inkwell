@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OFFLINE_GRACE_MS, SLOW_CONNECT_MS, STUCK_AFTER_MS, offlineMessage, syncView, type SyncInput } from "./syncState";
+import { OFFLINE_GRACE_MS, SLOW_CONNECT_MS, STUCK_AFTER_MS, offlineMessage, syncView, warnBeforeUnload, type SyncInput } from "./syncState";
 
 const base: SyncInput = { status: "connected", synced: true, everSynced: true, unsynced: 0, pendingSince: null, connectingSince: 0, now: 100_000 };
 const view = (patch: Partial<SyncInput>) => syncView({ ...base, ...patch });
@@ -58,5 +58,21 @@ describe("syncView", () => {
 
   it("reports a rejected connection as no access", () => {
     expect(view({ status: "denied" })).toMatchObject({ tone: "bad", label: "Can't open" });
+  });
+});
+
+describe("read only (the recorded demo)", () => {
+  it("always says Read only, even when local changes never reach the server", () => {
+    const stuck = { readOnly: true, unsynced: 3, pendingSince: base.now - STUCK_AFTER_MS * 5 };
+    expect(view(stuck)).toEqual({ tone: "quiet", label: "Read only" });
+    expect(view({ ...stuck, status: "connecting", synced: false, connectingSince: 0 })).toMatchObject({ tone: "quiet", label: "Read only" });
+    expect(view({ ...stuck, browserOnline: false })).toMatchObject({ tone: "quiet" });
+    expect(view({ readOnly: true, everSynced: false, synced: false, status: "connecting", connectingSince: 0 })).toMatchObject({ tone: "quiet", label: "Opening…" });
+  });
+
+  it("never asks before unload in read only, and does when your edits aren't saved", () => {
+    expect(warnBeforeUnload({ unsynced: 2, readOnly: true })).toBe(false);
+    expect(warnBeforeUnload({ unsynced: 2 })).toBe(true);
+    expect(warnBeforeUnload({ unsynced: 0 })).toBe(false);
   });
 });
