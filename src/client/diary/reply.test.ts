@@ -16,7 +16,10 @@ describe("splitFailure", () => {
   });
 
   it("moves the missing-key message out of the ink", () => {
-    expect(splitFailure(NO_KEY, run("failed", NO_KEY))).toEqual({ text: "", note: NO_KEY });
+    expect(splitFailure(NO_KEY, run("failed", NO_KEY))).toEqual({
+      text: "",
+      note: "The agents aren't connected yet, so they can't write back. Your words are saved.",
+    });
   });
 
   it("keeps what was written before the failure", () => {

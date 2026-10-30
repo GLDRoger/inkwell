@@ -16,6 +16,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The server's machine-readable reason, when it sends one (e.g. "thread_not_found"). */
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -34,14 +36,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     let message = res.statusText || `Request failed (${res.status})`;
+    let code: string | undefined;
     try {
       const body = await res.json();
       if (body && typeof body.error === "string") message = body.error;
       else if (body && typeof body.message === "string") message = body.message;
+      if (body && typeof body.code === "string") code = body.code;
     } catch {
       /* body was not JSON; keep the status text */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, code);
   }
   if (res.status === 204) return undefined as T;
   const type = res.headers.get("content-type") ?? "";

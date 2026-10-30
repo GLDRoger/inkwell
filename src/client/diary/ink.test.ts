@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HAND_MAX, handCut, renderMarkdown, stripInline } from "./ink";
+import { HAND_MAX, handCut, handSegments, renderMarkdown, sliceSegments, stripInline } from "./ink";
 
 describe("handCut", () => {
   it("writes a short reply entirely by hand", () => {
@@ -45,5 +45,36 @@ describe("stripInline / renderMarkdown", () => {
     const html = renderMarkdown("Hi <img src=x onerror=alert(1)> [x](javascript:alert(1))");
     expect(html).not.toContain("onerror");
     expect(html).not.toContain("javascript:");
+  });
+});
+
+describe("handSegments: links stay clickable in the handwriting", () => {
+  it("keeps a page link in a short handwritten reply", () => {
+    const t = "Done. I tidied [Billing](/p/b1) for you.";
+    expect(handCut(t)).toBe(t.length); // the whole reply is handwritten
+    expect(handSegments(t)).toEqual([
+      { text: "Done. I tidied " },
+      { text: "Billing", href: "/p/b1" },
+      { text: " for you." },
+    ]);
+  });
+
+  it("keeps web links and drops emphasis syntax", () => {
+    expect(handSegments("See **[the docs](https://example.com)** and `x`")).toEqual([
+      { text: "See " },
+      { text: "the docs", href: "https://example.com" },
+      { text: " and x" },
+    ]);
+  });
+
+  it("turns unsafe targets into plain ink", () => {
+    expect(handSegments("[click](javascript:alert(1))")).toEqual([{ text: "click" }]);
+    expect(handSegments("[x](data:text/html,hi) and [y](//evil.example)")).toEqual([{ text: "x and y" }]);
+  });
+
+  it("reveals a prefix across segments without losing the link", () => {
+    const segs = handSegments("Read [Billing](/p/b1) now");
+    expect(sliceSegments(segs, 8)).toEqual([{ text: "Read " }, { text: "Bil", href: "/p/b1" }]);
+    expect(sliceSegments(segs, 100).map((s) => s.text).join("")).toBe("Read Billing now");
   });
 });

@@ -1,4 +1,5 @@
 import type { Run } from "@shared/types";
+import { runErrorCopy } from "./errors";
 
 /**
  * When a run fails or is stopped, the server appends why to the reply's text.
@@ -13,5 +14,5 @@ export function splitFailure(text: string, run: Run | null | undefined): { text:
   // The server's stand-in when nothing was written before the stop.
   const body = rest === "Run stopped." ? "" : rest;
   if (run.status === "cancelled") return { text: body, note: "Stopped." };
-  return { text: body, note: why || "Stopped with an error." };
+  return { text: body, note: runErrorCopy(why) };
 }

@@ -15,6 +15,8 @@ export type DiaryPhase = "idle" | "sending" | "waiting" | "writing";
 export interface DiaryError {
   kind: "unavailable" | "failed" | "offline";
   message: string;
+  /** What to let go of so a retry can work: a deleted conversation, agent or open page. */
+  reset?: "thread" | "agent" | "page";
 }
 
 export interface DiaryState {
@@ -82,7 +84,16 @@ export function diaryReducer(state: DiaryState, action: DiaryAction): DiaryState
         hiddenEntryId: state.sinking ? action.entryId : null,
       };
     case "sendFailed":
-      return { ...state, phase: "idle", sinking: null, hiddenEntryId: null, error: action.error, restoreDraft: action.text };
+      return {
+        ...state,
+        phase: "idle",
+        sinking: null,
+        hiddenEntryId: null,
+        error: action.error,
+        restoreDraft: action.text,
+        threadId: action.error.reset === "thread" ? null : state.threadId,
+        agentId: action.error.reset === "agent" ? null : state.agentId,
+      };
     case "replyStarted": {
       const live = state.liveEntryIds.includes(action.entryId) ? state.liveEntryIds : [...state.liveEntryIds, action.entryId];
       const ours = action.threadId === state.threadId && state.phase === "waiting";
