@@ -119,3 +119,12 @@ Goal: ready to hand to the client for internal testing. Every screen, flow and l
 Design system + welcome (13b9ccc), server review fixes (4278c74..7730373), Enter-key P0 (6895129), & escaping (acab29b), Any-agent routing + agent colours (c688ee8), diary (8b42283, 825636e), page (5e6036d), shell (ec9d28f), map (36d1631).
 Known for round 2: roster vs "Photo to cards" collide with diary open; streaming reply shows half-written link markdown; seeded "just now" on map cards vs "when your notebook was made" on pages; agent label can sit past the viewport edge; presence 400 on foreign page links (App.tsx); DESIGN.md "Next rounds" stale; README/SUBMISSION copy must follow the renamed features ("Photo to cards", "Make a cover", conversations).
 Round 2 in flight: fresh hands-on audit (/tmp/inkwell-audit2/) + client code review.
+
+### Round 2 client code review (2026-10-30) — server items fixed (3377a8c, 69530e5, e875ef0); client items queued
+- deleteUndo: undoing a child while its parent's delete is pending still deletes the child (`page/deleteUndo.ts:147`); flush on `visibilitychange` hidden too (`:109`).
+- notices: never drop notices with an action (Undo); pause timers on hover/focus (`lib/notices.ts:54`).
+- "Ask an agent" on a page wipes the diary draft (`PageView.tsx:213`, `DiaryPanel.tsx:222`).
+- Map re-renders every card on each agent step: `fromGraph` should keep `prev.pages/links` when graph arrays are unchanged (`map/index.tsx:105`, `model.ts:64,118`).
+- Global Cmd+K/J fire during the welcome (`App.tsx:72-90`).
+- Title save lost on unmount via browser Back (`PageView.tsx:45`) — save in cleanup if edited.
+- `moveWalker` with to=null for unseen agent: use `fromPageId` (`map/model.ts:136`).
