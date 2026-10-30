@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HAND_MAX, handCut, handSegments, renderMarkdown, sliceSegments, stripInline } from "./ink";
+import { HAND_MAX, handCut, handSegments, maskIncomplete, renderMarkdown, sliceSegments, stripInline } from "./ink";
 
 describe("handCut", () => {
   it("writes a short reply entirely by hand", () => {
@@ -76,5 +76,50 @@ describe("handSegments: links stay clickable in the handwriting", () => {
     const segs = handSegments("Read [Billing](/p/b1) now");
     expect(sliceSegments(segs, 8)).toEqual([{ text: "Read " }, { text: "Bil", href: "/p/b1" }]);
     expect(sliceSegments(segs, 100).map((s) => s.text).join("")).toBe("Read Billing now");
+  });
+});
+
+describe("maskIncomplete", () => {
+  it("hides link syntax that hasn't closed", () => {
+    expect(maskIncomplete("Drafted [Packing checklist: Trip to")).toBe("Drafted Packing checklist: Trip to");
+    expect(maskIncomplete("Drafted [Packing list](/p/ab")).toBe("Drafted Packing list");
+    expect(maskIncomplete("Drafted [Packing list]")).toBe("Drafted Packing list");
+    expect(maskIncomplete("See [A](/p/a) and [B")).toBe("See [A](/p/a) and B");
+  });
+  it("hides an emphasis that hasn't closed", () => {
+    expect(maskIncomplete("**Day 1")).toBe("Day 1");
+    expect(maskIncomplete("**Day 1:** walk, *then* `code")).toBe("**Day 1:** walk, *then* code");
+    expect(maskIncomplete("an _idea")).toBe("an idea");
+  });
+  it("leaves complete markdown, bullets, sums and snake_case alone", () => {
+    for (const t of ["Drafted [Plan](/p/1) under [Trip](/p/2).", "* one\n* two", "2 * 3 = 6", "use snake_case here", "**bold** and _soft_", "```\ncode `x"])
+      expect(maskIncomplete(t), t).toBe(t);
+  });
+  it("hides a table until its header rule arrives, and half-written rows", () => {
+    expect(maskIncomplete("Plan:\n| Day | What |")).toBe("Plan:");
+    expect(maskIncomplete("Plan:\n| Day | What |\n| --- | --- |\n| 1 | Alf")).toBe("Plan:\n| Day | What |\n| --- | --- |");
+  });
+});
+
+describe("renderMarkdown quotes", () => {
+  it("signs a quote with the agent who wrote it", () => {
+    const html = renderMarkdown("I handed it to Wren. Their report:\n\n> Ask me to expand any step.", {
+      quoteBy: (intro) => (intro.includes("Wren") ? { name: "Wren", color: "#3b7a58" } : null),
+    });
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    expect(doc.querySelector("blockquote .quote-by")?.textContent).toBe("— Wren");
+  });
+  it("leaves unattributed quotes as they are", () => {
+    expect(renderMarkdown("> A line.", { quoteBy: () => null })).not.toContain("quote-by");
+  });
+});
+
+describe("renderMarkdown nested quotes", () => {
+  it("signs a quote inside a quote by the agent named before it", () => {
+    const html = renderMarkdown("Handed it to Wren:\n\n> Handed it to Scout:\n>\n> > Five days.", {
+      quoteBy: (intro, depth) => (/Scout/.test(intro) && depth === 1 ? { name: "Scout", color: "#c0602f" } : /Wren/.test(intro) ? { name: "Wren", color: "#3b7a58" } : null),
+    });
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    expect([...doc.querySelectorAll(".quote-by")].map((e) => e.textContent)).toEqual(["— Scout", "— Wren"]); // the inner quote is signed inside the outer one
   });
 });

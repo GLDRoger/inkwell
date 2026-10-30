@@ -172,8 +172,19 @@
   font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); padding: 10px 12px 10px 14px; border-radius: var(--radius);
   background: var(--paper-sunken); box-shadow: inset 3px 0 0 var(--failed);
 }
-.step-note { margin-top: 8px; }
-.step-note[data-status="cancelled"] { background: none; box-shadow: none; padding: 0; color: var(--ink-faint); }
+.step-note { margin-top: 8px; flex-wrap: wrap; justify-content: space-between; row-gap: 6px; }
+.step-note-text { flex: 1 1 14em; min-width: 0; }
+.step-note[data-status="cancelled"] { background: none; box-shadow: none; padding: 0; color: var(--ink-soft); }
+.step-note a { color: inherit; text-decoration: underline; text-decoration-color: var(--rule-strong); text-underline-offset: 3px; }
+.step-note a:hover { color: var(--ink); text-decoration-color: var(--ink-soft); }
+.step-note .recover { flex: none; background: var(--paper-raised); color: var(--ink); font-weight: 500; box-shadow: 0 0 0 1px var(--rule-strong); }
+.step-note .recover:hover { background: var(--paper-raised); box-shadow: 0 0 0 1px var(--ink-soft); }
+.step-note .recover:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.step-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A quote another agent wrote, signed under it. */
+.ink-body blockquote .quote-by { margin: 0.2em 0 0; font: 500 12.5px/1.4 var(--font-ui); font-style: normal; color: var(--ink-faint); }
+.quote-by .agent-name { color: var(--agent-ink); }
 .diary-note { margin-top: 18px; display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; }
 .diary-note p { margin: 0; color: var(--ink); }
 .diary-note[role="status"] { box-shadow: inset 3px 0 0 var(--rule-strong); }

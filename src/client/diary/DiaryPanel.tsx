@@ -10,7 +10,7 @@ import { getUi, setUi, useUi } from "../lib/ui";
 import { timeAgo } from "../lib/time";
 import { diaryReducer, initialDiaryState, isBusy } from "./state";
 import { Composer, type ComposerHandle } from "./Composer";
-import { Entries, InkDrops, isActiveRun } from "./Entries";
+import { Entries, InkDrops, isActiveRun, type Recovery } from "./Entries";
 import { Picker } from "./Picker";
 import { COPY, STARTERS_NOTEBOOK, STARTERS_PAGE } from "./copy";
 import { cancelErrorCopy, sendErrorCopy } from "./errors";
@@ -157,6 +157,9 @@ export function DiaryPanel() {
   const scroller = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const opener = useRef<Element | null>(null);
+  const wasOpen = useRef(open);
+  /** Conversations started from a page during this visit, so reopening the diary there picks up where you were. */
+  const pageThreads = useRef(new Map<string, string>());
   const intro = useIntro();
 
   const threads = useThreads();
@@ -172,12 +175,25 @@ export function DiaryPanel() {
   const currentThread = threadList.find((t) => t.id === state.threadId);
 
   // Open on the most recent conversation the first time they arrive (the welcome note, on a first run).
+  // On a page, start fresh instead: the diary opens on a new conversation about that page.
   useEffect(() => {
     if (chosen.current || !threads.data) return;
     chosen.current = true;
+    if (pageId && intro.phase === "idle") return;
     const first = intro.phase !== "idle" ? threads.data.find((t) => isWelcomeThread(t.title)) ?? threads.data[0] : threads.data[0];
     if (first) dispatch({ type: "selectThread", threadId: first.id });
   }, [threads.data, intro.phase]);
+
+  // Opened on a page: a new conversation about this page (or the one already started from it), not the last one from elsewhere.
+  useEffect(() => {
+    if (!open || !pageId || busy || intro.phase !== "idle") return;
+    const there = pageThreads.current.get(pageId) ?? null;
+    chosen.current = true;
+    if (state.threadId !== there) {
+      dispatch({ type: "selectThread", threadId: there });
+      setNote(null);
+    }
+  }, [open]);
 
   // Someone opened the diary themselves while the phone nudge was showing.
   useEffect(() => {
@@ -208,21 +224,33 @@ export function DiaryPanel() {
     intro.finish();
   }, [intro.phase, threads.data, thread.data, state.threadId]);
 
-  // Focus the composer when the diary opens; give focus back when it closes.
+  // Focus the composer when the diary opens; give focus back when it closes
+  // (to whatever opened it, or the Diary button when it was opened from the keyboard).
   useEffect(() => {
+    const was = wasOpen.current;
+    wasOpen.current = open;
     if (open) {
       opener.current = document.activeElement;
       const t = setTimeout(() => composer.current?.focus(), 60);
       return () => clearTimeout(t);
     }
-    if (panel.current?.contains(document.activeElement)) (opener.current as HTMLElement | null)?.focus?.();
+    if (!was) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !panel.current?.contains(active)) return;
+    const back = opener.current;
+    const target =
+      back instanceof HTMLElement && back !== document.body && back.isConnected && !panel.current?.contains(back)
+        ? back
+        : document.querySelector<HTMLElement>(".quill-button");
+    target?.focus();
   }, [open]);
 
   // "Ask an agent" from the palette.
   useEffect(() => {
     if (!draft) return;
     if (draft.agentId !== null) dispatch({ type: "selectAgent", agentId: draft.agentId });
-    composer.current?.setText(draft.text);
+    // "Ask an agent" with nothing typed yet keeps whatever is already in the composer.
+    if (draft.text) composer.current?.setText(draft.text);
   }, [draft?.nonce]);
 
   useServerEvent("diary.delta", (e) => dispatch({ type: "replyStarted", entryId: e.entryId, threadId: e.threadId }));
@@ -258,18 +286,20 @@ export function DiaryPanel() {
     return () => ro.disconnect();
   }, [state.threadId]);
 
-  const send = async (text: string, attachments: Attachment[]) => {
-    dispatch({ type: "send", text });
+  /** `again`: resending from a failed reply, so the words don't sink from the composer and go to the same agent. */
+  const send = async (text: string, attachments: Attachment[], again?: { agentId: string }) => {
+    dispatch({ type: "send", text, quiet: !!again });
     setNote(null);
     pinned.current = true;
     try {
       const res = await api.writeDiary({
         threadId: state.threadId ?? undefined,
         text,
-        agentId: state.agentId ?? undefined,
+        agentId: again?.agentId ?? state.agentId ?? undefined,
         attachmentIds: attachments.length ? attachments.map((a) => a.id) : undefined,
         pageId: contextPage?.id,
       });
+      if (contextPage) pageThreads.current.set(contextPage.id, res.threadId);
       client.setQueryData<DiaryEntry[]>(keys.thread(res.threadId), (old) =>
         old?.some((e) => e.id === res.entry.id) ? old : [...(old ?? []), res.entry],
       );
@@ -281,11 +311,19 @@ export function DiaryPanel() {
       const run = client.getQueryData<Run | null>(keys.run(res.runId));
       if (run) dispatch({ type: "runUpdated", run });
     } catch (e) {
-      const error = sendErrorCopy(e);
+      const error = sendErrorCopy(e, { kept: !again });
       if (error.reset === "page" && pageId) setContextDismissed(pageId);
       if (error.reset === "thread") void client.invalidateQueries({ queryKey: keys.threads, exact: true });
-      dispatch({ type: "sendFailed", text, error });
+      dispatch({ type: "sendFailed", text: again ? "" : text, error });
     }
+  };
+
+  /** "Try again" resends the request the failed reply answered; "Continue" asks the same agent to carry on. */
+  const recover = (entry: DiaryEntry, run: Run, how: Recovery) => {
+    if (how === "continue") return send(COPY.continueRequest, [], { agentId: run.agentId });
+    const at = entries.findIndex((e) => e.id === entry.id);
+    const asked = entries.slice(0, at).reverse().find((e) => e.role === "person");
+    void send(asked?.text || run.prompt, asked?.attachments ?? [], { agentId: run.agentId });
   };
 
   const cancel = async (runId: string | null) => {
@@ -390,7 +428,9 @@ export function DiaryPanel() {
               agents={agents}
               liveIds={state.liveEntryIds}
               hiddenId={state.hiddenEntryId}
+              recoverableId={!busy && !state.sinking && entries.at(-1)?.role === "agent" ? entries.at(-1)!.id : null}
               onCancel={cancel}
+              onRecover={recover}
               onSettled={onSettled}
             />
             {showStarters && <Starters prompts={contextPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={(t) => send(t, [])} />}

@@ -66,4 +66,11 @@ describe("diaryReducer", () => {
     const s = reduce(initialDiaryState, { type: "send", text: "x" }, { type: "sent", threadId: "t1", runId: "r1", entryId: "e0" }, { type: "cancelled" });
     expect(s).toMatchObject({ phase: "idle", runId: null });
   });
+
+  it("resends from a failed reply without sinking words from the composer", () => {
+    const s = reduce(initialDiaryState, { type: "send", text: "Plan my trip", quiet: true });
+    expect(s).toMatchObject({ phase: "sending", sinking: null });
+    const failed = reduce(s, { type: "sendFailed", text: "", error: { kind: "offline", message: "x" } });
+    expect(failed.restoreDraft).toBeNull();
+  });
 });

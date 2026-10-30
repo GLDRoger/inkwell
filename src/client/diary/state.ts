@@ -38,7 +38,8 @@ export interface DiaryState {
 export type DiaryAction =
   | { type: "selectThread"; threadId: Id | null }
   | { type: "selectAgent"; agentId: Id | null }
-  | { type: "send"; text: string }
+  /** `quiet`: a resend from a failed reply, with nothing sinking from the composer. */
+  | { type: "send"; text: string; quiet?: boolean }
   | { type: "sinkDone" }
   | { type: "sent"; threadId: Id; runId: Id; entryId: Id }
   | { type: "sendFailed"; error: DiaryError; text: string }
@@ -71,7 +72,7 @@ export function diaryReducer(state: DiaryState, action: DiaryAction): DiaryState
       return { ...state, agentId: action.agentId };
     case "send":
       if (state.phase === "sending" || !action.text.trim()) return state;
-      return { ...state, phase: "sending", sinking: action.text, error: null, restoreDraft: null };
+      return { ...state, phase: "sending", sinking: action.quiet ? null : action.text, error: null, restoreDraft: null };
     case "sinkDone":
       return { ...state, sinking: null, hiddenEntryId: null };
     case "sent":
@@ -90,7 +91,7 @@ export function diaryReducer(state: DiaryState, action: DiaryAction): DiaryState
         sinking: null,
         hiddenEntryId: null,
         error: action.error,
-        restoreDraft: action.text,
+        restoreDraft: action.text || null,
         threadId: action.error.reset === "thread" ? null : state.threadId,
         agentId: action.error.reset === "agent" ? null : state.agentId,
       };

@@ -14,11 +14,12 @@ const isPlain = (m: string) => /^[A-Z][^\n]{3,200}[.!?]$/.test(m.trim()) && !/\b
  * Why sending to the diary failed, in plain words. Nothing was saved on the
  * server, so the words go back in the composer and every message says so.
  */
-export function sendErrorCopy(e: unknown): DiaryError {
+function sendErrorCopyRaw(e: unknown, { kept = true }: { kept?: boolean } = {}): DiaryError {
   const status = e instanceof ApiError ? e.status : -1;
   const code = e instanceof ApiError ? e.code : undefined;
   const message = e instanceof Error ? e.message.trim() : "";
-  const back = "Your words are still here.";
+  // A retry from a failed reply has nothing in the composer to keep.
+  const back = kept ? "Your words are still here." : "";
   if (status === 0) return { kind: "offline", message: `Couldn't reach Inkwell. Check your connection and try again. ${back}` };
   switch (code) {
     case "thread_not_found":
@@ -42,14 +43,31 @@ export function sendErrorCopy(e: unknown): DiaryError {
   return { kind: "failed", message: `Something went wrong sending that. Try again. ${back}` };
 }
 
-/** A failed run's reason, as shown under the reply. */
+export function sendErrorCopy(e: unknown, opts: { kept?: boolean } = {}): DiaryError {
+  const error = sendErrorCopyRaw(e, opts);
+  return { ...error, message: error.message.trim() };
+}
+
+/** The runtime's "ran out of time / budget / steps" endings, which ask the person to continue. */
+const CONTINUE = /\s*Ask it to continue(?: from the changes already made)?\.?$/i;
+
+/** A failed run's reason, as shown under the reply (the button beside it says what to do next). */
 export function runErrorCopy(error: string | null | undefined): string {
   const why = (error ?? "").trim();
-  if (!why) return "Stopped with an error. Try again.";
+  if (!why) return "Something went wrong before this was finished.";
   if (MISSING_KEY.test(why)) return COPY.notConnected;
-  if (MODEL_FAILED.test(why)) return "Muse Spark couldn't finish this one. Try again in a moment.";
-  if (/^Interrupted by a server restart/i.test(why)) return "Inkwell restarted while this was being written. Ask again to pick it up.";
-  return isPlain(why) ? why : "Stopped with an error. Try again.";
+  if (MODEL_FAILED.test(why)) return "Muse Spark couldn't finish this one.";
+  if (/^Interrupted by a server restart/i.test(why)) return "Inkwell restarted while this was being written.";
+  if (CONTINUE.test(why)) return why.replace(CONTINUE, "").trim() || "The agent stopped partway.";
+  return isPlain(why) ? why : "Something went wrong before this was finished.";
+}
+
+/** What a failed reply offers: send the same request again, ask the agent to carry on, or nothing (retrying can't help). */
+export function runRecovery(error: string | null | undefined): "retry" | "continue" | null {
+  const why = (error ?? "").trim();
+  if (MISSING_KEY.test(why)) return null;
+  if (CONTINUE.test(why)) return "continue";
+  return "retry";
 }
 
 /** Stopping a run failed. */

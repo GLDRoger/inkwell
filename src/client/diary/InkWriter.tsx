@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { prefersReducedMotion } from "../lib/ui";
-import { handCut, handSegments, renderMarkdown, revealRate, sliceSegments, type HandSegment } from "./ink";
+import { handCut, handSegments, maskIncomplete, renderMarkdown, revealRate, sliceSegments, type HandSegment, type QuoteAuthor } from "./ink";
 
 interface Props {
   /** The diary entry this ink belongs to; remembers that it has been written once. */
@@ -12,6 +12,8 @@ interface Props {
   live: boolean;
   /** More text may still arrive. */
   streaming: boolean;
+  /** Signs quotes another agent wrote ("— Wren") once the reply has settled. */
+  quoteBy?: QuoteAuthor;
   onClick?(e: React.MouseEvent): void;
   /** The reply has finished writing and settled into plain text. */
   onSettled?(): void;
@@ -95,7 +97,7 @@ type DocWithTransitions = Document & { startViewTransition?: (cb: () => void) =>
  * a moment after the last word it settles into plain, readable text. Replies
  * that were already there when you opened the diary are simply text.
  */
-export function InkWriter({ id, text, color, live, streaming, onClick, onSettled }: Props) {
+export function InkWriter({ id, text, color, live, streaming, quoteBy, onClick, onSettled }: Props) {
   const writes = live && !written.has(id) && !prefersReducedMotion();
   const [settled, setSettled] = useState(!writes);
   const root = useRef<HTMLDivElement>(null);
@@ -130,17 +132,19 @@ export function InkWriter({ id, text, color, live, streaming, onClick, onSettled
     if (live && !writes) settledCb.current?.();
   }, [live, writes]);
 
-  const settledHtml = useMemo(() => (settled ? renderMarkdown(text) : ""), [settled, text]);
+  const settledHtml = useMemo(() => (settled ? renderMarkdown(text, { quoteBy }) : ""), [settled, text, quoteBy]);
 
   const cut = handCut(text);
-  const handMd = text.slice(0, cut);
+  // While more may arrive, a link or bold that hasn't closed yet is shown as plain words, not syntax.
+  const handMd = streaming ? maskIncomplete(text.slice(0, cut)) : text.slice(0, cut);
   const segments = useMemo(() => handSegments(handMd), [handMd]);
   // Map the markdown position onto the ink proportionally, so hidden syntax (a link's target) never makes the reveal jump back.
   const handLength = useMemo(() => segments.reduce((n, s) => n + Array.from(s.text).length, 0), [segments]);
   const visibleChars = cut ? Math.round((handLength * Math.min(shown, cut)) / cut) : 0;
   const handVisible = useMemo(() => sliceSegments(segments, visibleChars), [segments, visibleChars]);
   const restEnd = shown > cut ? snapToWord(text, shown) : cut;
-  const restMd = settled ? "" : text.slice(cut, restEnd);
+  // The serif part is revealed word by word, so it can stop mid-link even when the text is complete.
+  const restMd = settled ? "" : maskIncomplete(text.slice(cut, restEnd));
   const restHtml = useMemo(() => (restMd.trim() ? renderMarkdown(restMd) : ""), [restMd]);
   const writing = !settled && (shown < text.length || streaming);
   const handText = segments.map((s) => s.text).join("");

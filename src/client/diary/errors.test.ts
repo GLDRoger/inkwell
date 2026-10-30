@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../lib/api";
-import { cancelErrorCopy, runErrorCopy, sendErrorCopy } from "./errors";
+import { cancelErrorCopy, runErrorCopy, runRecovery, sendErrorCopy } from "./errors";
 
 describe("sendErrorCopy", () => {
   it("never says the server isn't running the agents on a 404", () => {
@@ -48,14 +48,34 @@ describe("runErrorCopy", () => {
   });
   it("names the model when the provider fails", () => {
     expect(runErrorCopy("The Meta model couldn't complete this request. Check the API configuration and try again.")).toBe(
-      "Muse Spark couldn't finish this one. Try again in a moment.",
+      "Muse Spark couldn't finish this one.",
     );
   });
   it("passes the runtime's own plain sentences through", () => {
     expect(runErrorCopy("Agent handoff limit reached. Finish with the information available.")).toBe(
       "Agent handoff limit reached. Finish with the information available.",
     );
-    expect(runErrorCopy("")).toBe("Stopped with an error. Try again.");
+    expect(runErrorCopy("")).toBe("Something went wrong before this was finished.");
+  });
+  it("leaves the next step to the button beside it", () => {
+    expect(runErrorCopy("The agent ran out of time. Ask it to continue from the changes already made.")).toBe("The agent ran out of time.");
+    expect(runErrorCopy("Interrupted by a server restart.")).toBe("Inkwell restarted while this was being written.");
+  });
+});
+
+describe("runRecovery", () => {
+  it("offers Try again, Continue, or nothing when retrying can't help", () => {
+    expect(runRecovery("The Meta model couldn't complete this request. Check the API configuration and try again.")).toBe("retry");
+    expect(runRecovery(null)).toBe("retry");
+    expect(runRecovery("The agent reached its step limit. Ask it to continue from the changes already made.")).toBe("continue");
+    expect(runRecovery("The agent reached its reply length limit. Ask it to continue.")).toBe("continue");
+    expect(runRecovery("The Meta API key isn't configured. Set META_API_KEY to let the agents work.")).toBeNull();
+  });
+});
+
+describe("sendErrorCopy on a retry", () => {
+  it("doesn't promise the words are back in the composer", () => {
+    expect(sendErrorCopy(new ApiError(0, "x"), { kept: false }).message).toBe("Couldn't reach Inkwell. Check your connection and try again.");
   });
 });
 

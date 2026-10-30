@@ -1,11 +1,17 @@
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronRight, Footprints, Map as MapIcon, Square } from "lucide-react";
+import { ChevronRight, Footprints, Map as MapIcon, RotateCcw, Square } from "lucide-react";
 import type { Agent, DiaryEntry, Run } from "@shared/types";
-import { pageTitle, usePages, useRun } from "../lib/queries";
+import { pageTitle, useMap, usePages, useRun } from "../lib/queries";
 import { InkWriter } from "./InkWriter";
 import { splitFailure } from "./reply";
-import { modelName } from "./copy";
+import { COPY, modelName } from "./copy";
+import { runRecovery } from "./errors";
+import type { QuoteAuthor } from "./ink";
+import { stopNote, tidyReply, workDone, type NotePart } from "./tidy";
+
+/** What a failed reply's button does: send the same request again, or ask the agent to carry on. */
+export type Recovery = "retry" | "continue";
 
 const ACTIVE: Run["status"][] = ["queued", "running"];
 export const isActiveRun = (r: Run | null | undefined) => !!r && ACTIVE.includes(r.status);
@@ -35,7 +41,20 @@ export function InkDrops({ color }: { color: string }) {
  * what it did, each step linking to the page and to its spot on the map.
  * Open while the agent walks; long finished trails fold away.
  */
-export function Steps({ run, agent, note, onCancel }: { run: Run; agent?: Agent; note?: string | null; onCancel?(): void }) {
+export function Steps({
+  run,
+  agent,
+  note,
+  status,
+  onCancel,
+}: {
+  run: Run;
+  agent?: Agent;
+  note?: ReactNode;
+  /** What the agent said it's doing (its opening line), shown in place of "Working…". */
+  status?: string | null;
+  onCancel?(): void;
+}) {
   const active = isActiveRun(run);
   const n = run.steps.length;
   const [open, setOpen] = useState<boolean | null>(null);
@@ -74,7 +93,7 @@ export function Steps({ run, agent, note, onCancel }: { run: Run; agent?: Agent;
       {active && (
         <p className="step-status">
           <span className="walking" aria-hidden />
-          {run.status === "queued" ? "Getting ready…" : n ? "Working…" : "Starting…"}
+          <span className="step-status-text">{run.status === "queued" ? "Getting ready…" : status || (n ? "Working…" : "Starting…")}</span>
           {onCancel && (
             <button type="button" className="link-button" onClick={onCancel}>
               <Square size={10} aria-hidden fill="currentColor" /> Stop
@@ -112,27 +131,102 @@ function Touched({ ids }: { ids: string[] }) {
   );
 }
 
+/** "Stopped. Wren had already made Packing list.", with each page a link. */
+function StopNote({ run, agents }: { run: Run; agents: Agent[] }) {
+  const { data: graph } = useMap();
+  const { data: pages } = usePages();
+  const parts = stopNote(workDone(run, graph?.runs ?? []), (id) => agents.find((a) => a.id === id)?.name ?? "The agent");
+  return (
+    <>
+      {parts.map((p: NotePart, i) => {
+        if (typeof p === "string") return <Fragment key={i}>{p}</Fragment>;
+        const page = p.pageId ? pages?.find((x) => x.id === p.pageId) : undefined;
+        return p.pageId && page ? (
+          <Link key={i} to={`/p/${p.pageId}`}>
+            {pageTitle(page)}
+          </Link>
+        ) : (
+          <Fragment key={i}>{p.title}</Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** A quote in this reply was written by the agent named in the line before it, or by the one agent it asked. */
+function useQuoteAuthor(run: Run | null | undefined, self: Agent | undefined, agents: Agent[]): QuoteAuthor | undefined {
+  const others = agents.filter((a) => a.id !== self?.id);
+  const asked = [...new Set((run?.steps ?? []).map((s) => /^Asked (.+) for help$/.exec(s.summary)?.[1]).filter(Boolean))];
+  const key = agents.map((a) => `${a.id}:${a.name}:${a.color}`).join("|") + "#" + (self?.id ?? "") + "#" + asked.join("|");
+  return useCallback<QuoteAuthor>(
+    (intro, depth) => {
+      let best: { agent: Agent; at: number } | null = null;
+      // A quote inside a quote can be this agent's own report, passed back through another agent.
+      for (const a of depth ? agents : others) {
+        const re = new RegExp(`\\b${escapeRe(a.name)}\\b`, "g");
+        for (const m of intro.matchAll(re)) if (!best || m.index! > best.at) best = { agent: a, at: m.index! };
+      }
+      const agent = best?.agent ?? (!depth && asked.length === 1 ? others.find((a) => a.name === asked[0]) : undefined);
+      return agent ? { name: agent.name, color: agent.color } : null;
+    },
+    // `key` stands for the agents and steps read above, so settled replies don't re-render their markdown on every event.
+    [key],
+  );
+}
+
 function AgentEntry({
   entry,
   agent,
+  agents,
   live,
+  recoverable,
   onCancel,
+  onRecover,
   onSettled,
 }: {
   entry: DiaryEntry;
   agent?: Agent;
+  agents: Agent[];
   live: boolean;
+  /** This is the latest reply and nothing is running, so a failed one can be tried again. */
+  recoverable: boolean;
   onCancel(runId: string): void;
+  onRecover?(entry: DiaryEntry, run: Run, how: Recovery): void;
   onSettled?(id: string): void;
 }) {
   const navigate = useNavigate();
   const { data: run } = useRun(entry.runId);
   const color = agent?.color ?? "var(--ink-soft)";
   const streaming = isActiveRun(run);
-  const { text, note } = splitFailure(entry.text, run);
+  const split = splitFailure(entry.text, run);
+  const { text, status } = tidyReply(split.text, run);
+  const quoteBy = useQuoteAuthor(run, agent, agents);
   const [settled, setSettled] = useState(!live);
+  // Only a finished reply is signed: a failed or stopped one isn't the agent's answer.
+  const signed = run ? run.status === "succeeded" || streaming : !entry.runId;
+  const how = run?.status === "failed" ? runRecovery(run.error) : null;
+  let note: ReactNode = null;
+  if (run?.status === "cancelled")
+    note = (
+      <span className="step-note-text">
+        <StopNote run={run} agents={agents} />
+      </span>
+    );
+  else if (split.note)
+    note = (
+      <>
+        <span className="step-note-text">{split.note}</span>
+        {how && recoverable && onRecover && (
+          <button type="button" className="link-button recover" onClick={() => onRecover(entry, run!, how)}>
+            <RotateCcw size={12} aria-hidden /> {how === "retry" ? COPY.tryAgain : COPY.carryOn}
+          </button>
+        )}
+      </>
+    );
   return (
-    <div className="entry entry-agent" style={{ ["--agent" as string]: color }}>
+    <div className="entry entry-agent" style={{ ["--agent" as string]: color }} data-outcome={run?.status}>
       {text ? (
         <InkWriter
           key={live ? "live" : "still"}
@@ -141,6 +235,7 @@ function AgentEntry({
           color={color}
           live={live}
           streaming={streaming && live}
+          quoteBy={quoteBy}
           onSettled={() => {
             setSettled(true);
             onSettled?.(entry.id);
@@ -165,7 +260,7 @@ function AgentEntry({
           </p>
         )
       )}
-      {text && (
+      {text && signed && (
         <div className="reply-meta">
           {/* Which Meta model wrote this: quiet provenance, shown once the reply is done. */}
           {entry.runId && (
@@ -180,7 +275,7 @@ function AgentEntry({
           )}
         </div>
       )}
-      {run && <Steps run={run} agent={agent} note={note} onCancel={() => onCancel(run.id)} />}
+      {run && <Steps run={run} agent={agent} note={note} status={status} onCancel={() => onCancel(run.id)} />}
       {!run && entry.pageIds.length > 0 && <Touched ids={entry.pageIds} />}
     </div>
   );
@@ -214,14 +309,19 @@ export function Entries({
   agents,
   liveIds,
   hiddenId,
+  recoverableId,
   onCancel,
+  onRecover,
   onSettled,
 }: {
   entries: DiaryEntry[];
   agents: Agent[];
   liveIds: string[];
   hiddenId: string | null;
+  /** The reply that can offer "Try again" (the latest, while nothing runs). */
+  recoverableId?: string | null;
   onCancel(runId: string): void;
+  onRecover?(entry: DiaryEntry, run: Run, how: Recovery): void;
   onSettled?(id: string): void;
 }) {
   let lastDay = "";
@@ -241,7 +341,17 @@ export function Entries({
             )}
             <li>
               {e.role === "agent" ? (
-                <AgentEntry key={liveIds.includes(e.id) ? "live" : "still"} entry={e} agent={agents.find((a) => a.id === e.agentId)} live={liveIds.includes(e.id)} onCancel={onCancel} onSettled={onSettled} />
+                <AgentEntry
+                  key={liveIds.includes(e.id) ? "live" : "still"}
+                  entry={e}
+                  agent={agents.find((a) => a.id === e.agentId)}
+                  agents={agents}
+                  live={liveIds.includes(e.id)}
+                  recoverable={e.id === recoverableId}
+                  onCancel={onCancel}
+                  onRecover={onRecover}
+                  onSettled={onSettled}
+                />
               ) : (
                 <PersonEntry entry={e} />
               )}

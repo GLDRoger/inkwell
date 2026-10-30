@@ -19,6 +19,10 @@ export const COPY = {
   send: "Send",
   stop: "Stop",
   saved: "Your words are saved.",
+  tryAgain: "Try again",
+  carryOn: "Continue",
+  /** Sent when someone taps Continue under a reply that ran out of time or steps. */
+  continueRequest: "Please continue from where you stopped.",
   notConnected: "The agents aren't connected yet, so they can't write back. Your words are saved.",
 } as const;
 
@@ -45,9 +49,9 @@ export function modelName(model: string | null | undefined): string {
 
 /** One-tap first requests that work against the demo notebook. */
 export const STARTERS_NOTEBOOK = [
-  "Plan my 3 days in Lisbon",
+  "Plan my 5 days in Lisbon",
   "Summarise my reading notes",
   "Turn the launch plan into a checklist",
 ];
 
-export const STARTERS_PAGE = ["Tidy up this page and fill the gaps", "Summarise this page", "Turn this page into a checklist"];
+export const STARTERS_PAGE = ["Summarise this page", "Tighten this page", "Link related pages"];
