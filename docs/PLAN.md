@@ -151,3 +151,7 @@ Apply after the server worker lands, then re-record the demo cassette:
 8. Record input+output tokens on runs (run.usage.totalTokens) so the corpus shows usage.
 9. Corpus: ambiguous_tidy checks containment not identity; check diary link labels match target titles.
 10. Per-step first-byte watchdog (~30s abort + one retry) for demo safety.
+
+### Judge flow shipped (2026-10-30, deployed 2d205d4)
+Welcome (Muse Image objects, "Three AI agents, running on Meta's Muse models…") → Watch it work (110 s recorded real-Wonder demo: plan, voice, handoff with Wren shown inline, photo to cards with the photo on its page, Muse Image cover, Atlas links; ends on the whole notebook) → Try it yourself (guide, BYOK key dialog: Wonder or Spark Contributor). Peek panel on click. 579 tests. Audit of the judge journey: all P0/P1 fixed.
+Left for the owner: record the video from "Watch it work" + a short hands-on segment (docs/DEMO.md); submission form (team details, AI disclosure draft in docs/SUBMISSION.md, confirm track); optional DNS for inkwell.questili.com.
