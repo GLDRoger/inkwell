@@ -12,6 +12,7 @@ import { Mark } from "./shell/Mark";
 import { Welcome } from "./welcome/Welcome";
 import { hasSeenWelcome, markWelcomeSeen, shouldShowWelcome, withoutWelcomeParam } from "./welcome/show";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
+import { NotFound } from "./shell/NotFound";
 import { DiaryPanel } from "./diary/DiaryPanel";
 
 type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
@@ -177,7 +178,7 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
               </Suspense>
             }
           />
-          <Route path="*" element={<MapRoute />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       <DiaryPanel />

@@ -29,12 +29,29 @@
   background: var(--paper-raised); box-shadow: var(--shadow-chrome);
 }
 .brand {
-  display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px 0 8px;
-  border-radius: var(--radius-pill); color: var(--ink); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 8px;
+  border: 0; border-radius: var(--radius-pill); color: var(--ink); text-decoration: none;
   font: 600 15px/1 var(--font-ui); letter-spacing: -0.01em;
-  transition: box-shadow var(--dur) var(--ease-ink);
+  transition: box-shadow var(--dur) var(--ease-ink), background-color var(--dur-fast) ease;
 }
 .brand svg { flex: none; }
+.brand-chevron { color: var(--ink-faint); transition: transform var(--dur) var(--ease-ink); }
+.brand[aria-expanded="true"] .brand-chevron { transform: rotate(180deg); }
+.app[data-route="page"] .brand { background: transparent; box-shadow: none; }
+.app[data-route="page"] .brand:hover { background: var(--paper-sunken); }
+
+/* "About this notebook", under the brand. */
+.brand-wrap { position: relative; }
+.about {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 40; width: min(320px, calc(100vw - 24px));
+  padding: 16px 18px 14px; border-radius: var(--radius-lg); background: var(--paper-raised); box-shadow: var(--shadow-pop);
+  font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); animation: pop-in 180ms var(--ease-ink);
+}
+.about-title { margin: 0 0 8px; font: 550 14px/1.3 var(--font-ui); color: var(--ink); }
+.about-list { margin: 0 0 12px; padding: 0 0 0 1.1em; display: grid; gap: 4px; }
+.about-list li::marker { color: var(--ink-faint); }
+.about-welcome { font-size: 13.5px; min-height: 32px; }
+@media (prefers-reduced-motion: reduce) { .about { animation: none; } }
 
 .crumbs { min-width: 0; overflow: hidden; }
 .crumbs ol { display: flex; align-items: center; gap: 2px; list-style: none; margin: 0; padding: 0; min-width: 0; }
@@ -115,7 +132,8 @@
 .palette-item[aria-selected="true"] .palette-icon { color: var(--ink); }
 .palette-detail { font-size: 13px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .palette-enter { color: var(--ink-faint); flex: none; }
-.palette-status { padding: 6px 16px 10px; font-size: 12px; color: var(--ink-faint); }
+.palette-status { padding: 8px 20px 12px; font-size: 12px; color: var(--ink-faint); border-top: 1px solid var(--rule); }
+.palette-status kbd { padding: 2px 5px; }
 
 /* ------------------------------------------------------------ notices */
 .connection-notice {
@@ -137,6 +155,12 @@
   font-size: 13.5px; line-height: 1.4; box-shadow: var(--shadow-pop); animation: noticeIn 240ms var(--ease-ink);
 }
 .notice[data-tone="busy"] { padding-right: 16px; }
+.notice-text { min-width: 0; }
+.notice-action {
+  flex: none; height: 30px; padding: 0 12px; margin-left: 4px; border: 0; border-radius: var(--radius-pill);
+  background: var(--ink); color: var(--paper); font-size: 13px; font-weight: 550;
+}
+.notice-action:hover { background: color-mix(in oklab, var(--ink) 86%, var(--paper)); }
 .notice > svg { flex: none; opacity: 0.85; }
 .notice > svg { color: var(--ink-soft); }
 .notice[data-tone="done"] > svg { color: var(--working); }
@@ -150,6 +174,13 @@
 @media (prefers-reduced-motion: reduce) { .notice, .connection-notice { animation: none; } }
 /* On a phone's map, sit above the minimap and the photo button rather than over them. */
 @media (max-width: 639px) { .app[data-route="map"] .notices { bottom: calc(116px + env(safe-area-inset-bottom, 0px)); } }
+
+/* ------------------------------------------------------------ not found / not in your notebook */
+.page.missing { padding-top: 16vh; display: flex; flex-direction: column; align-items: flex-start; }
+.missing-title { margin: 0 0 12px; font: 400 40px/1.08 var(--font-display); letter-spacing: -0.03em; text-wrap: balance; max-width: 18ch; }
+.missing-body { margin: 0 0 28px; max-width: 46ch; color: var(--ink-soft); font-size: 16px; line-height: 1.55; text-wrap: pretty; }
+.missing-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 640px) { .page.missing { padding-top: 10vh; } .missing-title { font-size: 32px; } }
 
 /* ------------------------------------------------------------ map placeholder */
 .map-loading { position: absolute; inset: 0; background: var(--paper); }
@@ -175,10 +206,13 @@
 }
 @media (max-width: 640px) {
   .topbar { padding: 0 10px; }
-  .search-trigger kbd, .quill-label, .brand-name { display: none; }
-  .brand { padding: 0; width: 38px; justify-content: center; }
-  .search-trigger { width: 38px; padding: 0; justify-content: center; }
-  .quill-button { padding: 0 12px; }
+  .search-trigger kbd, .quill-label, .brand-name, .brand-chevron, .palette-status { display: none; }
+  /* 44px tap targets. */
+  .brand { padding: 0; width: 44px; height: 44px; justify-content: center; }
+  .search-trigger { width: 44px; height: 44px; padding: 0; justify-content: center; }
+  .quill-button { height: 44px; min-width: 44px; padding: 0 14px; }
+  .people { height: 44px; }
+  .palette-item { min-height: 48px; }
   .crumbs li:not([aria-current]) { display: none; }
   .crumbs li[aria-current] span { max-width: 52vw; }
   .people { display: none; }

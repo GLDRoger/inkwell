@@ -5,6 +5,8 @@ import type { Id } from "@shared/types";
 export interface UiState {
   diaryOpen: boolean;
   paletteOpen: boolean;
+  /** The "About this notebook" panel under the brand. */
+  aboutOpen?: boolean;
   /** Text handed to the diary composer (e.g. "Ask an agent" from the palette). */
   diaryDraft: { text: string; agentId: Id | null; nonce: number } | null;
 }

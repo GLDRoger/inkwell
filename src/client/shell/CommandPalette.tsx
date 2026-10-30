@@ -1,17 +1,32 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CornerDownLeft, FilePlus2, FileText, ImagePlus, Map as MapIcon, NotebookPen, ScanText, SunMoon } from "lucide-react";
-import type { Page } from "@shared/types";
+import {
+  CornerDownLeft,
+  FilePlus2,
+  FileText,
+  ImagePlus,
+  Info,
+  Locate,
+  Map as MapIcon,
+  MessageSquareText,
+  Moon,
+  NotebookPen,
+  ScanText,
+  BookOpen,
+  Sun,
+} from "lucide-react";
 import { api, isNotFound } from "../lib/api";
 import { keys, pageTitle, usePages } from "../lib/queries";
 import { useCreatePage } from "../lib/mutations";
 import { openDiaryWith, setUi, useUi } from "../lib/ui";
 import { paintCover, usePhotoImport } from "../lib/media";
+import { showWelcomeAgain } from "./About";
+import { actionDefs, entryKey, paletteEntries, type ActionId, type Section } from "./paletteModel";
 
 interface Item {
   id: string;
-  section: "Pages" | "Actions";
+  section: Section;
   label: ReactNode;
   detail?: ReactNode;
   icon: ReactNode;
@@ -27,35 +42,16 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
-/** Rank pages by title match: prefix, then word-start, then substring. Exported for tests. */
-export function rankPages(pages: Page[], q: string, limit = 8): Page[] {
-  const needle = q.trim().toLowerCase();
-  if (!needle) return [...pages].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1)).slice(0, limit);
-  const scored: [number, Page][] = [];
-  for (const p of pages) {
-    const t = pageTitle(p).toLowerCase();
-    const s = t.startsWith(needle) ? 0 : t.split(/\s+/).some((w) => w.startsWith(needle)) ? 1 : t.includes(needle) ? 2 : -1;
-    if (s >= 0) scored.push([s, p]);
-  }
-  return scored.sort((a, b) => a[0] - b[0] || pageTitle(a[1]).localeCompare(pageTitle(b[1]))).slice(0, limit).map((x) => x[1]);
-}
 
-/** Search snippets come from markdown; show them as plain words. */
-export function plainSnippet(md: string): string {
-  return md
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s*#{1,6}\s+/gm, "")
-    .replace(/(^|\s)#{1,6}\s+/g, "$1")
-    .replace(/- \[[ xX]\]\s*/g, "")
-    .replace(/[*_`~]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const currentTheme = (): "light" | "dark" => {
+  const set = document.documentElement.dataset.theme;
+  if (set === "light" || set === "dark") return set;
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+};
 
 function toggleTheme() {
   const root = document.documentElement;
-  const current = root.dataset.theme ?? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  const next = current === "dark" ? "light" : "dark";
+  const next = currentTheme() === "dark" ? "light" : "dark";
   root.dataset.theme = next;
   localStorage.setItem("inkwell-theme", next);
 }
@@ -95,65 +91,67 @@ export function CommandPalette() {
   const close = () => setUi({ paletteOpen: false });
 
   const items = useMemo<Item[]>(() => {
-    const out: Item[] = [];
-    const seen = new Set<string>();
-    const go = (id: string) => () => {
+    if (!open) return [];
+    const go = (path: string) => () => {
       close();
-      navigate(`/p/${id}`);
+      navigate(path);
     };
-    for (const p of rankPages(pages, q, q ? 6 : 5)) {
-      seen.add(p.id);
-      out.push({ id: `page-${p.id}`, section: "Pages", label: `${p.icon ? p.icon + " " : ""}${pageTitle(p)}`, icon: <FileText size={16} />, run: go(p.id) });
-    }
-    for (const hit of search.data ?? []) {
-      if (seen.has(hit.page.id) || out.length >= 10) continue;
-      seen.add(hit.page.id);
-      out.push({
-        id: `page-${hit.page.id}`,
-        section: "Pages",
-        label: pageTitle(hit.page),
-        detail: plainSnippet(hit.snippet),
-        icon: <FileText size={16} />,
-        run: go(hit.page.id),
-      });
-    }
-    const text = q.trim();
-    if (text) {
-      out.push({
-        id: "ask",
-        section: "Actions",
-        label: <>Ask an agent: <em>“{text}”</em></>,
-        icon: <NotebookPen size={16} />,
-        run: () => openDiaryWith(text),
-      });
-      out.push({
-        id: "new-titled",
-        section: "Actions",
-        label: <>New page <em>“{text}”</em></>,
-        icon: <FilePlus2 size={16} />,
-        run: () => {
-          close();
-          create.mutate({ title: text });
-        },
-      });
-    } else {
-      out.push({ id: "diary", section: "Actions", label: "Open the diary", icon: <NotebookPen size={16} />, run: () => setUi({ paletteOpen: false, diaryOpen: true }) });
-      out.push({ id: "new", section: "Actions", label: "New page", icon: <FilePlus2 size={16} />, run: () => (close(), create.mutate({})) });
-    }
-    out.push({ id: "map", section: "Actions", label: "Open the map", icon: <MapIcon size={16} />, run: () => (close(), navigate("/")) });
-    out.push({ id: "photo", section: "Actions", label: "Turn a photo of notes into cards", icon: <ScanText size={16} />, run: () => (close(), importPhoto()) });
     const here = onPage ? pages.find((p) => p.id === onPage) : undefined;
-    if (here)
-      out.push({
-        id: "cover",
-        section: "Actions",
-        label: <>{here.coverUrl ? "Make a new cover for" : "Make a cover for"} <em>“{pageTitle(here)}”</em></>,
-        icon: <ImagePlus size={16} />,
-        run: () => (close(), void paintCover(here)),
-      });
-    out.push({ id: "theme", section: "Actions", label: "Switch light / dark", icon: <SunMoon size={16} />, run: () => (toggleTheme(), close()) });
-    return out;
-  }, [pages, q, search.data, onPage, importPhoto]);
+    const runAction: Record<ActionId, () => void> = {
+      diary: () => setUi({ paletteOpen: false, diaryOpen: true }),
+      new: () => (close(), create.mutate({})),
+      map: go("/"),
+      photo: () => (close(), importPhoto()),
+      cover: () => (close(), here && void paintCover(here)),
+      theme: () => (toggleTheme(), close()),
+      about: () => (close(), navigate("/"), setUi({ aboutOpen: true })),
+      welcome: () => (close(), showWelcomeAgain()),
+    };
+    const ACTION_ICONS: Record<ActionId, ReactNode> = {
+      diary: <NotebookPen size={16} />,
+      new: <FilePlus2 size={16} />,
+      map: <MapIcon size={16} />,
+      photo: <ScanText size={16} />,
+      cover: <ImagePlus size={16} />,
+      theme: currentTheme() === "dark" ? <Sun size={16} /> : <Moon size={16} />,
+      about: <Info size={16} />,
+      welcome: <BookOpen size={16} />,
+    };
+    const entries = paletteEntries({
+      q,
+      pages,
+      hits: debounced === q.trim() ? search.data : undefined,
+      actions: actionDefs({ theme: currentTheme(), here }),
+    });
+    return entries.map((e): Item => {
+      const id = entryKey(e);
+      switch (e.kind) {
+        case "page":
+          return {
+            id,
+            section: e.section,
+            label: `${e.page.icon ? e.page.icon + " " : ""}${pageTitle(e.page)}`,
+            detail: e.detail,
+            icon: <FileText size={16} />,
+            run: go(`/p/${e.page.id}`),
+          };
+        case "show-on-map":
+          return { id, section: e.section, label: <>Show <em>“{pageTitle(e.page)}”</em> on the map</>, icon: <Locate size={16} />, run: go(`/?focus=${e.page.id}`) };
+        case "action":
+          return { id, section: e.section, label: e.action.label, icon: ACTION_ICONS[e.action.id], run: runAction[e.action.id] };
+        case "ask":
+          return { id, section: e.section, label: <>Ask an agent: <em>“{e.text}”</em></>, icon: <MessageSquareText size={16} />, run: () => openDiaryWith(e.text) };
+        case "new-titled":
+          return {
+            id,
+            section: e.section,
+            label: <>New page called <em>“{e.text}”</em></>,
+            icon: <FilePlus2 size={16} />,
+            run: () => (close(), create.mutate({ title: e.text })),
+          };
+      }
+    });
+  }, [open, pages, q, debounced, search.data, onPage, importPhoto]);
 
   useEffect(() => setIndex(0), [q]);
   const active = items[Math.min(index, items.length - 1)];
@@ -188,7 +186,7 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           className="palette-input"
-          placeholder="Search pages, or ask an agent…"
+          placeholder="Search pages and actions, or ask an agent…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={onKeyDown}
@@ -224,7 +222,9 @@ export function CommandPalette() {
             );
           })}
         </ul>
-        {search.isFetching && <div className="palette-status" aria-live="polite">Searching…</div>}
+        <div className="palette-status" aria-live="polite">
+          {search.isFetching ? "Searching inside your pages…" : <><kbd>↑</kbd> <kbd>↓</kbd> to choose, <kbd>Enter</kbd> to open</>}
+        </div>
       </div>
     </dialog>
   );

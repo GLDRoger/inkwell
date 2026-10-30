@@ -46,8 +46,28 @@ img { max-width: 100%; }
 .ghost-button:hover { background: var(--paper-sunken); color: var(--ink); }
 .ghost-button.danger:hover { color: var(--failed); }
 .ghost-button:disabled { opacity: 0.5; }
+/* A quiet pill button; .pill-primary is the near-black one (inverts in dark mode). */
+.pill-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px;
+  border: 0; border-radius: var(--radius-pill); background: var(--paper-raised); color: var(--ink); box-shadow: var(--shadow-chrome);
+  font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap;
+  transition: background-color var(--dur-fast) ease, transform var(--dur-fast) var(--ease-ink);
+}
+.pill-button:hover { background: var(--paper-sunken); }
+.pill-button:active { transform: scale(0.98); }
+.pill-primary { background: var(--ink); color: var(--paper); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 4px 14px light-dark(rgb(22 21 19 / 0.14), rgb(0 0 0 / 0.4)); }
+.pill-primary:hover { background: color-mix(in oklab, var(--ink) 86%, var(--paper)); }
+@media (prefers-reduced-motion: reduce) { .pill-button:active { transform: none; } }
+
 .link-button { padding: 0; color: var(--wax); text-decoration: underline; text-underline-offset: 2px; font-size: inherit; gap: 4px; }
 .link-button:hover { color: var(--ink); }
+
+/* Phones: every control is at least 44px to tap. */
+@media (max-width: 640px), (pointer: coarse) {
+  .icon-button { width: 44px; height: 44px; }
+  .ghost-button { min-height: 44px; }
+  .pill-button { height: 44px; }
+}
 
 .inline-error { color: var(--failed); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
