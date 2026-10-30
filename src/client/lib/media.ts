@@ -34,6 +34,7 @@ export function mediaErrorCopy(error: unknown, kind: MediaKind): string {
     case 503:
       return NOT_CONNECTED[kind];
     case 413:
+      if (error instanceof ApiError && (error.code === "storage_low" || error.code === "upload_limit")) return message;
       return kind === "voice" ? "That recording is too long. Keep it under ten minutes." : "That photo is too big. Try one under 20 MB.";
     case 415:
       return kind === "voice"
@@ -42,7 +43,7 @@ export function mediaErrorCopy(error: unknown, kind: MediaKind): string {
     case 422:
       return "Couldn't find any notes to read in that photo. Try a closer, sharper shot.";
     case 404:
-      return kind === "cover" ? "This page has been torn out." : kind === "photo" ? "That photo didn't upload. Try again." : FALLBACK[kind];
+      return kind === "cover" ? "This page isn't in your notebook any more." : kind === "photo" ? "That photo didn't upload. Try again." : FALLBACK[kind];
     case 400:
       if (kind === "voice") return /10-minute/.test(message) ? "That recording is too long. Keep it under ten minutes." : "Didn't catch any sound. Try again, a little closer.";
       return FALLBACK[kind];

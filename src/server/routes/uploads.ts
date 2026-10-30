@@ -72,7 +72,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
       const bytes = Buffer.from(await file.arrayBuffer());
       const disk = await fs.promises.statfs(services.dataDir);
       if (disk.bavail * disk.bsize - bytes.length < MIN_FREE_DISK_BYTES) {
-        return c.json({ error: "Uploads are paused because the server is low on storage. Try again later." }, 413);
+        return c.json({ error: "Uploads are paused because the server is low on storage. Try again later.", code: "storage_low" }, 413);
       }
       // Reserve quota synchronously before the asynchronous write. Concurrent uploads
       // see reservations too, so they cannot all pass the same remaining quota.
@@ -89,7 +89,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
           path: filename,
         });
       })();
-      if (!attachment) return c.json({ error: "This notebook has reached its upload limit. Delete some files first." }, 413);
+      if (!attachment) return c.json({ error: "This notebook has reached its upload limit. Delete some files first.", code: "upload_limit" }, 413);
       try {
         await fs.promises.writeFile(path.join(uploadsDir, filename), bytes, { flag: "wx" });
       } catch (error) {
