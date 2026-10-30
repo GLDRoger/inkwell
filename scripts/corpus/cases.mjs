@@ -109,7 +109,13 @@ export const cases = [
     prompt: 'This loose dinner note is cluttering my map. Give it a useful title and put it somewhere sensible in my notebook. Use your judgment; keep the recipe.',
     checks: [
       (s) => { const p = s.pages.find((p) => p.id === s.fixture.pageId); return check(p && p.title !== 'Untitled dinner note' && /chickpea|lemon|skillet/i.test(p.title) && [named(s, 'Recipes')?.id, named(s, 'Weeknight dinners')?.id].includes(p.parentId), 'Agent chose a descriptive title and a sensible recipe parent'); },
-      (s) => check(contains(body(s, s.fixture.pageId), s.before.find((p) => p.id === s.fixture.pageId).markdown), 'Recipe preserved (every original line still there) instead of asking a needless clarification'),
+      (s) => {
+        // The "Recipe: …" line may become the title; everything else must survive.
+        const page = s.pages.find((p) => p.id === s.fixture.pageId);
+        const lines = s.before.find((p) => p.id === s.fixture.pageId).markdown.split(/\n+/)
+          .filter((line) => norm(line.replace(/^recipe:\s*/i, '')).toLowerCase() !== norm(page?.title).toLowerCase());
+        return check(contains(page?.markdown, lines.join('\n')), 'Recipe preserved (every line still there, bar its name moving to the title) instead of asking a needless clarification');
+      },
     ],
   },
   {

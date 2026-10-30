@@ -182,11 +182,13 @@ test('diary links must lead to the pages they name', () => {
   assert.equal(ok('See [Trip to Lisbon](/p/plan).'), false, 'another page\'s id');
 });
 
-test('ambiguous_tidy accepts a kept recipe with additions, rejects a lost line', () => {
+test('ambiguous_tidy accepts a kept recipe with additions or its name as the title, rejects a lost line', () => {
   const c = cases.find((c) => c.name === 'ambiguous_tidy');
   const original = 'Recipe: Lemon chickpea skillet\n\nChickpeas, lemon, garlic. Cook in one pan for 20 minutes.';
-  const state = (markdown) => ({ fixture: { pageId: 'note' }, before: [{ id: 'note', markdown: original }], pages: [{ id: 'note', markdown }] });
+  const state = (markdown, title = 'Untitled dinner note') => ({ fixture: { pageId: 'note' }, before: [{ id: 'note', markdown: original }], pages: [{ id: 'note', title, markdown }] });
   assert.equal(c.checks[1](state(`${original}\n\nSee also [Weeknight dinners](/p/dinners).`)).ok, true);
+  assert.equal(c.checks[1](state('From [Recipes](/p/r).\n\nChickpeas, lemon, garlic. Cook in one pan for 20 minutes.', 'Lemon chickpea skillet')).ok, true, 'the name became the title');
+  assert.equal(c.checks[1](state('From [Recipes](/p/r).\n\nChickpeas, lemon, garlic. Cook in one pan for 20 minutes.', 'Dinner')).ok, false, 'the name is lost');
   assert.equal(c.checks[1](state('Recipe: Lemon chickpea skillet\n\nChickpeas, lemon, garlic.')).ok, false);
 });
 
