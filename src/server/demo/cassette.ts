@@ -232,6 +232,34 @@ export function replayDelay(exchange: Exchange, pace: ReplayPace): number {
   return Math.round(Math.max(min, Math.min(max, exchange.ms * fraction)) * pace.scale);
 }
 
+/** Tools that only look: a model answering their results is reading on, not writing. */
+const READ_ONLY_TOOLS = new Set(["list_pages", "read_page", "search_pages"]);
+
+/** A step's replay delays shrink to a beat once it has been on screen this long (before pace). */
+export const STEP_BUDGET_MS = 24_000;
+
+export interface ReplayContext {
+  /** The exchange answered just before this one in the same run, if any. */
+  previous?: Exchange;
+  /** Milliseconds since the step began. */
+  elapsed: number;
+}
+
+/**
+ * The delay for an exchange in context. Long read-only tool chains (list, read, search)
+ * move on at a reading pace rather than a thinking pace, and a step that has run past its
+ * budget plays its remaining replies at a brisk beat, so nothing sits as dead air.
+ */
+export function pacedDelay(exchange: Exchange, pace: ReplayPace, context: ReplayContext): number {
+  let ms = replayDelay(exchange, pace);
+  const calls = context.previous?.response.type === "chat-stream" ? context.previous.response.toolCalls : [];
+  if (calls.length && calls.every((call) => READ_ONLY_TOOLS.has(call.name))) {
+    ms = Math.min(ms, Math.round(Math.max(600, Math.min(1100, exchange.ms * 0.3)) * pace.scale));
+  }
+  if (context.elapsed > STEP_BUDGET_MS * pace.scale) ms = Math.min(ms, Math.round(400 * pace.scale));
+  return ms;
+}
+
 /** Re-encode a recorded exchange as the HTTP response the client code expects. */
 export function replayResponse(exchange: Exchange, translate: (text: string) => string, pace: ReplayPace, signal?: AbortSignal): Response {
   const r = exchange.response;

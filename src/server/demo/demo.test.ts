@@ -16,8 +16,9 @@ import { createApp, startServer } from "../main.ts";
 import { createServices, type Services } from "../services.ts";
 // @ts-expect-error plain .mjs rehearsal helper, no types
 import { startFakeMeta } from "../../../scripts/rehearsal/fake-meta.mjs";
-import type { Cassette } from "./cassette.ts";
-import { IdTranslator } from "./cassette.ts";
+import type { Cassette, Exchange } from "./cassette.ts";
+import { IdTranslator, pacedDelay, STEP_BUDGET_MS } from "./cassette.ts";
+import { playScenario } from "./play.ts";
 import { CASSETTES_DIR, loadCassette, replayTransport } from "./player.ts";
 import { recordScenario, recordingTransport } from "./record.ts";
 import { LISBON_TOUR } from "./scenario.ts";
@@ -29,6 +30,9 @@ let cassettesDir: string;
 let cassette: Cassette;
 /** Titles of the pages the recording created, in order. */
 let recordedTitles: string[];
+/** Chat request bodies the recording sent, and the person's diary entries it wrote. */
+const recordedBodies: { messages?: { role: string; content: unknown }[] }[] = [];
+let recordedPersonTexts: string[];
 
 beforeAll(async () => {
   fake = await startFakeMeta({ port: 0, fast: true, quiet: true });
@@ -37,7 +41,13 @@ beforeAll(async () => {
   const recorder = createServices(dir);
   try {
     cassette = await recordScenario({ services: recorder, scenario: LISBON_TOUR, apiKey: "rehearsal", baseUrl: fake.url,
-      model: "muse-wonder-1.0", secrets: [] });
+      model: "muse-wonder-1.0", secrets: [],
+      fetch: (url, init) => {
+        if (typeof init?.body === "string") { try { recordedBodies.push(JSON.parse(init.body)); } catch { /* not JSON */ } }
+        return globalThis.fetch(url, init);
+      } });
+    recordedPersonTexts = (recorder.db.prepare("SELECT text FROM diary_entries WHERE role = 'person' ORDER BY rowid").all() as { text: string }[])
+      .map((row) => row.text);
     recordedTitles = cassette.created.map((id) => recorder.db.prepare("SELECT title FROM pages WHERE id = ?").get(id) as { title: string })
       .map((row) => row.title);
   } finally {
@@ -54,6 +64,22 @@ afterAll(async () => {
 });
 
 describe("recording", () => {
+  it("shows the person's plain request and keeps the scenario's guidance in the system prompt", () => {
+    const asks = LISBON_TOUR.steps.flatMap((step) => step.action.kind === "ask" ? [step.action] : []);
+    for (const ask of asks) {
+      expect(recordedPersonTexts).toContain(ask.prompt);
+      expect(recordedPersonTexts.some((text) => ask.guidance && text.includes(ask.guidance))).toBe(false);
+      if (!ask.guidance) continue;
+      const system = recordedBodies.find((body) => body.messages?.[0]?.role === "system" && String(body.messages[0].content).includes(ask.guidance!));
+      expect(system, ask.agent).toBeTruthy();
+    }
+    // A child run (Wren, asked by Scout) doesn't inherit the parent's guidance.
+    const handoff = asks.find((ask) => ask.agent === "Scout")!;
+    const childSystems = recordedBodies.filter((body) => String(body.messages?.[0]?.content ?? "").includes("asked you for help on the person's behalf"));
+    expect(childSystems.length).toBeGreaterThan(0);
+    for (const body of childSystems) expect(String(body.messages![0]!.content)).not.toContain(handoff.guidance!);
+  });
+
   it("captures every step, in order, with runs and media split into streams", () => {
     expect(cassette.scenario.recordedFrom).toBe("rehearsal");
     expect(cassette.steps.map((s) => s.id)).toEqual(LISBON_TOUR.steps.map((s) => s.id));
@@ -150,6 +176,14 @@ describe("replay in the demo notebook", () => {
       const cover = await call(covered!.coverUrl!);
       expect(cover.status).toBe(200);
       expect(cover.headers.get("content-type")).toBe("image/png");
+      // The photo heads its Photo notes page, with one line about what was read from it.
+      const photoNotes = harness.services.pages.listPages(demoWs).find((p) => p.title.startsWith("Photo notes"))!;
+      expect(photoNotes.coverUrl).toMatch(/^\/api\/files\//);
+      const photo = await call(photoNotes.coverUrl!);
+      expect(photo.status).toBe(200);
+      expect(photo.headers.get("content-type")).toBe("image/jpeg");
+      const cards = harness.services.pages.listPages(demoWs).filter((p) => p.parentId === photoNotes.id).length;
+      expect(harness.services.pages.getPageWithBody(demoWs, photoNotes.id)?.markdown).toBe(`${cards} notes read from this photo.\n`);
 
       // The visitor's own notebook didn't change and heard nothing.
       expect(harness.services.pages.listPages(me.workspaceId).map((p) => p.id)).toEqual(ownBefore);
@@ -228,6 +262,51 @@ describe("replay transport", () => {
     setTimeout(() => stop.abort(new Error("Demo stopped.")), 30);
     await expect(pending).rejects.toThrow("Demo stopped.");
     expect(Date.now() - started).toBeLessThan(1000);
+  });
+});
+
+describe("replay pacing", () => {
+  const chat = (ms: number, tools: string[] = []): Exchange => ({ path: "/chat/completions", status: 200, ms,
+    response: { type: "chat-stream", text: "", toolCalls: tools.map((name, i) => ({ id: `c${i}`, name, arguments: "{}" })), finishReason: null } });
+  const pace = { scale: 1 };
+
+  it("thinks at the recorded pace after a write, and reads on briskly after reads", () => {
+    expect(pacedDelay(chat(40_000), pace, { elapsed: 0 })).toBe(3500);
+    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["create_page"]), elapsed: 0 })).toBe(3500);
+    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["read_page", "search_pages"]), elapsed: 0 })).toBe(1100);
+    expect(pacedDelay(chat(1000), pace, { previous: chat(2000, ["list_pages"]), elapsed: 0 })).toBe(600);
+    // A mixed batch that writes still gets thinking time.
+    expect(pacedDelay(chat(40_000), pace, { previous: chat(2000, ["read_page", "edit_page"]), elapsed: 0 })).toBe(3500);
+  });
+
+  it("plays a step that has outrun its budget at a brisk beat", () => {
+    expect(pacedDelay(chat(40_000), pace, { elapsed: STEP_BUDGET_MS + 1 })).toBe(400);
+    expect(pacedDelay(chat(40_000), { scale: 2 }, { elapsed: STEP_BUDGET_MS + 1 })).toBe(7000);
+    expect(pacedDelay(chat(40_000), { scale: 0 }, { elapsed: 0 })).toBe(0);
+  });
+
+  it("holds a quick step on screen for its minimum time", async () => {
+    const dir = tmp("hold");
+    dirs.push(dir);
+    const services = createServices(dir);
+    try {
+      const steps: number[] = [];
+      const scenario = { id: "hold", title: "Hold", steps: [
+        { id: "a", caption: "A", minMs: 300, action: { kind: "cover" as const, title: /no such page/ } },
+        { id: "b", caption: "B", action: { kind: "cover" as const, title: /no such page/ } },
+      ] };
+      const started = Date.now();
+      const times: number[] = [];
+      await playScenario({ services, ctx: { workspaceId: "none" } as never, scenario, apiKey: "x", model: "m",
+        signal: new AbortController().signal, gapMs: 50, holdScale: 1,
+        transport: { replaying: true, beginStep: () => {}, forRun: () => globalThis.fetch, media: () => globalThis.fetch },
+        onStep: (index) => { if (!steps.includes(index)) { steps.push(index); times.push(Date.now() - started); } } });
+      expect(steps).toEqual([0, 1]);
+      // Step a stays up for its 300 ms (the 50 ms pause included), not just the pause.
+      expect(times[1]!).toBeGreaterThanOrEqual(290);
+    } finally {
+      await services.close();
+    }
   });
 });
 

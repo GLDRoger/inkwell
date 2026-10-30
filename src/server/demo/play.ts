@@ -52,6 +52,8 @@ export interface PlayOptions {
   date?: Date;
   /** Pause after each step so viewers can read the caption. */
   gapMs: number;
+  /** Multiplies each step's minMs (its shortest time on screen); 0 or absent while recording. */
+  holdScale?: number;
   onStep: (index: number, focus: Focus) => void;
 }
 
@@ -84,13 +86,13 @@ export async function playScenario(o: PlayOptions): Promise<void> {
   const media = () => createMetaClient({ apiKey: o.apiKey, baseUrl: o.baseUrl, fetch: transport.media() });
   const meta = { apiKey: o.apiKey, baseUrl: o.baseUrl, model: o.model, source: "server" as const, fetchForRun: transport.forRun, recorded: transport.replaying };
 
-  const ask = async (agentName: string, prompt: string, attachments: Attachment[] = []) => {
+  const ask = async (agentName: string, prompt: string, attachments: Attachment[] = [], guidance?: string) => {
     const agent = listAgents(s.db, ws).find((a) => a.name === agentName);
     if (!agent) throw new Error(`demo agent ${agentName} is missing`);
     const thread = insertDiaryThread(s.db, ws, prompt.slice(0, 80));
     const entry = insertDiaryEntry(s.db, ws, { threadId: thread.id, role: "person", text: prompt, attachments });
     s.bus.publish(ws, { type: "diary.entry", entry });
-    const started = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId: thread.id, prompt, meta });
+    const started = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId: thread.id, prompt, meta, ...(guidance ? { guidance } : {}) });
     setFocus({ agentId: agent.id, runId: started.run.id, ...(started.run.pageId ? { pageId: started.run.pageId } : {}) });
     const cancel = () => { void s.runtime.cancel(ws, started.run.id); };
     signal.addEventListener("abort", cancel, { once: true });
@@ -101,11 +103,12 @@ export async function playScenario(o: PlayOptions): Promise<void> {
     for (const [index, def] of o.scenario.steps.entries()) {
       signal.throwIfAborted();
       step = index;
+      const began = Date.now();
       transport.beginStep(index, def);
       setFocus({});
       const action = def.action;
       if (action.kind === "ask") {
-        await ask(action.agent, action.prompt);
+        await ask(action.agent, action.prompt, [], action.guidance);
       } else if (action.kind === "voice") {
         const audio = await addAttachment(s, ws, action.audio, "audio", "audio/wav");
         const bytes = await fs.readFile(path.join(ASSETS_DIR, action.audio));
@@ -124,7 +127,12 @@ export async function playScenario(o: PlayOptions): Promise<void> {
         }
       }
       signal.throwIfAborted();
-      if (index < o.scenario.steps.length - 1) await sleep(o.gapMs, signal);
+      const last = index === o.scenario.steps.length - 1;
+      const gap = last ? 0 : o.gapMs;
+      // Quick steps (a photo, a cover) stay up long enough to read what landed.
+      const hold = (def.minMs ?? 0) * (o.holdScale ?? 0) - (Date.now() - began) - gap;
+      if (hold > 0) await sleep(hold, signal);
+      if (gap > 0) await sleep(gap, signal);
     }
   } finally {
     unsubscribe();

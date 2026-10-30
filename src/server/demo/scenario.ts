@@ -5,8 +5,12 @@
 import type { DemoStep } from "../../shared/types.ts";
 
 export type StepAction =
-  /** A person writes to an agent in the diary. */
-  | { kind: "ask"; agent: string; prompt: string }
+  /**
+   * A person writes to an agent in the diary. `prompt` is what the person types, as a
+   * person would type it; `guidance` steers the recording through the agent's system
+   * prompt (never shown in the diary, not passed to child runs).
+   */
+  | { kind: "ask"; agent: string; prompt: string; guidance?: string }
   /** A person speaks to an agent: the bundled recording is transcribed, then sent. */
   | { kind: "voice"; agent: string; audio: string }
   /** Photo to cards on the bundled photo. */
@@ -14,7 +18,11 @@ export type StepAction =
   /** A Muse Image cover for the first page created in the demo whose title matches. */
   | { kind: "cover"; title: RegExp };
 
-export interface ScenarioStep extends DemoStep { action: StepAction }
+export interface ScenarioStep extends DemoStep {
+  action: StepAction;
+  /** Shortest time the step stays on screen in replay, including the pause after it (scaled by pace). */
+  minMs?: number;
+}
 
 export interface ScenarioDefinition {
   id: string;
@@ -32,7 +40,8 @@ export const LISBON_TOUR: ScenarioDefinition = {
       model: "muse-wonder",
       action: {
         kind: "ask", agent: "Wren",
-        prompt: "Plan my 5 days in Lisbon. Read the trip pages first, then write the plan as a new page called \"Plan: 5 days in Lisbon\" under Trip to Lisbon, and add a link to it in the itinerary.",
+        prompt: "Plan my 5 days in Lisbon",
+        guidance: "For this request: read the trip pages first. Write the plan as one new page titled \"Plan: 5 days in Lisbon\" under Trip to Lisbon, one short section per day, and add a link to it in the Lisbon itinerary.",
       },
     },
     {
@@ -47,7 +56,8 @@ export const LISBON_TOUR: ScenarioDefinition = {
       model: "muse-wonder",
       action: {
         kind: "ask", agent: "Scout",
-        prompt: "Find what we decided about hiring, then have Wren draft the job post.",
+        prompt: "What did we decide about hiring? Get Wren to draft the job post",
+        guidance: "For this request: find the hiring decision in the notebook, then ask Wren with ask_agent to draft the job post for the first role as a new page under Hiring plan. Reply with what was decided and a link to Wren's draft.",
       },
     },
     {
@@ -55,12 +65,14 @@ export const LISBON_TOUR: ScenarioDefinition = {
       caption: "Photo to cards: SAM 3.1 finds each sticky note and Muse Wonder reads the handwriting.",
       model: "sam-3.1+muse-wonder",
       action: { kind: "photo", image: "sticky-notes.jpg" },
+      minMs: 12_000,
     },
     {
       id: "cover",
-      caption: "Muse Image paints a cover for the new Lisbon plan.",
+      caption: "Muse Image makes a cover for the new Lisbon plan.",
       model: "muse-image",
       action: { kind: "cover", title: /lisbon/i },
+      minMs: 12_000,
     },
     {
       id: "tidy",
@@ -68,7 +80,8 @@ export const LISBON_TOUR: ScenarioDefinition = {
       model: "muse-wonder",
       action: {
         kind: "ask", agent: "Atlas",
-        prompt: "Tidy up after today's work: link each new page from the page of the area it belongs to, and back. The photo cards stay where they are under Photo notes, with their titles: link them, don't move or rename them.",
+        prompt: "Can you tidy up after today?",
+        guidance: "For this request: today's new pages are the Lisbon plan, the reading summary, the job post and the photo cards. Call list_pages once, read only those pages and the area pages they belong to, and don't ask other agents. Link each new page from its area page and back. The photo cards stay under Photo notes with their titles: link them, don't move or rename them.",
       },
     },
   ],

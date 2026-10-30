@@ -35,6 +35,11 @@ interface StartInput {
   pageId?: string;
   parentRunId?: string;
   /**
+   * Extra direction for this run's system prompt only (the demo's recorded scenario):
+   * never shown in the diary and not passed on to child runs.
+   */
+  guidance?: string;
+  /**
    * The key and model for this request (a visitor's key or the server's). Held only
    * in memory for the life of the run and its children; never stored. Absent: the
    * server's own key and the default model.
@@ -192,6 +197,7 @@ export class AgentRuntime {
       others ? `Other agents you can ask with ask_agent: ${others}.` : "",
       asker ? `${asker} asked you for help on the person's behalf. Your final reply goes back to ${asker}, so make it a short report with links.` : "",
       where,
+      input.guidance ?? "",
     ].filter(Boolean).join("\n\n");
   }
 

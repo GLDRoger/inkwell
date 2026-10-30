@@ -9,7 +9,7 @@ import type { DemoScenario, DemoState } from "../../shared/types.ts";
 import type { Services } from "../services.ts";
 import type { SessionCtx } from "../session.ts";
 import {
-  bodyJson, IdTranslator, inlineImages, replayDelay, replayResponse, requestVersions, sleep,
+  bodyJson, IdTranslator, inlineImages, pacedDelay, replayResponse, requestVersions, sleep,
   type Cassette, type Exchange, type ReplayPace, type Stream,
 } from "./cassette.ts";
 import { ensureDemoWorkspace, resetDemoWorkspace } from "./notebook.ts";
@@ -45,8 +45,9 @@ export function replayTransport(cassette: Cassette, translator: IdTranslator, pa
   let media: Stream | undefined;
   let nextRun = 0;
   let mediaAt = 0;
-  const serve = (next: () => Exchange | undefined): typeof globalThis.fetch => async (_url, init) => {
-    const exchange = next();
+  let stepStarted = Date.now();
+  const serve = (next: () => { exchange?: Exchange; previous?: Exchange }): typeof globalThis.fetch => async (_url, init) => {
+    const { exchange, previous } = next();
     if (!exchange) {
       // The replay drifted from the recording; fail this call like an upstream error would.
       return Response.json({ error: { message: "The recording has no further reply here." } }, { status: 500 });
@@ -57,7 +58,7 @@ export function replayTransport(cassette: Cassette, translator: IdTranslator, pa
     recorded.forEach((v, i) => { if (actual[i]) versions.set(v, actual[i]!); });
     const signals = [init?.signal, stop].filter((x): x is AbortSignal => Boolean(x));
     const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
-    await sleep(replayDelay(exchange, pace), signal);
+    await sleep(pacedDelay(exchange, pace, { previous, elapsed: Date.now() - stepStarted }), signal);
     return replayResponse(exchange, (text) => translator.translate(text, versions), pace, signal);
   };
   return {
@@ -68,15 +69,16 @@ export function replayTransport(cassette: Cassette, translator: IdTranslator, pa
       media = recorded?.streams.find((s) => s.kind === "media");
       nextRun = 0;
       mediaAt = 0;
+      stepStarted = Date.now();
     },
     forRun() {
       const stream = runs[nextRun++];
       let at = 0;
-      return serve(() => stream?.exchanges[at++]);
+      return serve(() => ({ exchange: stream?.exchanges[at], previous: stream?.exchanges[at++ - 1] }));
     },
     media() {
       const stream = media;
-      return serve(() => stream?.exchanges[mediaAt++]);
+      return serve(() => ({ exchange: stream?.exchanges[mediaAt++] }));
     },
   };
 }
@@ -145,6 +147,7 @@ export class DemoPlayer {
         apiKey: "recorded-demo", baseUrl: "https://api.meta.ai/v1", model: cassette.model,
         date: new Date(cassette.recordedAt),
         gapMs: 2500 * pace,
+        holdScale: pace,
         onStep: (index, focus) => {
           if (index < 0 || !play.playing) return;
           play.index = index;

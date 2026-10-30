@@ -152,7 +152,7 @@ describe("page illustration", () => {
     expect(url).toBe("https://api.meta.ai/v1/images/generations");
     expect(body).toMatchObject({ model: "muse-image-1.0", output_format: "png", response_format: "b64_json" });
     expect(body.prompt).toContain("Lisbon"); expect(body.prompt).toContain("Walk the harbour");
-    expect(body.prompt).toContain("calm editorial illustration for the cover of this notebook page");
+    expect(body.prompt).toContain("softly lit editorial photograph"); expect(body.prompt).toContain("warm off-white");
   });
   it("downloads URL responses without forwarding the API credential", async () => {
     const page = services.pages.listPages(ctx.workspaceId)[0]!;
@@ -210,6 +210,9 @@ describe("photo import", () => {
     expect(pages).toHaveLength(3);
     const [parent, first, second] = pages as [Page, Page, Page];
     expect(parent.title).toMatch(/^Photo notes, \d{1,2} [A-Z][a-z]{2,3}$/); expect(parent.icon).toBe("📷");
+    // The parent shows the photo itself and says what came of it.
+    expect(parent.coverUrl).toBe(`/api/files/${attachment.id}`);
+    expect(services.pages.getPageWithBody(ctx.workspaceId, parent.id)?.markdown).toBe("2 notes read from this photo.\n");
     expect(first.parentId).toBe(parent.id); expect(second.parentId).toBe(parent.id);
     expect(first.x).toBe(maxX + 420 + 120); expect(first.y).toBe(240); expect(first.icon).toBe("🗒️");
     expect(second.x).toBe(maxX + 420 + 720); expect(second.y).toBe(600);

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import type { Page, ServerEvent } from "../../shared/types.ts";
-import { attachmentFilePath, getAttachmentRow } from "../db.ts";
+import { attachmentFilePath, getAttachmentRow, rowToAttachment } from "../db.ts";
 import { createPageStore } from "../pages.ts";
 import type { Services } from "../services.ts";
 import type { SessionCtx } from "../session.ts";
@@ -88,6 +88,9 @@ export async function importPhoto(services: Services, ctx: SessionCtx, attachmen
     const parent = pages.createPage(ctx.workspaceId, ctx.person, {
       title: `Photo notes, ${(options.date ?? new Date()).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
       icon: "📷",
+      // The photo itself heads the page (as its cover), with one line saying what came of it.
+      coverUrl: rowToAttachment(row).url,
+      markdown: `${notes.length === 1 ? "1 note" : `${notes.length} notes`} read from this photo.\n`,
       x: offsetX, y: -400,
     });
     const children = notes.map((note, index) => pages.createPage(ctx.workspaceId, ctx.person, {

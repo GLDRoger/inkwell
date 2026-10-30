@@ -12,7 +12,7 @@ export async function illustratePage(services: Services, ctx: SessionCtx, id: st
   // PNG must be explicit: https://dev.meta.ai/docs/api-reference/images/schemas
   const result = record(await meta.post("/images/generations", {
     model: process.env.META_IMAGE_MODEL ?? "muse-image-1.0",
-    prompt: `Create a calm editorial illustration for the cover of this notebook page: a soft, modern watercolour-and-pencil scene on a warm off-white background, generous empty space, muted natural colours, no text, letters, labels or borders.\nTitle: ${page.title.slice(0, 500)}\nExcerpt: ${page.excerpt.slice(0, 600)}`,
+    prompt: `A calm, modern cover image for a notebook page: a clean, softly lit editorial photograph of one or two real objects that fit the page, arranged simply on a warm off-white (#f8f7f4) surface. Natural daylight, soft shadows, muted natural colours, lots of empty space. No watercolour, no parchment or paper texture, no vignette, no frame or border, no text, letters or labels.\nTitle: ${page.title.slice(0, 500)}\nExcerpt: ${page.excerpt.slice(0, 600)}`,
     response_format: "b64_json",
     output_format: "png",
   }));
