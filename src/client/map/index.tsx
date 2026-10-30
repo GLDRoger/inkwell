@@ -792,6 +792,30 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     camera.touched = false;
   }, [starting, setPeek, camera, fitAll]);
 
+  // The demo's last frame is the whole notebook, everything the agents made in view,
+  // not whichever card the final step happened to be on.
+  const ended = useDemo((s) => s.ended);
+  const wasEnded = useRef(ended);
+  const finale = useRef({ setPeek, fitAll });
+  finale.current = { setPeek, fitAll };
+  useEffect(() => {
+    const was = wasEnded.current;
+    wasEnded.current = ended;
+    if (ended !== "finished" || was === "finished" || !demo) return;
+    // Only the ending re-arms this; peek and layout changes must not cancel it.
+    const t = window.setTimeout(() => {
+      if (!placed.current) return;
+      finale.current.setPeek(null, "demo");
+      camera.hush();
+      camera.touched = false;
+      const whole = finale.current.fitAll();
+      if (reducedRef.current) camera.set(whole);
+      else camera.flyTo(whole, 1400);
+      camera.touched = false;
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [ended]);
+
   // ------------------------------------------------------------ demo camera
   useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek: demoPeek, insets, midScale });
 
