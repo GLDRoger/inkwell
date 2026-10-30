@@ -91,3 +91,12 @@ One TypeScript app, one container.
 - 16:10 UTC: app + diary landed (10 commits; 103/103 tests; screenshots in /tmp/inkwell-shots/app-*). Fixed the SSE dedupe bug. Open: server must not create multiple workspaces for parallel first requests without a cookie (client now waits for /api/me; fix server-side too). Diary send/cancel/transcribe await the agent runtime and media routes. Map should offset by `--shell-top` / `--diary-inset`.
 - 2026-10-30: map worker's work landed (27eea5d). Owner asked to spend GPT capacity on non-UI work: five gpt-6-astra workers launched — agent runtime (`src/server/agents/**`, diary/runs routes), Meta media (`src/server/media/**`, orchestrator mounts it), deploy + session hardening (`Dockerfile`, `deploy/**`, `session.ts`; target inkwell.76-13-246-244.sslip.io until DNS), eval corpus (`scripts/corpus/**`), read-only security review. Still needed from owner: `META_API_KEY` in `.env` (local) and `/opt/inkwell/.env` (host); DNS A record.
 - 2026-10-30 later: landed and deployed (dc19666, live at https://inkwell.76-13-246-244.sslip.io): agent runtime (7d6c2d3), Meta media (35b9647), corpus (c3b2b2d, 12 cases, 0/12 without key), deploy + bootstrap limits, security fixes (d757309 + wiring 012a999), UI wiring for diary/voice/photo/covers/presence (726254a, dc19666), README/DEMO/SUBMISSION drafts (ebb06d6). 186/186 tests. In flight: GPT polish (agents rest on the map after runs, seed runs, seed attribution to Atlas, `scripts/smoke-meta.mjs`). Blocked on key: live smoke, corpus hill-climb, demo recording.
+
+## Hill-climb to client-ready (from 2026-10-30, Claude-only workers)
+
+Goal: ready to hand to the client for internal testing. Every screen, flow and line of copy makes sense; no dead ends. Model testing and the custom domain come last.
+
+1. Rehearsal Meta API (`scripts/rehearsal/`): local stand-in for api.meta.ai via `META_BASE_URL`, so agents, voice, photo import and covers run end to end in a browser without a key.
+2. Hands-on browser audit (375/1280, light/dark) + independent code review -> ranked findings.
+3. Fix rounds on disjoint files, re-audit, repeat until no P0/P1 remain.
+4. Then: real key smoke + corpus hill-climb, domain, demo recording, submission.
