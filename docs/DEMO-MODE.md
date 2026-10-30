@@ -67,7 +67,9 @@ Replayed runs carry `Run.recorded = true` and `Run.model`; their diary entries s
 5. Make a cover for the new Lisbon plan (recorded Muse Image PNG).
 6. Atlas tidies: links the new pages into their areas. End caption: "That's Inkwell. Try it with your own notebook." with the Try it yourself button.
 
-Pacing: each recorded reply waits a bounded fraction of its real latency, and each step waits for the previous runs to finish plus 2.5 s so viewers can read the caption. Whole demo ≈ 1.5 minutes; `INKWELL_DEMO_PACE` scales it (1.5 ≈ 2¼ minutes).
+Pacing: read-only replies (list, read, search) wait 0.8–1.5 s; replies that write or answer wait 2–5.5 s; anything past 30 s in one step plays at 0.4 s per reply. Steps can hold a minimum time on screen (photo and cover: 14 s), and steps are 3.5 s apart so viewers can read the caption. Whole demo ≈ 110 s; `INKWELL_DEMO_PACE` scales it.
+
+Visible requests are what a person would type ("Plan my 5 days in Lisbon"). Any steering a step needs lives in the scenario's hidden `guidance`, added to that run's system prompt only (never shown in the diary, not inherited by child runs). Photo import, real and demo, puts the photo on the "Photo notes" page as its cover with "N notes read from this photo."
 
 ## Guide (own notebook, first time after "Try it yourself")
 
