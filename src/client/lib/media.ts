@@ -89,7 +89,7 @@ export function mediaErrorCopy(error: unknown, kind: MediaKind): string {
     case 404:
       return kind === "cover" ? "This page isn't in your notebook any more." : kind === "photo" ? "That photo didn't upload. Try again." : FALLBACK[kind];
     case 400:
-      if (kind === "voice") return /10-minute/.test(message) ? "That recording is too long. Keep it under ten minutes." : "Didn't catch any sound. Try again, a little closer.";
+      if (kind === "voice") return /10-minute/.test(message) ? "That recording is too long. Keep it under ten minutes." : "Didn't catch that. Try again a little closer to the mic, or type instead.";
       return FALLBACK[kind];
     default:
       return FALLBACK[kind];

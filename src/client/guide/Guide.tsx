@@ -41,6 +41,10 @@ export const GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
+/** On touch screens the map step says tap, not click. */
+export const MAP_BODY_TOUCH = "Each card is a page. Tap one to peek inside, double-tap to open it, and drag to look around.";
+const touch = () => typeof matchMedia === "function" && matchMedia("(hover: none) and (pointer: coarse)").matches;
+
 /** The key step, when a key already works here. */
 const CONNECTED_BODY = "The agents, voice and photo reading are ready to use. You can change the key or the model from this menu.";
 
@@ -90,7 +94,7 @@ function GuideSteps() {
       secondary={laterInstead}
       onClose={close}
     >
-      <p>{step.id === "key" && connected ? CONNECTED_BODY : step.body}</p>
+      <p>{step.id === "key" && connected ? CONNECTED_BODY : step.id === "map" && touch() ? MAP_BODY_TOUCH : step.body}</p>
     </CoachMark>
   );
 }

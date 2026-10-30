@@ -12,6 +12,12 @@ afterEach(() => {
 });
 
 describe("Welcome", () => {
+  it("says what it is in one line: AI agents on Meta's models", () => {
+    render(<Welcome onLeave={() => {}} onDone={() => {}} />);
+    expect(screen.getByText("Three AI agents, running on Meta's Muse models, read and edit your pages while you watch.")).toBeTruthy();
+    expect(document.querySelectorAll(".welcome-line")).toHaveLength(1);
+  });
+
   it("keeps Tab on its two buttons, so focus can't wander to the map behind it", () => {
     render(
       <>

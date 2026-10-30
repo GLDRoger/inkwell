@@ -13,7 +13,7 @@
 }
 
 /* Agent colours come from the server, tuned for white paper; at night lift them toward the ink (DESIGN.md). */
-.ink, .steps, .gathering, .reply-meta, .agent-name, .entry-agent {
+.ink, .steps, .gathering, .reply-meta, .agent-name, .entry-agent, .handoff {
   --agent-ink: light-dark(var(--agent), color-mix(in oklab, var(--agent) 55%, #f2f1ed));
 }
 .agent-name { color: var(--agent-ink); font-weight: 550; }
@@ -193,6 +193,27 @@
 }
 .note-close:hover { background: var(--rule); color: var(--ink); }
 
+/* Handoffs: the agent that was asked for help, working inline under the one that asked */
+.handoffs { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.handoff {
+  position: relative; padding: 6px 0 4px 14px;
+  animation: step-in 300ms var(--ease-ink) both;
+}
+.handoff::before {
+  content: ""; position: absolute; left: 2px; top: 8px; bottom: 6px; width: 2px; border-radius: 2px;
+  background: color-mix(in oklab, var(--agent-ink) 45%, transparent);
+}
+.handoff-head { display: flex; align-items: center; gap: 8px; margin: 0; min-height: 22px; font-size: 13px; color: var(--ink-soft); }
+.handoff-head .ink-drops { padding: 4px 0; gap: 4px; }
+.handoff-head .ink-drops span { width: 5px; height: 5px; }
+.handoff-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--agent-ink); flex: none; margin: 0 2px; }
+.handoff[data-status="failed"] .handoff-dot { background: var(--failed); }
+.handoff-ask {
+  margin: 2px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+.handoff .steps { margin-top: 6px; }
+
 /* Waiting for the reply to begin */
 .gathering { display: flex; align-items: center; gap: 10px; margin: 0; padding: 4px 0 0; }
 .gathering-label { font-size: 13px; color: var(--ink-faint); }
@@ -363,7 +384,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .diary, .diary[data-open="true"] { transition: visibility 0s; }
-  .stroke, .step, .diary-empty, .starters, .starters li { animation: none; }
+  .stroke, .step, .handoff, .diary-empty, .starters, .starters li { animation: none; }
   .intro-nudge { animation: fade-in 200ms ease both; }
   @keyframes fade-in { from { opacity: 0; } }
   .sink-word { animation: sink-still 240ms ease both; animation-delay: 0s; }

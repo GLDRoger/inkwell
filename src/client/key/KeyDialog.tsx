@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ArrowUpRight, Check, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { TEXT_MODELS, type TextModelId } from "@shared/types";
 import { api } from "../lib/api";
-import { cleanKey, forgetKey, saveKey, textModelName, useMetaKey } from "../lib/key";
+import { DEFAULT_MODEL, cleanKey, saveKey, textModelName, useMetaKey } from "../lib/key";
 import { notify } from "../lib/notices";
 import { setUi, useUi } from "../lib/ui";
 
@@ -198,7 +198,9 @@ function KeyForm({ reason, onDone }: { reason?: string; onDone(): void }) {
             type="button"
             className="link-button key-forget"
             onClick={() => {
-              forgetKey();
+              // Forgetting starts over: no key, and the default model (Muse Wonder) again.
+              saveKey("", DEFAULT_MODEL);
+              setModel(DEFAULT_MODEL);
               setValue("");
               setCheck({ state: "idle" });
               notify({ tone: "done", id: "meta-key", text: KEY_COPY.forgotten });

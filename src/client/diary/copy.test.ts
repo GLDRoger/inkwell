@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COPY, composerPlaceholder, modelName, provenance } from "./copy";
+import { COPY, composerPlaceholder, modelName, provenance, threadTitle } from "./copy";
 import { shouldIntroduce } from "./intro";
 
 describe("diary copy", () => {
@@ -46,5 +46,15 @@ describe("shouldIntroduce", () => {
   it("leaves scripted browsers alone unless the welcome played", () => {
     expect(shouldIntroduce({ ...base, automated: true })).toBe(false);
     expect(shouldIntroduce({ ...base, automated: true, welcomed: true })).toBe(true);
+  });
+});
+
+describe("threadTitle", () => {
+  it("names a conversation the list hasn't caught up with after its first request, not Untitled", () => {
+    expect(threadTitle("Plan", "t1", [])).toBe("Plan");
+    expect(threadTitle(undefined, null, [])).toBe(COPY.newConversation);
+    expect(threadTitle(undefined, "t1", [{ role: "person", text: "Tidy  the\nmap" }])).toBe("Tidy the map");
+    expect(threadTitle("", "t1", [])).toBe(COPY.newConversation);
+    expect(threadTitle("", "t1", [{ role: "agent", text: "Hello" }])).toBe(COPY.untitledConversation);
   });
 });

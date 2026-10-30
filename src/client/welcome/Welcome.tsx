@@ -48,6 +48,9 @@ function markReady(img: HTMLImageElement | null) {
   if (img?.complete && img.naturalWidth) img.closest(".welcome-object")?.setAttribute("data-ready", "");
 }
 
+/** The one line under the headline: what Inkwell is, and whose models run it. */
+export const WELCOME_LINE = "Three AI agents, running on Meta's Muse models, read and edit your pages while you watch.";
+
 /** What the visitor chose: watch the recorded demo, or go to their own notebook. */
 export type WelcomeChoice = "watch" | "try";
 
@@ -173,7 +176,7 @@ export function Welcome({ onLeave, onDone }: { onLeave(choice: WelcomeChoice): v
         <h1 id="welcome-title" className="welcome-title">
           A notebook that writes&nbsp;back.
         </h1>
-        <p className="welcome-line">Write a request. Watch it get done across your pages.</p>
+        <p className="welcome-line">{WELCOME_LINE}</p>
         <div className="welcome-actions">
           <button ref={ctaRef} type="button" className="welcome-cta" onClick={() => enter("watch")} tabIndex={phase === "mark" ? -1 : 0}>
             <Play size={14} aria-hidden fill="currentColor" />

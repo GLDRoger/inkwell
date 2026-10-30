@@ -19,6 +19,8 @@ export interface PendingAttachment {
 export interface ComposerHandle {
   focus(): void;
   setText(text: string): void;
+  /** Send what's in the composer now, as the Send button would. */
+  submit(): void;
 }
 
 interface Props {
@@ -94,6 +96,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         area.current?.setSelectionRange(t.length, t.length);
       });
     },
+    submit: () => submit(),
   }));
 
   useEffect(() => {
@@ -170,6 +173,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         const { text: heard } = await api.transcribe(wav);
         setText((t) => (t.trim() ? `${t.trimEnd()} ${heard}` : heard));
         if (heard.trim()) setTranscribed(true);
+        else onNote(COPY.heardNothing);
         area.current?.focus();
       } catch (e) {
         if (isNotFound(e)) {

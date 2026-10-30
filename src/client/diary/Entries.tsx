@@ -9,6 +9,7 @@ import { COPY, provenance } from "./copy";
 import { runRecovery } from "./errors";
 import type { QuoteAuthor } from "./ink";
 import { failNote, stopNote, tidyReply, workDone, type NotePart } from "./tidy";
+import { askedFor, childRuns, helperState, waitingFor } from "./handoff";
 
 /** What a failed reply's button does: send the same request again, or ask the agent to carry on. */
 export type Recovery = "retry" | "continue";
@@ -47,10 +48,13 @@ export function Steps({
   note,
   status,
   onCancel,
+  handoffs,
 }: {
   run: Run;
   agent?: Agent;
   note?: ReactNode;
+  /** The agents this run asked for help, working inline under its steps. */
+  handoffs?: ReactNode;
   /** What the agent said it's doing (its opening line), shown in place of "Working…". */
   status?: string | null;
   onCancel?(): void;
@@ -59,7 +63,7 @@ export function Steps({
   const n = run.steps.length;
   const [open, setOpen] = useState<boolean | null>(null);
   const shown = open ?? (active || n <= 3);
-  if (!n && !active && !note) return null;
+  if (!n && !active && !note && !handoffs) return null;
   const listId = `steps-${run.id}`;
   return (
     <div className="steps" style={{ ["--agent" as string]: agent?.color ?? "var(--ink-soft)" }}>
@@ -90,6 +94,7 @@ export function Steps({
           ))}
         </ol>
       )}
+      {handoffs}
       {active && (
         <p className="step-status">
           <span className="walking" aria-hidden />
@@ -107,6 +112,60 @@ export function Steps({
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * The agents a run asked for help, each with its own live trail: "Scout asked
+ * Wren", what Scout asked for, then Wren's steps as she walks. Nested handoffs
+ * (Wren asking Atlas) show inside, up to the server's depth limit.
+ */
+export function Handoffs({ run, agents, depth = 0 }: { run: Run; agents: Agent[]; depth?: number }) {
+  const { data: graph } = useMap();
+  const kids = childRuns(graph?.runs, run.id);
+  if (!kids.length || depth > 3) return null;
+  const asker = agents.find((a) => a.id === run.agentId);
+  return (
+    <ul className="handoffs" aria-label={`Who ${asker?.name ?? "the agent"} asked for help`}>
+      {kids.map((kid) => (
+        <Handoff key={kid.id} run={kid} asker={asker} agents={agents} depth={depth} />
+      ))}
+    </ul>
+  );
+}
+
+function Handoff({ run: snapshot, asker, agents, depth }: { run: Run; asker?: Agent; agents: Agent[]; depth: number }) {
+  const { data: graph } = useMap();
+  // The run's own cache entry is patched by the same events; prefer it when it's further along.
+  const { data: fresh } = useRun(snapshot.id);
+  const run = fresh && fresh.steps.length >= snapshot.steps.length ? fresh : snapshot;
+  const agent = agents.find((a) => a.id === run.agentId);
+  const ask = askedFor(run.prompt);
+  const active = isActiveRun(run);
+  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name;
+  const grandkids = childRuns(graph?.runs, run.id);
+  const failed = run.status === "failed" && run.error ? askedFor(run.error, 120) : null;
+  return (
+    <li className="handoff" data-status={run.status} style={{ ["--agent" as string]: agent?.color ?? "var(--ink-soft)" }}>
+      <p className="handoff-head" role={active ? "status" : undefined}>
+        {active ? <InkDrops color={agent?.color ?? "var(--ink-faint)"} /> : <span className="handoff-dot" aria-hidden />}
+        <span>
+          <span className="agent-name">{agent?.name ?? "Another agent"}</span> {helperState(run)}
+        </span>
+      </p>
+      {ask && (
+        <p className="handoff-ask">
+          {asker ? `${asker.name} asked: ` : "Asked: "}“{ask}”
+        </p>
+      )}
+      <Steps
+        run={run}
+        agent={agent}
+        status={waitingFor(grandkids, nameOf)}
+        note={failed ? <span className="step-note-text">{failed}</span> : undefined}
+        handoffs={grandkids.length ? <Handoffs run={run} agents={agents} depth={depth + 1} /> : undefined}
+      />
+    </li>
   );
 }
 
@@ -211,6 +270,8 @@ function AgentEntry({
   const split = splitFailure(entry.text, run);
   const { text, status } = tidyReply(split.text, run);
   const quoteBy = useQuoteAuthor(run, agent, agents);
+  const { data: graph } = useMap();
+  const kids = run ? childRuns(graph?.runs, run.id) : [];
   const [settled, setSettled] = useState(!live);
   // Only a finished reply is signed: a failed or stopped one isn't the agent's answer.
   const signed = run ? run.status === "succeeded" || streaming : !entry.runId;
@@ -283,7 +344,16 @@ function AgentEntry({
           )}
         </div>
       )}
-      {run && <Steps run={run} agent={agent} note={note} status={status} onCancel={readOnly ? undefined : () => onCancel(run.id)} />}
+      {run && (
+        <Steps
+          run={run}
+          agent={agent}
+          note={note}
+          status={(streaming && waitingFor(kids, (id) => agents.find((a) => a.id === id)?.name)) || status}
+          onCancel={readOnly ? undefined : () => onCancel(run.id)}
+          handoffs={kids.length ? <Handoffs run={run} agents={agents} /> : undefined}
+        />
+      )}
       {!run && entry.pageIds.length > 0 && <Touched ids={entry.pageIds} />}
     </div>
   );

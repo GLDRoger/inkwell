@@ -33,6 +33,15 @@ afterEach(() => {
 });
 
 describe("the guide", () => {
+  it("says tap on touch screens, click with a mouse", () => {
+    show();
+    expect(screen.getByText(/Click one to peek inside, double-click to open it/)).toBeTruthy();
+    cleanup();
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("hover: none"), media: q, addEventListener() {}, removeEventListener() {} }));
+    show();
+    expect(screen.getByText("Each card is a page. Tap one to peek inside, double-tap to open it, and drag to look around.")).toBeTruthy();
+  });
+
   it("walks through four steps with Next and Back, and Done remembers it", () => {
     saveKey("sk-visitor");
     show();

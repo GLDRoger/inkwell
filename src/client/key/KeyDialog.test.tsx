@@ -67,6 +67,19 @@ describe("the key dialog", () => {
     expect(screen.queryByRole("button", { name: "Forget key" })).toBeNull();
   });
 
+  it("goes back to Muse Wonder when the key is forgotten", () => {
+    localStorage.setItem(KEY_STORAGE, "sk-old");
+    localStorage.setItem("inkwell-meta-model", "muse-spark-1.3-contributor");
+    reloadKey();
+    render(<KeyDialog />);
+    act(() => openKeyDialog());
+    expect((screen.getByLabelText(/Muse Spark Contributor/) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Forget key" }));
+    expect(getKeyState()).toEqual({ key: null, model: "muse-wonder-1.0" });
+    expect(localStorage.getItem("inkwell-meta-model")).toBe("muse-wonder-1.0");
+    expect((screen.getByLabelText(/Muse Wonder/) as HTMLInputElement).checked).toBe(true);
+  });
+
   it("explains a failed check in one sentence", () => {
     expect(checkFailedCopy(new ApiError(0, ""))).toMatch(/Couldn't reach Inkwell/);
     expect(checkFailedCopy(new ApiError(404, "Not found"))).toBe("Couldn't check the key just now. You can still save it.");

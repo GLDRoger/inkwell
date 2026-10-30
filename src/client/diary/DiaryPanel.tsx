@@ -10,12 +10,13 @@ import { tryItYourself } from "../lib/demo-flow";
 import { handledAiRefusal, readyForAi } from "../lib/media";
 import { useServerEvent } from "../lib/events";
 import { getUi, setUi, useUi } from "../lib/ui";
+import { hasKey, useMetaKey } from "../lib/key";
 import { timeAgo } from "../lib/time";
 import { diaryReducer, initialDiaryState, isBusy } from "./state";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Entries, InkDrops, isActiveRun, type Recovery } from "./Entries";
 import { Picker } from "./Picker";
-import { COPY, STARTERS_NOTEBOOK, STARTERS_PAGE } from "./copy";
+import { COPY, STARTERS_NOTEBOOK, STARTERS_PAGE, threadTitle } from "./copy";
 import { cancelErrorCopy, sendErrorCopy } from "./errors";
 import { hasIntroduced, isWelcomeThread, markIntroduced, openDuringNudge, sendThreadId, shouldIntroduce, showNudge } from "./intro";
 
@@ -182,6 +183,10 @@ export function DiaryPanel() {
   const intro = useIntro();
   const demo = useDemo((s) => s.notebook === "demo");
   const { data: me } = useMe();
+  /** A request that stopped for the key dialog: it sends itself once a key is saved. */
+  const awaitingKey = useRef(false);
+  const { key: metaKey } = useMetaKey();
+  const keyDialogOpen = useUi((s) => !!s.keyDialog);
   /** In the demo: the person's requests that arrived while watching, shown as if written now. */
   const [freshIds, setFreshIds] = useState<string[]>([]);
 
@@ -299,6 +304,18 @@ export function DiaryPanel() {
   });
   useServerEvent("run.updated", (e) => dispatch({ type: "runUpdated", run: e.run }));
 
+  // A reply from an agent we don't know (the demo notebook was reset for "Watch again", so its agents are new):
+  // fetch the agents again, so replies are signed "Wren", not "The agent".
+  const askedAgents = useRef(new Set<string>());
+  useEffect(() => {
+    if (!agentList) return;
+    const unknown = entries.filter((e) => e.agentId && !agents.some((a) => a.id === e.agentId) && !askedAgents.current.has(e.agentId));
+    if (!unknown.length) return;
+    unknown.forEach((e) => askedAgents.current.add(e.agentId!));
+    void client.invalidateQueries({ queryKey: keys.agents, exact: true });
+    void client.invalidateQueries({ queryKey: keys.map, exact: true });
+  }, [entries, agentList]);
+
   const lastRunId = useMemo(() => [...entries].reverse().find((e) => e.runId)?.runId ?? null, [entries]);
   const watchedRunId = state.runId ?? lastRunId;
   const { data: watchedRun } = useRun(watchedRunId);
@@ -336,8 +353,11 @@ export function DiaryPanel() {
     // In the demo, or without a Meta key: explain or ask for the key, and keep the words.
     if (!readyForAi("diary", me)) {
       if (!again) dispatch({ type: "putBack", text });
+      // The key dialog opened (not the demo's read-only notice): send this once a key is saved.
+      awaitingKey.current = !demo && !!getUi().keyDialog;
       return;
     }
+    awaitingKey.current = false;
     dispatch({ type: "send", text, quiet: !!again });
     setNote(null);
     pinned.current = true;
@@ -369,6 +389,7 @@ export function DiaryPanel() {
     } catch (e) {
       if (handledAiRefusal(e, "diary")) {
         dispatch({ type: "putBack", text: again ? "" : text });
+        awaitingKey.current = !again && !!getUi().keyDialog;
         return;
       }
       const error = sendErrorCopy(e, { kept: !again });
@@ -379,6 +400,17 @@ export function DiaryPanel() {
   };
 
   /** "Try again" resends the request the failed reply answered; "Continue" asks the same agent to carry on. */
+  // The key dialog closed: with a key saved, the request that was waiting for it goes now (it's back in the composer).
+  // Closed without one, the words stay in the composer for later.
+  useEffect(() => {
+    if (keyDialogOpen || !awaitingKey.current) return;
+    awaitingKey.current = false;
+    // The store, not the hook: the key is saved just before the dialog closes, maybe a render ahead of this one.
+    if (!metaKey && !hasKey()) return;
+    // After the composer has its words back (restoreDraft lands in an effect).
+    setTimeout(() => composer.current?.submit(), 0);
+  }, [keyDialogOpen, metaKey]);
+
   const recover = (entry: DiaryEntry, run: Run, how: Recovery) => {
     if (how === "continue") return send(COPY.continueRequest, [], { agentId: run.agentId });
     const at = entries.findIndex((e) => e.id === entry.id);
@@ -431,7 +463,7 @@ export function DiaryPanel() {
               setNote(null);
             }}
             className="thread-picker"
-            button={<span className="thread-title">{currentThread?.title || (state.threadId ? COPY.untitledConversation : COPY.newConversation)}</span>}
+            button={<span className="thread-title">{threadTitle(currentThread?.title, state.threadId, entries)}</span>}
             options={[
               { value: NEW, label: COPY.newConversation, lead: <SquarePen size={15} aria-hidden /> },
               ...threadList.map((t) => ({

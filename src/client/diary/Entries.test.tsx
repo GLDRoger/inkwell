@@ -121,3 +121,27 @@ describe("a reply in the recorded demo", () => {
     expect(screen.getByRole("button", { name: /Stop/ })).toBeTruthy();
   });
 });
+
+describe("a handoff", () => {
+  it("shows the other agent working inline, with its live steps, while the reply waits", () => {
+    const parent = run("running", { steps: [step("search_pages", "Searched for hiring")] });
+    const child = run("running", {
+      id: "r2", agentId: "wren", parentRunId: "r1", prompt: "Draft the job post for a founding engineer. Hiring plan is p1.",
+      steps: [step("read_page", "Read Hiring plan", "p1")],
+    });
+    show(reply(""), parent, { runs: [child] });
+    const handoff = document.querySelector(".handoff")!;
+    expect(handoff.textContent).toContain("Wren is working on it…");
+    expect(handoff.textContent).toContain("Scout asked: “Draft the job post for a founding engineer.”");
+    expect(screen.getByRole("link", { name: "Read Hiring plan" })).toBeTruthy();
+    expect(screen.getByText("Waiting for Wren…")).toBeTruthy();
+  });
+
+  it("stays under the reply once the helper finishes", () => {
+    const parent = run("succeeded", { steps: [step("ask_agent", "Asked Wren for help")] });
+    const child = run("succeeded", { id: "r2", agentId: "wren", parentRunId: "r1", prompt: "Draft the job post.", steps: [step("create_page", "Created Job post", "p3")] });
+    show(reply("Wren drafted the job post."), parent, { runs: [child] });
+    expect(document.querySelector(".handoff")?.textContent).toContain("Wren finished");
+    expect(screen.queryByText(/Waiting for/)).toBeNull();
+  });
+});

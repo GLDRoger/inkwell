@@ -16,6 +16,8 @@ export const COPY = {
   stopListening: "Stop and transcribe",
   transcribing: "Transcribing…",
   transcribedBy: "Transcribed by Muse Voice",
+  /** Muse Voice heard the recording but found no words in it. */
+  heardNothing: "Didn't catch that. Try again a little closer to the mic, or type instead.",
   send: "Send",
   stop: "Stop",
   saved: "Your request is saved.",
@@ -29,6 +31,23 @@ export const COPY = {
   demoWaitingTitle: "The demo's conversation will appear here.",
   demoWaiting: "Each request is written in, then the agent writes back.",
 } as const;
+
+/**
+ * The conversation's name in the diary's header. A conversation the thread
+ * list hasn't caught up with yet (the demo's, a moment after it starts) is
+ * named after its first request, as the server will name it, not "Untitled".
+ */
+export function threadTitle(
+  title: string | null | undefined,
+  threadId: string | null,
+  entries: { role: string; text: string }[],
+): string {
+  if (title?.trim()) return title;
+  if (!threadId) return COPY.newConversation;
+  const asked = entries.find((e) => e.role === "person" && e.text.trim())?.text.trim();
+  if (asked) return asked.replace(/\s+/g, " ").slice(0, 80);
+  return entries.length ? COPY.untitledConversation : COPY.newConversation;
+}
 
 /** "Ask Scout, Wren or Atlas…", or "Ask Wren…" once someone is picked. */
 export function composerPlaceholder(agents: Pick<Agent, "name">[], picked?: Pick<Agent, "name"> | null): string {
