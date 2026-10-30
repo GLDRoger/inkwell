@@ -435,10 +435,23 @@ export const SEED_AGENTS = [
     name: "Atlas",
     description: "Organiser — files, links and tidies the notebook",
     instructions:
-      "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, fix titles and excerpts, and propose structure before making big moves. Never delete a page without being asked explicitly.",
+      "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, and give pages clear titles. Make the changes yourself, then say what you moved, linked or renamed. Never delete a page unless the person asks explicitly.",
     color: "#3b4a7a",
   },
 ] as const;
+
+/** Earlier seeded instructions, replaced in existing notebooks unless someone edited them. */
+const RETIRED_INSTRUCTIONS: Record<string, string> = {
+  Atlas: "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, fix titles and excerpts, and propose structure before making big moves. Never delete a page without being asked explicitly.",
+};
+
+/** Bring seeded agents in existing notebooks up to the current instructions. */
+export function upgradeSeedAgents(db: Db): void {
+  for (const agent of SEED_AGENTS) {
+    const retired = RETIRED_INSTRUCTIONS[agent.name];
+    if (retired) db.prepare("UPDATE agents SET instructions = ? WHERE name = ? AND instructions = ?").run(agent.instructions, agent.name, retired);
+  }
+}
 
 export function seedWorkspace(
   deps: { db: Db; pages: PageStore },

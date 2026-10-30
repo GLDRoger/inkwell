@@ -37,6 +37,7 @@ import {
   endOfDocRelativePosition,
   markdownToTiptapJSON,
   tiptapJSONToMarkdown,
+  yDocBytesToJSON,
   yDocToMarkdown,
   yDocToTiptapJSON,
 } from "./editor-schema.ts";
@@ -103,6 +104,19 @@ export interface CollabService {
     markdown: string,
     actor?: Actor,
   ) => Promise<boolean>;
+  /**
+   * Atomically read the live body and replace it with `edit(current)`, as a
+   * minimal diff. `edit` runs under the document lock, so nothing a peer types
+   * can slip between the read and the write; throw from it to write nothing.
+   * `edit` may instead change `doc` directly and return nothing.
+   * Returns the body that was written, or null when the page doesn't exist.
+   */
+  editPage: (
+    pageId: string,
+    workspaceId: string,
+    edit: (current: JSONContent, doc: Y.Doc) => JSONContent | void,
+    actor?: Actor,
+  ) => Promise<JSONContent | null>;
   /**
    * Show an agent in a page's live awareness (a named caret in its ink
    * colour). Idempotent: calling again moves the caret. `caret: "end"` puts it
@@ -421,7 +435,8 @@ export function createCollab(deps: {
     async getPageJSON(pageId, workspaceId) {
       const row = pages.getPageRow(workspaceId, pageId);
       if (!row) return null;
-      return liveJSON(pageId) ?? markdownToTiptapJSON(row.markdown);
+      // The stored Yjs state is the truth; markdown can't express everything it holds.
+      return liveJSON(pageId) ?? (row.ydoc?.length ? yDocBytesToJSON(row.ydoc) : markdownToTiptapJSON(row.markdown));
     },
 
     async appendMarkdown(pageId, workspaceId, markdown, actor) {
@@ -438,6 +453,18 @@ export function createCollab(deps: {
       await transact(pageId, workspaceId, (doc) => applyJSONToYDoc(doc, json), actor);
       await refreshCaret(pageId, actor);
       return true;
+    },
+
+    async editPage(pageId, workspaceId, edit, actor) {
+      if (!pages.getPageRow(workspaceId, pageId)) return null;
+      let written: JSONContent | null = null;
+      await transact(pageId, workspaceId, (doc) => {
+        const next = edit(yDocToTiptapJSON(doc), doc);
+        if (next) applyJSONToYDoc(doc, next);
+        written = yDocToTiptapJSON(doc);
+      }, actor);
+      await refreshCaret(pageId, actor);
+      return written;
     },
 
     showAgent,

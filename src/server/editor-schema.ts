@@ -225,3 +225,51 @@ export function extractPageLinkIds(markdown: string): string[] {
   }
   return ids;
 }
+
+/** One top-level block of a document and where its markdown sits in a BlockView. */
+export interface ViewBlock {
+  json: JSONContent;
+  markdown: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * The markdown agents read and edit: each top-level block serialized on its
+ * own, joined by a blank line. Every block's offsets are known, so an edit can
+ * touch only the blocks it matched and leave the rest of the live document
+ * (including content markdown can't express) exactly as it was.
+ */
+export function blockView(json: JSONContent): { markdown: string; blocks: ViewBlock[] } {
+  const blocks: ViewBlock[] = [];
+  let markdown = "";
+  for (const node of normalizeDocJSON(json).content ?? []) {
+    if (blocks.length) markdown += "\n\n";
+    const md = blockToMarkdown(node);
+    blocks.push({ json: node, markdown: md, start: markdown.length, end: markdown.length + md.length });
+    markdown += md;
+  }
+  return { markdown, blocks };
+}
+
+/** Markdown for one top-level block, without surrounding blank lines. */
+export function blockToMarkdown(node: JSONContent): string {
+  return tiptapJSONToMarkdown({ type: "doc", content: [node] }).replace(/^\n+|\n+$/g, "");
+}
+
+/** Top-level blocks parsed from markdown; whitespace-only markdown has none. */
+export function markdownToBlocks(markdown: string): JSONContent[] {
+  if (!markdown.trim()) return [];
+  return markdownToTiptapJSON(markdown).content ?? [];
+}
+
+/** Whether a block survives markdown -> block unchanged (tables with multi-block cells don't). */
+export function blockRoundTrips(block: ViewBlock): boolean {
+  const schema = getEditorSchema();
+  try {
+    const original = schema.nodeFromJSON({ type: "doc", content: [block.json] });
+    return original.eq(schema.nodeFromJSON(markdownToTiptapJSON(block.markdown)));
+  } catch {
+    return false;
+  }
+}

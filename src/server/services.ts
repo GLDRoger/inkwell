@@ -4,6 +4,7 @@ import { openDatabase, type DatabaseHandle } from "./db.ts";
 import { createEventBus, type EventBus } from "./events.ts";
 import { createPageStore, type PageStore } from "./pages.ts";
 import { createCollab, type CollabService } from "./collab.ts";
+import { upgradeSeedAgents } from "./seed.ts";
 
 export interface Services {
   handle: DatabaseHandle;
@@ -25,6 +26,7 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
   const handle = openDatabase(dataDir);
   const bus = createEventBus();
   const pages = createPageStore({ db: handle.db, bus });
+  upgradeSeedAgents(handle.db);
   const collab = createCollab({ db: handle.db, pages });
   const runtime = new AgentRuntime({ db: handle.db, pages, collab, bus, uploadsDir: handle.uploadsDir }, runtimeOptions);
   const services: Services = {

@@ -14,6 +14,7 @@ import {
   listAgents, listDiaryEntries, listRecentRuns,
 } from "../db.ts";
 import type { RuntimeOptions } from "./runtime.ts";
+import * as helpers from "./testing.ts";
 
 const fixtures: { services: Services; dir: string }[] = [];
 afterEach(async () => {
@@ -24,53 +25,26 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
-const usage = { inputTokens: { total: 5, noCache: 5, cacheRead: 0, cacheWrite: 0 }, outputTokens: { total: 5, text: 5, reasoning: 0 } };
-function output(parts: LanguageModelV4StreamPart[], reason: "stop" | "tool-calls" = "stop") {
-  return { stream: new ReadableStream<LanguageModelV4StreamPart>({ start(c) {
-    c.enqueue({ type: "stream-start", warnings: [] });
-    for (const part of parts) c.enqueue(part);
-    c.enqueue({ type: "finish", finishReason: { unified: reason, raw: reason }, usage });
-    c.close();
-  } }) };
-}
-const answer = (text: string) => output([
-  { type: "text-start", id: "text" },
-  { type: "text-delta", id: "text", delta: text },
-  { type: "text-end", id: "text" },
-]);
-const call = (toolName: string, input: object, toolCallId = toolName) =>
-  output([{ type: "tool-call", toolName, input: JSON.stringify(input), toolCallId }], "tool-calls");
-function fixture(options: RuntimeOptions = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inkwell-agents-"));
-  const services = createServices(dir, options);
-  fixtures.push({ services, dir });
-  const session = createWorkspaceSession(services);
-  const ws = session.workspaceId;
-  const agent = listAgents(services.db, ws)[0]!;
-  const page = services.pages.createPage(ws, session.person, { title: "Billing", markdown: "Original billing notes." });
-  const events: ServerEvent[] = [];
-  services.bus.subscribe(ws, (event) => events.push(event));
-  const start = (prompt = "Improve billing") => {
-    const thread = insertDiaryThread(services.db, ws, prompt);
-    insertDiaryEntry(services.db, ws, { threadId: thread.id, role: "person", text: prompt });
-    return services.runtime.start({ workspaceId: ws, agentId: agent.id, threadId: thread.id, pageId: page.id, prompt });
-  };
-  return { services, ws, agent, page, events, start };
-}
+const answer = helpers.answer;
+const call = helpers.call;
+const output = helpers.output;
+const versionOf = helpers.versionOf;
+const fixture = (options: RuntimeOptions = {}) => helpers.createFixture(fixtures, options);
 
 describe("agent runtime", () => {
   it("reads, writes live Yjs, streams repeated deltas, persists the reply and footprints", async () => {
     let pageId = "";
     let step = 0;
+    let f: ReturnType<typeof fixture>;
     const model = new MockLanguageModelV4({ doStream: async () => {
       step++;
       if (step === 1) return call("read_page", { pageId });
-      if (step === 2) return call("rewrite_page", { pageId, markdown: "Revised billing notes.\n\nA second paragraph." });
+      if (step === 2) return call("rewrite_page", { pageId, version: await versionOf(f.services, f.ws, pageId), markdown: "Revised billing notes.\n\nA second paragraph." });
       return output([{ type: "text-start", id: "reply" },
         { type: "text-delta", id: "reply", delta: "Done. " },
         { type: "text-delta", id: "reply", delta: "Done. " }, { type: "text-end", id: "reply" }]);
     } });
-    const f = fixture({ modelFactory: () => model });
+    f = fixture({ modelFactory: () => model });
     pageId = f.page.id;
     const live = await f.services.collab.openDirect(pageId, f.ws);
     const show = vi.spyOn(f.services.collab, "showAgent");
@@ -128,7 +102,7 @@ describe("agent runtime", () => {
       if (step === 3) {
         createdId = f.services.pages.listPages(f.ws).find((p) => p.title === "Agent scratch")!.id;
         expect(await f.services.collab.readPageMarkdown(createdId, f.ws)).toContain("One paragraph.");
-        return call("edit_page", { pageId: createdId, find: "One paragraph.", replace: "Changed paragraph." });
+        return call("edit_page", { pageId: createdId, version: await versionOf(f.services, f.ws, createdId), find: "One paragraph.", replace: "Changed paragraph." });
       }
       if (step === 4) return call("append_to_page", { pageId: createdId, markdown: "Appended paragraph." });
       if (step === 5) {
@@ -178,7 +152,7 @@ describe("agent runtime", () => {
   it("timeout fails a stalled run without leaving it active", async () => {
     const f = fixture({ timeoutMs: 30, modelFactory: () => new MockLanguageModelV4({ doStream: () => new Promise(() => {}) }) });
     const result = await f.start().done;
-    expect(result.run).toMatchObject({ status: "failed", error: "Agent run timed out.", pageId: f.page.id });
+    expect(result.run).toMatchObject({ status: "failed", error: expect.stringContaining("ran out of time"), pageId: f.page.id });
   });
 
   it("fails cleanly without META_API_KEY and never calls the network", async () => {
@@ -222,7 +196,7 @@ describe("agent runtime", () => {
     const started = f.start();
     await vi.waitFor(() => expect(model.doStreamCalls).toHaveLength(1));
     await f.services.runtime.close();
-    expect((await started.done).run).toMatchObject({ status: "failed", error: "server restarting" });
+    expect((await started.done).run).toMatchObject({ status: "failed", error: "Interrupted by a server restart." });
   });
 
   it("returns foreign page tool failures as results, without exposing or changing content", async () => {
@@ -230,7 +204,7 @@ describe("agent runtime", () => {
     let step = 0;
     const model = new MockLanguageModelV4({ doStream: async () => {
       if (++step === 1) return call("read_page", { pageId: foreignId });
-      if (step === 2) return call("rewrite_page", { pageId: foreignId, markdown: "Hacked" });
+      if (step === 2) return call("rewrite_page", { pageId: foreignId, version: "guess", markdown: "Hacked" });
       return answer("That page was not found.");
     } });
     const f = fixture({ modelFactory: () => model });
@@ -294,10 +268,10 @@ describe("agent runtime", () => {
       step++;
       if (step === 1) return call("read_page", { pageId });
       if (step === 2) return call("read_page", { pageId, offset: 16_000 });
-      if (step === 3) return call("edit_page", { pageId, find: "repeat", replace: "oops" });
+      if (step === 3) return call("edit_page", { pageId, version: await versionOf(f.services, f.ws, pageId), find: "repeat", replace: "oops" });
       return answer("Read the entire page.");
     } });
-    const f = fixture({ modelFactory: () => model });
+    const f: ReturnType<typeof fixture> = fixture({ modelFactory: () => model });
     pageId = f.page.id;
     const original = `${"x".repeat(17_000)} repeat repeat`;
     await f.services.collab.replaceMarkdown(pageId, f.ws, original);

@@ -704,3 +704,38 @@ export function touchSession(db: Db, sessionId: string): void {
     AND COALESCE(last_seen_at, created_at) <= ?`)
     .run(new Date(now).toISOString(), sessionId, new Date(now - 3_600_000).toISOString());
 }
+
+/**
+ * Runs left queued/running by a crash or restart can never finish: mark them
+ * failed and give their empty diary replies the reason. Call once at startup,
+ * before any run starts. Returns the number of runs repaired.
+ */
+export function failInterruptedRuns(db: Db, reason: string): number {
+  const ended = nowIso();
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE diary_entries SET text = ? WHERE text = '' AND run_id IN (
+         SELECT r.id FROM runs r WHERE r.workspace_id = diary_entries.workspace_id AND r.status IN ('queued', 'running'))`,
+    ).run(reason);
+    return db.prepare(
+      "UPDATE runs SET status = 'failed', error = ?, ended_at = ? WHERE status IN ('queued', 'running')",
+    ).run(reason, ended).changes;
+  })();
+}
+
+/** Give a run's still-empty diary replies a closing line. Returns the entries changed. */
+export function finishEmptyRunEntries(db: Db, workspaceId: string, runId: string, text: string): DiaryEntry[] {
+  const rows = db.prepare(
+    "SELECT * FROM diary_entries WHERE workspace_id = ? AND run_id = ? AND text = ''",
+  ).all(workspaceId, runId) as DiaryEntryRow[];
+  return rows.map((row) => updateDiaryEntry(db, workspaceId, row.id, { text })!).filter(Boolean);
+}
+
+/** Undo a diary submission whose run never started: the entry, and its thread if that is now empty. */
+export function deleteDiaryEntry(db: Db, workspaceId: string, id: string, threadId: string): void {
+  db.transaction(() => {
+    db.prepare("DELETE FROM diary_entries WHERE workspace_id = ? AND id = ?").run(workspaceId, id);
+    const left = db.prepare("SELECT 1 FROM diary_entries WHERE workspace_id = ? AND thread_id = ? LIMIT 1").get(workspaceId, threadId);
+    if (!left) db.prepare("DELETE FROM diary_threads WHERE workspace_id = ? AND id = ?").run(workspaceId, threadId);
+  })();
+}
