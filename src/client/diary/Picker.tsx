@@ -17,11 +17,13 @@ interface Props<T> {
   align?: "start" | "end";
   placement?: "below" | "above";
   footer?: ReactNode;
+  /** A small caption at the top of the list, e.g. "Conversations". */
+  heading?: string;
   className?: string;
 }
 
-/** A small accessible listbox popover (threads, agents). */
-export function Picker<T>({ label, value, options, onChange, button, align = "start", placement = "below", footer, className }: Props<T>) {
+/** A small accessible listbox popover (conversations, agents). */
+export function Picker<T>({ label, value, options, onChange, button, align = "start", placement = "below", footer, heading, className }: Props<T>) {
   const [open, setOpen] = useState(false);
   const [index, setIndex] = useState(0);
   const id = useId();
@@ -69,6 +71,11 @@ export function Picker<T>({ label, value, options, onChange, button, align = "st
       </button>
       {open && (
         <div className={`picker-pop picker-${align} picker-${placement}`}>
+          {heading && (
+            <p className="picker-heading" aria-hidden>
+              {heading}
+            </p>
+          )}
           <ul
             ref={list}
             id={id}

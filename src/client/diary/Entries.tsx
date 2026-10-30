@@ -5,6 +5,7 @@ import type { Agent, DiaryEntry, Run } from "@shared/types";
 import { pageTitle, usePages, useRun } from "../lib/queries";
 import { InkWriter } from "./InkWriter";
 import { splitFailure } from "./reply";
+import { modelName } from "./copy";
 
 const ACTIVE: Run["status"][] = ["queued", "running"];
 export const isActiveRun = (r: Run | null | undefined) => !!r && ACTIVE.includes(r.status);
@@ -42,7 +43,7 @@ export function Steps({ run, agent, note, onCancel }: { run: Run; agent?: Agent;
   if (!n && !active && !note) return null;
   const listId = `steps-${run.id}`;
   return (
-    <div className="steps" style={{ ["--agent" as string]: agent?.color ?? "var(--wax)" }}>
+    <div className="steps" style={{ ["--agent" as string]: agent?.color ?? "var(--ink-soft)" }}>
       {n > 0 && (
         <button type="button" className="trail-toggle" aria-expanded={shown} aria-controls={listId} onClick={() => setOpen(!shown)}>
           <ChevronRight size={13} aria-hidden className="trail-chev" />
@@ -73,10 +74,10 @@ export function Steps({ run, agent, note, onCancel }: { run: Run; agent?: Agent;
       {active && (
         <p className="step-status">
           <span className="walking" aria-hidden />
-          {run.status === "queued" ? "Getting ready…" : n ? "Still walking…" : "Setting off…"}
+          {run.status === "queued" ? "Getting ready…" : n ? "Working…" : "Starting…"}
           {onCancel && (
             <button type="button" className="link-button" onClick={onCancel}>
-              <Square size={11} aria-hidden /> Stop
+              <Square size={10} aria-hidden fill="currentColor" /> Stop
             </button>
           )}
         </p>
@@ -116,30 +117,39 @@ function AgentEntry({
   agent,
   live,
   onCancel,
+  onSettled,
 }: {
   entry: DiaryEntry;
   agent?: Agent;
   live: boolean;
   onCancel(runId: string): void;
+  onSettled?(id: string): void;
 }) {
   const navigate = useNavigate();
   const { data: run } = useRun(entry.runId);
-  const color = agent?.color ?? "var(--wax)";
+  const color = agent?.color ?? "var(--ink-soft)";
   const streaming = isActiveRun(run);
   const { text, note } = splitFailure(entry.text, run);
+  const [settled, setSettled] = useState(!live);
   return (
     <div className="entry entry-agent" style={{ ["--agent" as string]: color }}>
       {text ? (
         <InkWriter
+          key={live ? "live" : "still"}
+          id={entry.id}
           text={text}
           color={color}
           live={live}
           streaming={streaming && live}
+          onSettled={() => {
+            setSettled(true);
+            onSettled?.(entry.id);
+          }}
           onClick={(e) => {
             // Page links in replies open in-app.
             const a = (e.target as HTMLElement).closest("a");
             const href = a?.getAttribute("href");
-            if (href?.startsWith("/")) {
+            if (href?.startsWith("/") && !href.startsWith("//") && !e.metaKey && !e.ctrlKey) {
               e.preventDefault();
               navigate(href);
             }
@@ -149,11 +159,27 @@ function AgentEntry({
         streaming && (
           <p className="gathering" role="status">
             <InkDrops color={color} />
-            <span className="sr-only">{agent?.name ?? "The agent"} is answering</span>
+            <span className="gathering-label">
+              <span className="agent-name">{agent?.name ?? "The agent"}</span> is on it…
+            </span>
           </p>
         )
       )}
-      {agent && text && <p className="signature">{agent.name}</p>}
+      {text && (
+        <div className="reply-meta">
+          {/* Which Meta model wrote this: quiet provenance, shown once the reply is done. */}
+          {entry.runId && (
+            <span className="provenance" data-show={settled && !streaming}>
+              Written with {modelName(agent?.model)}
+            </span>
+          )}
+          {agent && (
+            <span className="signature" data-show={settled}>
+              {agent.name}
+            </span>
+          )}
+        </div>
+      )}
       {run && <Steps run={run} agent={agent} note={note} onCancel={() => onCancel(run.id)} />}
       {!run && entry.pageIds.length > 0 && <Touched ids={entry.pageIds} />}
     </div>
@@ -164,7 +190,7 @@ function PersonEntry({ entry }: { entry: DiaryEntry }) {
   return (
     <div className="entry entry-person">
       {entry.attachments.length > 0 && (
-        <ul className="entry-attachments">
+        <ul className="entry-attachments" aria-label="Attached">
           {entry.attachments.map((a) =>
             a.kind === "image" ? (
               <li key={a.id}>
@@ -178,7 +204,7 @@ function PersonEntry({ entry }: { entry: DiaryEntry }) {
           )}
         </ul>
       )}
-      <p className="person-ink">{entry.text}</p>
+      <p className="person-text">{entry.text}</p>
     </div>
   );
 }
@@ -189,16 +215,18 @@ export function Entries({
   liveIds,
   hiddenId,
   onCancel,
+  onSettled,
 }: {
   entries: DiaryEntry[];
   agents: Agent[];
   liveIds: string[];
   hiddenId: string | null;
   onCancel(runId: string): void;
+  onSettled?(id: string): void;
 }) {
   let lastDay = "";
   return (
-    <ol className="entries" aria-label="Diary entries">
+    <ol className="entries" aria-label="Conversation">
       {entries.map((e) => {
         if (e.id === hiddenId) return null;
         const day = dayLabel(e.createdAt);
@@ -213,7 +241,7 @@ export function Entries({
             )}
             <li>
               {e.role === "agent" ? (
-                <AgentEntry entry={e} agent={agents.find((a) => a.id === e.agentId)} live={liveIds.includes(e.id)} onCancel={onCancel} />
+                <AgentEntry key={liveIds.includes(e.id) ? "live" : "still"} entry={e} agent={agents.find((a) => a.id === e.agentId)} live={liveIds.includes(e.id)} onCancel={onCancel} onSettled={onSettled} />
               ) : (
                 <PersonEntry entry={e} />
               )}

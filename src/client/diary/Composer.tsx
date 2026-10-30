@@ -1,11 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, FileText, ImagePlus, Loader2, Mic, Square, ScanText, X } from "lucide-react";
+import { ArrowUp, AudioLines, FileText, ImagePlus, Loader2, Mic, Square, X } from "lucide-react";
 import type { Agent, Attachment } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { prefersReducedMotion } from "../lib/ui";
-import { mediaErrorCopy, usePhotoImport } from "../lib/media";
+import { mediaErrorCopy } from "../lib/media";
 import { canRecord, startRecording, type Recording } from "./recorder";
 import { Picker } from "./Picker";
+import { COPY, composerPlaceholder } from "./copy";
 
 export interface PendingAttachment {
   key: string;
@@ -78,6 +79,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const [micOk, setMicOk] = useState(() => canRecord() && !missing.has("transcribe"));
   const [uploadsOk, setUploadsOk] = useState(() => !missing.has("uploads"));
   const [seconds, setSeconds] = useState(0);
+  /** The text came from Muse Voice Transcribe (shown as a quiet line until it's sent or cleared). */
+  const [transcribed, setTranscribed] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const recording = useRef<Recording | null>(null);
@@ -120,7 +123,6 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   useEffect(() => {
     if (mic === "recording" && seconds >= 590) toggleRef.current();
   }, [mic, seconds]);
-  const importPhoto = usePhotoImport();
 
   const uploading = files.some((f) => f.status === "uploading");
   const canSend = !!text.trim() && !sending && !uploading;
@@ -130,6 +132,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     const ready = files.flatMap((f) => (f.status === "ready" && f.attachment ? [f.attachment] : []));
     onSend(text.trim(), ready);
     setText("");
+    setTranscribed(false);
     files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
     setFiles([]);
   };
@@ -147,7 +150,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             markMissing("uploads");
             setUploadsOk(false);
             setFiles((fs) => fs.filter((f) => f.key !== key));
-            onNote("Pictures can't be attached on this server yet.");
+            onNote("Pictures can't be attached right now. Send your words on their own.");
           } else {
             setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, status: "failed" } : f)));
             onNote(mediaErrorCopy(e, "photo"));
@@ -166,12 +169,13 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         const wav = await rec.stop();
         const { text: heard } = await api.transcribe(wav);
         setText((t) => (t.trim() ? `${t.trimEnd()} ${heard}` : heard));
+        if (heard.trim()) setTranscribed(true);
         area.current?.focus();
       } catch (e) {
         if (isNotFound(e)) {
           markMissing("transcribe");
           setMicOk(false);
-          onNote("Voice isn't available on this server yet. Type instead.");
+          onNote("Voice isn't available right now. Type your request instead.");
         } else onNote(mediaErrorCopy(e, "voice"));
       } finally {
         setMic("idle");
@@ -183,7 +187,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       setMic("recording");
       onNote(null);
     } catch {
-      onNote("The microphone is blocked. Allow it in your browser to speak to the diary.");
+      onNote("The microphone is blocked. Allow it in your browser's site settings, or type instead.");
     }
   };
 
@@ -204,136 +208,153 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
         addFiles(e.dataTransfer.files);
       }}
     >
-      {context && (
-        <div className="context-chip">
-          <FileText size={13} aria-hidden />
-          <span>
-            About <strong>{context.title}</strong>
-          </span>
-          <button type="button" aria-label="Don't include this page" onClick={onClearContext}>
-            <X size={13} aria-hidden />
-          </button>
+      <div className="composer-box">
+        {context && (
+          <div className="context-chip">
+            <FileText size={13} aria-hidden />
+            <span>
+              About <strong>{context.title}</strong>
+            </span>
+            <button type="button" aria-label="Don't include this page" onClick={onClearContext}>
+              <X size={13} aria-hidden />
+            </button>
+          </div>
+        )}
+        {files.length > 0 && (
+          <ul className="pending-files" aria-label="Attached pictures">
+            {files.map((f) => (
+              <li key={f.key} data-status={f.status}>
+                <img src={f.previewUrl} alt={f.name} />
+                {f.status === "uploading" && <Loader2 size={16} className="spin" aria-label="Uploading" />}
+                {f.status === "failed" && <span className="file-failed">Failed</span>}
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.name}`}
+                  onClick={() => {
+                    URL.revokeObjectURL(f.previewUrl);
+                    setFiles((fs) => fs.filter((x) => x.key !== f.key));
+                  }}
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {transcribed && text.trim() && (
+          <p className="composer-hint">
+            <AudioLines size={13} aria-hidden /> {COPY.transcribedBy}
+          </p>
+        )}
+        <div className="writing-line">
+          {sinking && <Sinking text={sinking} onDone={onSinkDone} />}
+          <textarea
+            ref={area}
+            className="composer-input"
+            rows={1}
+            value={text}
+            placeholder={mic === "recording" ? "Listening…" : mic === "transcribing" ? COPY.transcribing : composerPlaceholder(agents, agent)}
+            aria-label="Your request"
+            onChange={(e) => {
+              setText(e.target.value);
+              if (!e.target.value.trim()) setTranscribed(false);
+            }}
+            onPaste={(e) => {
+              if (uploadsOk && e.clipboardData.files.length) {
+                e.preventDefault();
+                addFiles(e.clipboardData.files);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
         </div>
-      )}
-      {files.length > 0 && (
-        <ul className="pending-files" aria-label="Attached pictures">
-          {files.map((f) => (
-            <li key={f.key} data-status={f.status}>
-              <img src={f.previewUrl} alt={f.name} />
-              {f.status === "uploading" && <Loader2 size={16} className="spin" aria-label="Uploading" />}
-              {f.status === "failed" && <span className="file-failed">Failed</span>}
+        <div className="composer-tools">
+          <Picker
+            label="Who answers"
+            heading="Who answers"
+            value={agentId}
+            onChange={(v) => {
+              onAgent(v);
+            }}
+            placement="above"
+            className="agent-picker"
+            button={
+              <>
+                <span className={agent ? "agent-dot" : "agent-dot any"} style={agent ? { background: agent.color } : undefined} aria-hidden />
+                <span>{agent?.name ?? COPY.anyAgent}</span>
+              </>
+            }
+            options={[
+              { value: null, label: COPY.anyAgent, detail: COPY.anyAgentDetail, lead: <span className="agent-dot any" aria-hidden /> },
+              ...agents.map((a) => ({
+                value: a.id as string | null,
+                label: (
+                  <span className="agent-name" style={{ ["--agent" as string]: a.color }}>
+                    {a.name}
+                  </span>
+                ),
+                detail: a.description,
+                lead: <span className="agent-dot" style={{ background: a.color }} aria-hidden />,
+              })),
+            ]}
+          />
+          <span className="tools-spacer" />
+          {uploadsOk && (
+            <>
+              <input
+                ref={fileInput}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files) addFiles(e.target.files);
+                  e.target.value = "";
+                  // Back to writing: the next thing is usually saying what the picture is for.
+                  requestAnimationFrame(() => area.current?.focus());
+                }}
+              />
               <button
                 type="button"
-                aria-label={`Remove ${f.name}`}
-                onClick={() => {
-                  URL.revokeObjectURL(f.previewUrl);
-                  setFiles((fs) => fs.filter((x) => x.key !== f.key));
-                }}
+                className="tool-button has-tip"
+                aria-label={COPY.attachPicture}
+                data-tip={COPY.attachPicture}
+                onClick={() => fileInput.current?.click()}
               >
-                <X size={12} aria-hidden />
+                <ImagePlus size={18} aria-hidden />
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="writing-line">
-        {sinking && <Sinking text={sinking} onDone={onSinkDone} />}
-        <textarea
-          ref={area}
-          className="composer-input"
-          rows={2}
-          value={text}
-          placeholder={mic === "recording" ? "Listening…" : "Write to me…"}
-          aria-label="Write in the diary"
-          onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => {
-            if (uploadsOk && e.clipboardData.files.length) {
-              e.preventDefault();
-              addFiles(e.clipboardData.files);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-      </div>
-      <div className="composer-tools">
-        <Picker
-          label="Which agent writes back"
-          value={agentId}
-          onChange={onAgent}
-          placement="above"
-          className="agent-picker"
-          button={
-            <>
-              <span className="agent-dot" style={{ background: agent?.color ?? "var(--ink-faint)" }} aria-hidden />
-              <span>{agent?.name ?? "Any agent"}</span>
             </>
-          }
-          options={[
-            { value: null, label: "Any agent", detail: "The diary picks who's best for it", lead: <span className="agent-dot any" aria-hidden /> },
-            ...agents.map((a) => ({
-              value: a.id as string | null,
-              label: <span className="hand-name agent-ink" style={{ ["--agent" as string]: a.color }}>{a.name}</span>,
-              detail: a.description,
-              lead: <span className="agent-dot" style={{ background: a.color }} aria-hidden />,
-            })),
-          ]}
-        />
-        <span className="tools-spacer" />
-        {uploadsOk && (
-          <>
-            <input
-              ref={fileInput}
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files) addFiles(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <button type="button" className="tool-button" aria-label="Attach a picture" title="Attach a picture" onClick={() => fileInput.current?.click()}>
-              <ImagePlus size={18} aria-hidden />
-            </button>
+          )}
+          {micOk && (
             <button
               type="button"
-              className="tool-button"
-              aria-label="Turn a photo of notes into map cards"
-              title="Turn a photo of notes into map cards"
-              onClick={() => importPhoto()}
+              className="tool-button has-tip"
+              data-state={mic}
+              aria-label={mic === "recording" ? COPY.stopListening : mic === "transcribing" ? COPY.transcribing : COPY.speak}
+              data-tip={mic === "recording" ? COPY.stopListening : mic === "transcribing" ? COPY.transcribing : COPY.speak}
+              aria-pressed={mic === "recording"}
+              disabled={mic === "transcribing"}
+              onClick={toggleMic}
             >
-              <ScanText size={18} aria-hidden />
+              {mic === "transcribing" ? <Loader2 size={18} className="spin" aria-hidden /> : mic === "recording" ? <Square size={13} aria-hidden fill="currentColor" /> : <Mic size={18} aria-hidden />}
+              {mic === "recording" && <span className="rec-time">{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`}</span>}
             </button>
-          </>
-        )}
-        {micOk && (
-          <button
-            type="button"
-            className="tool-button"
-            data-state={mic}
-            aria-label={mic === "recording" ? "Stop and transcribe" : mic === "transcribing" ? "Transcribing" : "Speak to the diary"}
-            title={mic === "recording" ? "Stop and transcribe" : "Speak to the diary"}
-            disabled={mic === "transcribing"}
-            onClick={toggleMic}
-          >
-            {mic === "transcribing" ? <Loader2 size={18} className="spin" aria-hidden /> : <Mic size={18} aria-hidden />}
-            {mic === "recording" && <span className="rec-time">{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`}</span>}
-          </button>
-        )}
-        {busy && !text.trim() ? (
-          <button type="button" className="send-button stop" aria-label="Stop the agent" title="Stop the agent" onClick={onStop}>
-            <Square size={14} aria-hidden fill="currentColor" />
-          </button>
-        ) : (
-          <button type="submit" className="send-button" aria-label="Send" title="Send (Enter)" disabled={!canSend}>
-            <ArrowUp size={18} aria-hidden />
-          </button>
-        )}
+          )}
+          {busy && !text.trim() ? (
+            <button type="button" className="send-button stop has-tip" aria-label="Stop the agent" data-tip="Stop the agent" onClick={onStop}>
+              <Square size={12} aria-hidden fill="currentColor" />
+            </button>
+          ) : (
+            <button type="submit" className="send-button has-tip" aria-label={COPY.send} data-tip="Send (Enter)" disabled={!canSend}>
+              <ArrowUp size={18} aria-hidden />
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

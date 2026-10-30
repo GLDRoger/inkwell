@@ -1,8 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { prefersReducedMotion } from "../lib/ui";
-import { handCut, renderMarkdown, revealRate, stripInline } from "./ink";
+import { handCut, handSegments, renderMarkdown, revealRate, sliceSegments, type HandSegment } from "./ink";
 
 interface Props {
+  /** The diary entry this ink belongs to; remembers that it has been written once. */
+  id: string;
   text: string;
   color: string;
   /** Write it out stroke by stroke (it streamed in during this visit) or show it at once. */
@@ -10,18 +13,24 @@ interface Props {
   /** More text may still arrive. */
   streaming: boolean;
   onClick?(e: React.MouseEvent): void;
+  /** The reply has finished writing and settled into plain text. */
+  onSettled?(): void;
 }
+
+/** Replies already written out once this visit: switching conversations doesn't write them again. */
+const written = new Set<string>();
+const SETTLE_AFTER_MS = 650;
 
 /** Reveal `text` at a handwriting pace. Returns how many characters are visible. */
 function useReveal(text: string, live: boolean): number {
-  const [shown, setShown] = useState(() => (live && !prefersReducedMotion() ? 0 : text.length));
+  const [shown, setShown] = useState(() => (live ? 0 : text.length));
   const target = useRef(text.length);
   const cut = useRef(0);
   target.current = text.length;
   cut.current = handCut(text);
 
   useEffect(() => {
-    if (!live || prefersReducedMotion()) {
+    if (!live) {
       setShown(text.length);
       return;
     }
@@ -47,15 +56,27 @@ function useReveal(text: string, live: boolean): number {
   return Math.min(shown, text.length);
 }
 
-const HandChars = memo(function HandChars({ text }: { text: string }) {
-  // One span per character so each stroke can be laid down with its own small ink bleed.
+/** One span per character so each stroke is laid down with its own small ink bleed; links stay links. */
+const HandInk = memo(function HandInk({ segments, strokes }: { segments: HandSegment[]; strokes: boolean }) {
+  let n = 0;
   return (
     <>
-      {Array.from(text).map((ch, i) => (
-        <span key={i} className="stroke">
-          {ch}
-        </span>
-      ))}
+      {segments.map((s, i) => {
+        const chars = strokes
+          ? Array.from(s.text).map((ch) => (
+              <span key={n++} className="stroke">
+                {ch}
+              </span>
+            ))
+          : s.text;
+        return s.href ? (
+          <a key={`a${i}`} href={s.href}>
+            {chars}
+          </a>
+        ) : (
+          <span key={`t${i}`}>{chars}</span>
+        );
+      })}
     </>
   );
 });
@@ -67,30 +88,85 @@ const snapToWord = (s: string, end: number) => {
   return space > 0 ? space : end;
 };
 
-export function InkWriter({ text, color, live, streaming, onClick }: Props) {
-  const shown = useReveal(text, live);
+type DocWithTransitions = Document & { startViewTransition?: (cb: () => void) => unknown };
+
+/**
+ * An agent's reply. While it arrives it writes itself out in the agent's hand;
+ * a moment after the last word it settles into plain, readable text. Replies
+ * that were already there when you opened the diary are simply text.
+ */
+export function InkWriter({ id, text, color, live, streaming, onClick, onSettled }: Props) {
+  const writes = live && !written.has(id) && !prefersReducedMotion();
+  const [settled, setSettled] = useState(!writes);
+  const root = useRef<HTMLDivElement>(null);
+  const shown = useReveal(text, writes && !settled);
+  const done = shown >= text.length && !streaming;
+  const settledCb = useRef(onSettled);
+  settledCb.current = onSettled;
+
+  useEffect(() => {
+    if (settled || !done) return;
+    const t = setTimeout(() => {
+      written.add(id);
+      const settle = () => setSettled(true);
+      const doc = document as DocWithTransitions;
+      const el = root.current;
+      if (doc.startViewTransition && el && !prefersReducedMotion()) {
+        el.style.setProperty("view-transition-name", `ink-${id.replace(/[^\w-]/g, "")}`);
+        el.style.setProperty("view-transition-class", "ink-settle");
+        const vt = doc.startViewTransition(() => flushSync(settle)) as { finished?: Promise<void> };
+        void vt.finished?.finally(() => {
+          el.style.removeProperty("view-transition-name");
+          el.style.removeProperty("view-transition-class");
+        });
+      } else settle();
+      settledCb.current?.();
+    }, SETTLE_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [done, settled, id]);
+
+  // A live reply that was already written once (you switched away and back): it's settled already.
+  useEffect(() => {
+    if (live && !writes) settledCb.current?.();
+  }, [live, writes]);
+
+  const settledHtml = useMemo(() => (settled ? renderMarkdown(text) : ""), [settled, text]);
+
   const cut = handCut(text);
-  // Reveal a prefix of the stable, stripped hand text so earlier strokes never re-render.
-  const handFull = stripInline(text.slice(0, cut));
-  const handVisible = handFull.slice(0, stripInline(text.slice(0, Math.min(shown, cut))).length);
+  const handMd = text.slice(0, cut);
+  const segments = useMemo(() => handSegments(handMd), [handMd]);
+  // Map the markdown position onto the ink proportionally, so hidden syntax (a link's target) never makes the reveal jump back.
+  const handLength = useMemo(() => segments.reduce((n, s) => n + Array.from(s.text).length, 0), [segments]);
+  const visibleChars = cut ? Math.round((handLength * Math.min(shown, cut)) / cut) : 0;
+  const handVisible = useMemo(() => sliceSegments(segments, visibleChars), [segments, visibleChars]);
   const restEnd = shown > cut ? snapToWord(text, shown) : cut;
-  const restMd = text.slice(cut, restEnd);
+  const restMd = settled ? "" : text.slice(cut, restEnd);
   const restHtml = useMemo(() => (restMd.trim() ? renderMarkdown(restMd) : ""), [restMd]);
-  const writing = shown < text.length || streaming;
+  const writing = !settled && (shown < text.length || streaming);
+  const handText = segments.map((s) => s.text).join("");
 
   return (
-    <div className="ink" style={{ ["--agent" as string]: color }} aria-busy={writing} data-writing={writing && shown > cut} onClick={onClick}>
-      {handFull.trim() && (
-        <p className="ink-hand">
-          <span className="sr-only">{handFull}</span>
-          <span aria-hidden>
-            {live ? <HandChars text={handVisible} /> : handVisible}
-            {writing && shown <= cut && <span className="nib" />}
-          </span>
-        </p>
-      )}
-      {restHtml && (
-        <div className="ink-body" dangerouslySetInnerHTML={{ __html: restHtml }} />
+    <div
+      ref={root}
+      className="ink"
+      style={{ ["--agent" as string]: color }}
+      aria-busy={writing}
+      data-settled={settled}
+      data-writing={writing && shown > cut}
+      onClick={onClick}
+    >
+      {settled ? (
+        <div className="ink-body" dangerouslySetInnerHTML={{ __html: settledHtml }} />
+      ) : (
+        <>
+          {handText.trim() && (
+            <p className="ink-hand">
+              <HandInk segments={handVisible} strokes />
+              {writing && shown <= cut && <span className="nib" aria-hidden />}
+            </p>
+          )}
+          {restHtml && <div className="ink-body" dangerouslySetInnerHTML={{ __html: restHtml }} />}
+        </>
       )}
     </div>
   );

@@ -111,7 +111,9 @@ export async function importPhoto(file: File, show: (ids: Id[]) => void, flightM
     for (const page of pages) emit({ type: "page.created", page });
     ids = pages.map((p) => p.id);
     const notes = pages.length - 1;
-    notify({ id, tone: "done", text: notes === 1 ? "One note is on the map." : `${notes} notes are on the map.` });
+    // Quiet provenance: which Meta models did the reading.
+    const placed = notes === 1 ? "One note is on the map." : `${notes} notes are on the map.`;
+    notify({ id, tone: "done", text: `${placed} Read by SAM 3.1 + Muse Spark.` });
     show(ids);
   } catch (e) {
     notify({ id, tone: "error", text: mediaErrorCopy(e, "photo") });
