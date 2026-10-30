@@ -94,6 +94,8 @@ export interface Run {
   endedAt: string | null;
   /** Replayed from a recorded run in the demo notebook (see docs/DEMO-MODE.md). */
   recorded?: boolean;
+  /** The Meta text model the run used, e.g. "muse-wonder-1.0". */
+  model?: string;
 }
 
 export interface RunStep {
@@ -142,6 +144,13 @@ export type ServerEvent =
   /** Demo notebook only: the demo moved to its next step (docs/DEMO-MODE.md). */
   | { type: "demo.step"; index: number; step: DemoStep; focus: { pageId?: Id; agentId?: Id; runId?: Id } }
   | { type: "demo.ended"; reason: "finished" | "stopped" };
+
+/** Text models a visitor may choose in hands-on mode (header X-Meta-Model). The first is the default. */
+export const TEXT_MODELS = [
+  { id: "muse-wonder-1.0", name: "Muse Wonder" },
+  { id: "muse-spark-1.3-contributor", name: "Muse Spark Contributor" },
+] as const;
+export type TextModelId = (typeof TEXT_MODELS)[number]["id"];
 
 /** Which notebook a request is for. Header X-Inkwell-Notebook; ?notebook= on SSE and collab. */
 export type NotebookKind = "own" | "demo";

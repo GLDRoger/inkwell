@@ -32,6 +32,10 @@ The session middleware resolves `ctx.workspaceId` from this. Every existing rout
 
 AI requests (`POST /api/diary`, `/api/transcribe`, `/api/import/photo`, `/api/pages/:id/cover`) accept header `X-Meta-Key`. The server uses it for that request and keeps it **in memory only** for the life of any run it starts (child runs inherit it). Never written to the database, logs, errors or events. If neither the header nor the server env key is present, the server answers as today with `code: "meta_not_connected"` (status 503), and the client opens the key dialog instead of showing an error.
 
+## Which model
+
+Default text/vision model: `muse-wonder-1.0` (owner, 2026-10-30: the others are much worse). Wonder has no Contributor tier (`muse-wonder-1.0-contributor` → 404). In hands-on mode the visitor picks next to their key: **Muse Wonder** (`muse-wonder-1.0`, default) or **Muse Spark Contributor** (`muse-spark-1.3-contributor`, far cheaper; Meta may train on prompts). Sent as header `X-Meta-Model`, allow-listed server-side to exactly those two; anything else → default. Runs record the model they used (`Run.model`), and provenance copy names it ("Written with Muse Wonder"). Recorded demo runs use Wonder. Image (`muse-image-1.0`), voice (`muse-voice-transcribe-1.0`) and SAM (`sam-3.1`) are unchanged.
+
 ## Demo events (SSE, demo notebook only)
 
 ```ts
