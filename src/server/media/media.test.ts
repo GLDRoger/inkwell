@@ -152,7 +152,7 @@ describe("page illustration", () => {
     expect(url).toBe("https://api.meta.ai/v1/images/generations");
     expect(body).toMatchObject({ model: "muse-image-1.0", output_format: "png", response_format: "b64_json" });
     expect(body.prompt).toContain("Lisbon"); expect(body.prompt).toContain("Walk the harbour");
-    expect(body.prompt).toContain("antique parchment map vignette, iron-gall ink and watercolour, no text");
+    expect(body.prompt).toContain("calm editorial illustration for the cover of this notebook page");
   });
   it("downloads URL responses without forwarding the API credential", async () => {
     const page = services.pages.listPages(ctx.workspaceId)[0]!;
@@ -205,7 +205,8 @@ describe("photo import", () => {
       .mockResolvedValueOnce(vision([{ ...NOTE_A, box: null }, { ...NOTE_B, box: null }]));
     const response = await request("/api/import/photo", { attachmentId: attachment.id });
     expect(response.status).toBe(200);
-    const { pages } = await response.json() as { pages: Page[] };
+    const { pages, segmentedBy } = await response.json() as { pages: Page[]; segmentedBy: string | null };
+    expect(segmentedBy).toBe("sam-3.1");
     expect(pages).toHaveLength(3);
     const [parent, first, second] = pages as [Page, Page, Page];
     expect(parent.title).toMatch(/^Photo notes, \d{1,2} [A-Z][a-z]{2,3}$/); expect(parent.icon).toBe("📷");
@@ -235,7 +236,8 @@ describe("photo import", () => {
       .mockResolvedValueOnce(vision([NOTE_A, NOTE_B]));
     const response = await request("/api/import/photo", { attachmentId: attachment.id });
     expect(response.status).toBe(200);
-    const { pages } = await response.json() as { pages: Page[] };
+    const { pages, segmentedBy } = await response.json() as { pages: Page[]; segmentedBy: string | null };
+    expect(segmentedBy).toBeNull();
     expect(pages).toHaveLength(3);
     expect(pages[1]!.y).toBe(240);
     expect(pages[2]!.y).toBe(600);

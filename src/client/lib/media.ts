@@ -108,13 +108,13 @@ export async function importPhoto(file: File, show: (ids: Id[]) => void, flightM
   try {
     const attachment = await api.upload(file);
     notify({ id, tone: "busy", text: "Reading your notes…" });
-    const { pages } = await api.importPhoto(attachment.id);
+    const { pages, segmentedBy } = await api.importPhoto(attachment.id);
     for (const page of pages) emit({ type: "page.created", page });
     ids = pages.map((p) => p.id);
     const notes = pages.length - 1;
     // Quiet provenance: which Meta models did the reading.
     const placed = notes === 1 ? "One note is on the map." : `${notes} notes are on the map.`;
-    notify({ id, tone: "done", text: `${placed} Read by SAM 3.1 + Muse Spark.` });
+    notify({ id, tone: "done", text: `${placed} ${segmentedBy ? "Read by SAM 3.1 + Muse Spark." : "Read by Muse Spark."}` });
     show(ids);
   } catch (e) {
     notify({ id, tone: "error", text: mediaErrorCopy(e, "photo") });

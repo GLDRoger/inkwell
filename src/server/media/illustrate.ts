@@ -12,7 +12,7 @@ export async function illustratePage(services: Services, ctx: SessionCtx, id: st
   // PNG must be explicit: https://dev.meta.ai/docs/api-reference/images/schemas
   const result = record(await meta.post("/images/generations", {
     model: process.env.META_IMAGE_MODEL ?? "muse-image-1.0",
-    prompt: `Create an antique parchment map vignette, iron-gall ink and watercolour, no text. Illustrate the subject of this notebook page, without letters or labels.\nTitle: ${page.title.slice(0, 500)}\nExcerpt: ${page.excerpt.slice(0, 600)}`,
+    prompt: `Create a calm editorial illustration for the cover of this notebook page: a soft, modern watercolour-and-pencil scene on a warm off-white background, generous empty space, muted natural colours, no text, letters, labels or borders.\nTitle: ${page.title.slice(0, 500)}\nExcerpt: ${page.excerpt.slice(0, 600)}`,
     response_format: "b64_json",
     output_format: "png",
   }));

@@ -102,7 +102,8 @@ export const api = {
   },
   /** Muse Image paints a cover for the page; returns the page with its new coverUrl. */
   illustrate: (id: Id) => request<Page>(`/pages/${encodeURIComponent(id)}/illustrate`, { method: "POST" }),
-  /** SAM 3.1 + vision turn an uploaded photo of notes into cards: a parent page, then one per note. */
-  importPhoto: (attachmentId: Id) => request<{ pages: Page[] }>("/import/photo", json("POST", { attachmentId })),
+  /** SAM 3.1 + vision turn an uploaded photo of notes into cards: a parent page, then one per note.
+   * `segmentedBy` is "sam-3.1" when SAM found the notes, null when vision did it alone. */
+  importPhoto: (attachmentId: Id) => request<{ pages: Page[]; segmentedBy?: "sam-3.1" | null }>("/import/photo", json("POST", { attachmentId })),
   presence: (pageId: Id | null) => request<void>("/presence", json("POST", { pageId })),
 };

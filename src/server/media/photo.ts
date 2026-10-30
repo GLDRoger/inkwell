@@ -96,5 +96,6 @@ export async function importPhoto(services: Services, ctx: SessionCtx, attachmen
     return [parent, ...children];
   })();
   for (const event of events) services.bus.publish(ctx.workspaceId, event);
-  return { pages: created };
+  // Say who found the notes: SAM is advisory, and vision can do it alone.
+  return { pages: created, segmentedBy: boxes.length ? "sam-3.1" as const : null };
 }
