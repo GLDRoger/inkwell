@@ -17,7 +17,8 @@ import { createServices, type Services } from "../services.ts";
 // @ts-expect-error plain .mjs rehearsal helper, no types
 import { startFakeMeta } from "../../../scripts/rehearsal/fake-meta.mjs";
 import type { Cassette } from "./cassette.ts";
-import { CASSETTES_DIR, loadCassette } from "./player.ts";
+import { IdTranslator } from "./cassette.ts";
+import { CASSETTES_DIR, loadCassette, replayTransport } from "./player.ts";
 import { recordScenario } from "./record.ts";
 import { LISBON_TOUR } from "./scenario.ts";
 
@@ -183,6 +184,23 @@ describe("replay in the demo notebook", () => {
       await harness.close();
     }
   }, 30_000);
+});
+
+describe("replay transport", () => {
+  it("ends a media call's replay delay as soon as the demo stops", async () => {
+    const recorded: Cassette = { ...cassette, steps: [{ id: "cover", streams: [{ kind: "media", exchanges: [
+      { path: "/images/generations", status: 200, ms: 20_000, response: { type: "json", body: { data: [] } } },
+    ] }] }] };
+    const stop = new AbortController();
+    const transport = replayTransport(recorded, new IdTranslator(recorded), { scale: 1 }, stop.signal);
+    transport.beginStep(0, LISBON_TOUR.steps.find((s) => s.id === "cover")!);
+    const started = Date.now();
+    // Media clients pass no abort signal of their own.
+    const pending = transport.media()("https://api.meta.ai/v1/images/generations", { method: "POST", body: "{}" });
+    setTimeout(() => stop.abort(new Error("Demo stopped.")), 30);
+    await expect(pending).rejects.toThrow("Demo stopped.");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe("demo notebook isolation", () => {

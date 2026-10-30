@@ -35,8 +35,12 @@ export function loadCassette(id: string, dir = CASSETTES_DIR): { cassette: Casse
   return { cassette, def };
 }
 
-/** Serve a cassette's exchanges in order: per step, one stream per run (by start order) plus media. */
-export function replayTransport(cassette: Cassette, translator: IdTranslator, pace: ReplayPace): Transport {
+/**
+ * Serve a cassette's exchanges in order: per step, one stream per run (by start order) plus media.
+ * `stop` ends every replay delay at once, including media calls (photo, cover, voice) that
+ * carry no abort signal of their own.
+ */
+export function replayTransport(cassette: Cassette, translator: IdTranslator, pace: ReplayPace, stop?: AbortSignal): Transport {
   let runs: Stream[] = [];
   let media: Stream | undefined;
   let nextRun = 0;
@@ -51,8 +55,10 @@ export function replayTransport(cassette: Cassette, translator: IdTranslator, pa
     const actual = requestVersions(bodyJson(init));
     const versions = new Map<string, string>();
     recorded.forEach((v, i) => { if (actual[i]) versions.set(v, actual[i]!); });
-    await sleep(replayDelay(exchange, pace), init?.signal ?? undefined);
-    return replayResponse(exchange, (text) => translator.translate(text, versions), pace, init?.signal ?? undefined);
+    const signals = [init?.signal, stop].filter((x): x is AbortSignal => Boolean(x));
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
+    await sleep(replayDelay(exchange, pace), signal);
+    return replayResponse(exchange, (text) => translator.translate(text, versions), pace, signal);
   };
   return {
     replaying: true,
@@ -134,7 +140,7 @@ export class DemoPlayer {
       const pace = this.pace;
       play.done = playScenario({
         services: s, ctx: demoCtx, scenario: def, signal: controller.signal,
-        transport: replayTransport(cassette, translator, { scale: pace }),
+        transport: replayTransport(cassette, translator, { scale: pace }, controller.signal),
         // Replay never calls Meta, so it needs no key; the model is the recording's.
         apiKey: "recorded-demo", baseUrl: "https://api.meta.ai/v1", model: cassette.model,
         date: new Date(cassette.recordedAt),
