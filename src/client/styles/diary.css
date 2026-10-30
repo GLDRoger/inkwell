@@ -372,3 +372,16 @@
   .ink-drops span { animation: none; opacity: 0.6; transform: none; }
   .starter, .starter svg, .has-tip::after { transition: none; }
 }
+
+/* ------------------------------------------------------------ the recorded demo */
+.composer-demo {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between;
+  border-top: 1px solid var(--rule);
+}
+.composer-demo p { margin: 0; flex: 1 1 200px; font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+/* A request in the demo appears as if someone is writing it now. */
+.written-word { display: inline-block; white-space: pre; animation: write-in 260ms var(--ease-ink) both; animation-delay: calc(var(--i) * 70ms); }
+@keyframes write-in { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .written-word { animation: settle-in 200ms ease both; animation-delay: 0s; }
+}

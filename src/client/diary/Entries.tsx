@@ -5,7 +5,7 @@ import type { Agent, DiaryEntry, Run } from "@shared/types";
 import { pageTitle, useMap, usePages, useRun } from "../lib/queries";
 import { InkWriter } from "./InkWriter";
 import { splitFailure } from "./reply";
-import { COPY, modelName } from "./copy";
+import { COPY, provenance } from "./copy";
 import { runRecovery } from "./errors";
 import type { QuoteAuthor } from "./ink";
 import { failNote, stopNote, tidyReply, workDone, type NotePart } from "./tidy";
@@ -190,9 +190,12 @@ function AgentEntry({
   onCancel,
   onRecover,
   onSettled,
+  readOnly,
 }: {
   entry: DiaryEntry;
   agent?: Agent;
+  /** The demo: nothing to stop or retry. */
+  readOnly?: boolean;
   agents: Agent[];
   live: boolean;
   /** This is the latest reply and nothing is running, so a failed one can be tried again. */
@@ -270,7 +273,7 @@ function AgentEntry({
           {/* Which Meta model wrote this: quiet provenance, shown once the reply is done. */}
           {entry.runId && (
             <span className="provenance" data-show={settled && !streaming}>
-              Written with {modelName(agent?.model)}
+              {provenance(run, agent?.model)}
             </span>
           )}
           {agent && (
@@ -280,15 +283,36 @@ function AgentEntry({
           )}
         </div>
       )}
-      {run && <Steps run={run} agent={agent} note={note} status={status} onCancel={() => onCancel(run.id)} />}
+      {run && <Steps run={run} agent={agent} note={note} status={status} onCancel={readOnly ? undefined : () => onCancel(run.id)} />}
       {!run && entry.pageIds.length > 0 && <Touched ids={entry.pageIds} />}
     </div>
   );
 }
 
-function PersonEntry({ entry }: { entry: DiaryEntry }) {
+/** The person's words appearing as if written just now (the demo plays requests this way). */
+function WrittenIn({ text }: { text: string }) {
+  let w = 0;
   return (
-    <div className="entry entry-person">
+    <>
+      <span className="sr-only">{text}</span>
+      <span aria-hidden className="written-in">
+        {text.split(/(\s+)/).map((part, i) =>
+          /^\s+$/.test(part) || !part ? (
+            part
+          ) : (
+            <span key={i} className="written-word" style={{ ["--i" as string]: Math.min(w++, 60) }}>
+              {part}
+            </span>
+          ),
+        )}
+      </span>
+    </>
+  );
+}
+
+function PersonEntry({ entry, fresh }: { entry: DiaryEntry; fresh?: boolean }) {
+  return (
+    <div className="entry entry-person" data-fresh={fresh || undefined}>
       {entry.attachments.length > 0 && (
         <ul className="entry-attachments" aria-label="Attached">
           {entry.attachments.map((a) =>
@@ -304,7 +328,7 @@ function PersonEntry({ entry }: { entry: DiaryEntry }) {
           )}
         </ul>
       )}
-      <p className="person-text">{entry.text}</p>
+      <p className="person-text">{fresh ? <WrittenIn text={entry.text} /> : entry.text}</p>
     </div>
   );
 }
@@ -315,11 +339,17 @@ export function Entries({
   liveIds,
   hiddenId,
   recoverableId,
+  freshIds,
+  readOnly,
   onCancel,
   onRecover,
   onSettled,
 }: {
   entries: DiaryEntry[];
+  /** The person's entries that should appear as if written now (the demo). */
+  freshIds?: string[];
+  /** The demo notebook: replies can't be stopped or retried. */
+  readOnly?: boolean;
   agents: Agent[];
   liveIds: string[];
   hiddenId: string | null;
@@ -356,9 +386,10 @@ export function Entries({
                   onCancel={onCancel}
                   onRecover={onRecover}
                   onSettled={onSettled}
+                  readOnly={readOnly}
                 />
               ) : (
-                <PersonEntry entry={e} />
+                <PersonEntry entry={e} fresh={freshIds?.includes(e.id)} />
               )}
             </li>
           </Fragment>

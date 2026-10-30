@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COPY, composerPlaceholder, modelName } from "./copy";
+import { COPY, composerPlaceholder, modelName, provenance } from "./copy";
 import { shouldIntroduce } from "./intro";
 
 describe("diary copy", () => {
@@ -23,7 +23,15 @@ describe("diary copy", () => {
   it("names the Meta models as people say them", () => {
     expect(modelName("muse-spark-1.3")).toBe("Muse Spark");
     expect(modelName("muse-wonder-1.0")).toBe("Muse Wonder");
-    expect(modelName(undefined)).toBe("Muse Spark");
+    expect(modelName("muse-spark-1.3-contributor")).toBe("Muse Spark");
+    expect(modelName(undefined)).toBe("Muse Wonder");
+  });
+
+  it("credits recorded runs as recorded", () => {
+    expect(provenance({ model: "muse-wonder-1.0" })).toBe("Written with Muse Wonder");
+    expect(provenance({ model: "muse-spark-1.3-contributor" })).toBe("Written with Muse Spark");
+    expect(provenance({ recorded: true, model: "muse-wonder-1.0" })).toBe("Recorded run · Muse Wonder");
+    expect(provenance(null, "muse-spark-1.3")).toBe("Written with Muse Spark");
   });
 });
 

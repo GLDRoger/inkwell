@@ -16,7 +16,7 @@ const run = (status: Run["status"], extra: Partial<Run> = {}): Run => ({
 const asked: DiaryEntry = { id: "e1", threadId: "t1", role: "person", agentId: null, text: "Plan my 5 days in Lisbon", pageIds: [], attachments: [], runId: null, createdAt: "2026-10-30T10:00:00Z" };
 const reply = (text: string): DiaryEntry => ({ ...asked, id: "e2", role: "agent", agentId: "scout", text, runId: "r1", createdAt: "2026-10-30T10:00:01Z" });
 
-function show(entry: DiaryEntry, r: Run, opts: { runs?: Run[]; pages?: Partial<Page>[]; recoverable?: boolean } = {}) {
+function show(entry: DiaryEntry, r: Run, opts: { runs?: Run[]; pages?: Partial<Page>[]; recoverable?: boolean; readOnly?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(keys.run(r.id), r);
   client.setQueryData<MapGraph>(keys.map, { pages: [], links: [], agents: [scout, wren], runs: opts.runs ?? [] });
@@ -33,6 +33,7 @@ function show(entry: DiaryEntry, r: Run, opts: { runs?: Run[]; pages?: Partial<P
           recoverableId={opts.recoverable === false ? null : entry.id}
           onCancel={() => {}}
           onRecover={onRecover}
+          readOnly={opts.readOnly}
         />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -46,7 +47,7 @@ const MODEL_FAILED = "The Meta model couldn't complete this request. Check the A
 
 describe("a failed reply", () => {
   it("offers Try again, which resends the request, and isn't signed", () => {
-    const failed = run("failed", { error: MODEL_FAILED });
+    const failed = run("failed", { error: MODEL_FAILED, model: "muse-spark-1.3-contributor" });
     const { onRecover } = show(reply(`Gathering the pages for this.\n\n${MODEL_FAILED}`), failed);
     expect(screen.getByText("Muse Spark couldn't finish this one.")).toBeTruthy();
     expect(screen.queryByText("Gathering the pages for this.")).toBeNull();
@@ -69,7 +70,7 @@ describe("a failed reply", () => {
   });
 
   it("says which pages it had already made before it failed, and still offers Try again", () => {
-    const failed = run("failed", { error: MODEL_FAILED, steps: [step("search_pages", "Searched for launch"), step("create_page", "Created Summary: Startup: launch plan", "p1")] });
+    const failed = run("failed", { error: MODEL_FAILED, model: "muse-spark-1.3-contributor", steps: [step("search_pages", "Searched for launch"), step("create_page", "Created Summary: Startup: launch plan", "p1")] });
     show(reply(`Drafting the summary now\n\n${MODEL_FAILED}`), failed, { pages: [{ id: "p1", title: "Summary: Startup: launch plan", icon: null } as Partial<Page>] });
     expect(document.querySelector(".step-note-text")?.textContent).toBe("Muse Spark stopped partway. Scout had already made Summary: Startup: launch plan.");
     expect(screen.getByRole("link", { name: "Summary: Startup: launch plan" }).getAttribute("href")).toBe("/p/p1");
@@ -91,6 +92,12 @@ describe("a finished reply", () => {
     expect(screen.getByText(/Written with Muse Spark/)).toBeTruthy();
     expect(document.querySelector("blockquote .quote-by")?.textContent).toBe("— Wren");
   });
+
+  it("credits the model the run used, and says when it was recorded", () => {
+    show(reply("Done. I made the plan."), run("succeeded", { model: "muse-wonder-1.0", recorded: true }));
+    expect(screen.getByText("Recorded run · Muse Wonder")).toBeTruthy();
+    expect(screen.queryByText(/Written with/)).toBeNull();
+  });
 });
 
 describe("a stopped reply", () => {
@@ -102,5 +109,15 @@ describe("a stopped reply", () => {
     expect(screen.getByRole("link", { name: "Packing list" }).getAttribute("href")).toBe("/p/p2");
     expect(screen.queryByText(/Let me find/)).toBeNull();
     expect(document.querySelector(".signature")).toBeNull();
+  });
+});
+
+describe("a reply in the recorded demo", () => {
+  it("can't be stopped", () => {
+    show(reply("Reading your Lisbon pages."), run("running", { recorded: true }), { readOnly: true });
+    expect(screen.queryByRole("button", { name: /Stop/ })).toBeNull();
+    cleanup();
+    show(reply("Reading your Lisbon pages."), run("running"));
+    expect(screen.getByRole("button", { name: /Stop/ })).toBeTruthy();
   });
 });

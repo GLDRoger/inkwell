@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useMatch } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Loader2, MessageSquare, SquarePen, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Loader2, MessageSquare, SquarePen, X } from "lucide-react";
 import type { Agent, Attachment, DiaryEntry, DiaryThread, Run } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
-import { keys, pageTitle, useAgents, useMap, usePages, useRun, useThread, useThreads } from "../lib/queries";
+import { keys, pageTitle, useAgents, useMap, useMe, usePages, useRun, useThread, useThreads } from "../lib/queries";
+import { getDemo, useDemo } from "../lib/demo";
+import { tryItYourself } from "../lib/demo-flow";
+import { handledAiRefusal, readyForAi } from "../lib/media";
 import { useServerEvent } from "../lib/events";
 import { getUi, setUi, useUi } from "../lib/ui";
 import { timeAgo } from "../lib/time";
@@ -87,6 +90,19 @@ function IntroNudge({ agent, onOpen, onDismiss }: { agent?: Agent; onOpen(): voi
   );
 }
 
+/** In the demo: what the composer would be, and why it isn't. */
+function DemoNote({ onTry }: { onTry(): void }) {
+  return (
+    <div className="composer composer-demo" role="note">
+      <p>{COPY.demoReadOnly}</p>
+      <button type="button" className="demo-try demo-try-quiet" onClick={onTry}>
+        {COPY.tryYourself}
+        <ArrowRight size={14} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 const wide = () => typeof window !== "undefined" && window.matchMedia?.("(min-width: 641px)").matches;
 
 /**
@@ -97,8 +113,11 @@ const wide = () => typeof window !== "undefined" && window.matchMedia?.("(min-wi
 function useIntro() {
   const [phase, setPhase] = useState<"idle" | "nudge" | "reveal" | "done">("idle");
   useEffect(() => {
+    if (getDemo().notebook === "demo") return;
     const app = document.querySelector(".app");
     const welcomed = !!app?.hasAttribute("data-welcome");
+    // Wait for the welcome to leave and the guide (if it's showing) to finish.
+    const waiting = () => !!app?.hasAttribute("data-welcome") || !!app?.hasAttribute("data-guide");
     const ok = shouldIntroduce({
       pathname: location.pathname,
       search: location.search,
@@ -118,16 +137,16 @@ function useIntro() {
         } else setPhase("nudge");
       }, welcomed ? 650 : 900);
     };
-    if (!app?.hasAttribute("data-welcome")) {
+    if (!waiting()) {
       start();
       return () => clearTimeout(timer);
     }
     const mo = new MutationObserver(() => {
-      if (app.hasAttribute("data-welcome")) return;
+      if (waiting()) return;
       mo.disconnect();
       start();
     });
-    mo.observe(app, { attributes: true, attributeFilter: ["data-welcome"] });
+    mo.observe(app!, { attributes: true, attributeFilter: ["data-welcome", "data-guide"] });
     return () => {
       mo.disconnect();
       clearTimeout(timer);
@@ -161,6 +180,10 @@ export function DiaryPanel() {
   /** Conversations started from a page during this visit, so reopening the diary there picks up where you were. */
   const pageThreads = useRef(new Map<string, string>());
   const intro = useIntro();
+  const demo = useDemo((s) => s.notebook === "demo");
+  const { data: me } = useMe();
+  /** In the demo: the person's requests that arrived while watching, shown as if written now. */
+  const [freshIds, setFreshIds] = useState<string[]>([]);
 
   const threads = useThreads();
   const thread = useThread(state.threadId);
@@ -260,6 +283,18 @@ export function DiaryPanel() {
 
   useServerEvent("diary.delta", (e) => dispatch({ type: "replyStarted", entryId: e.entryId, threadId: e.threadId }));
   useServerEvent("diary.entry", (e) => {
+    if (getDemo().notebook === "demo") {
+      // The demo's conversation plays here: follow it to whichever conversation it's in.
+      if (e.entry.threadId !== state.threadId) {
+        chosen.current = true;
+        dispatch({ type: "selectThread", threadId: e.entry.threadId });
+      }
+      if (e.entry.role === "person") {
+        setFreshIds((ids) => (ids.includes(e.entry.id) ? ids : [...ids, e.entry.id]));
+        pinned.current = true;
+        if (wide()) setUi({ diaryOpen: true });
+      }
+    }
     if (e.entry.role === "agent") dispatch({ type: "replyStarted", entryId: e.entry.id, threadId: e.entry.threadId });
   });
   useServerEvent("run.updated", (e) => dispatch({ type: "runUpdated", run: e.run }));
@@ -298,6 +333,11 @@ export function DiaryPanel() {
 
   /** `again`: resending from a failed reply, so the words don't sink from the composer and go to the same agent. */
   const send = async (text: string, attachments: Attachment[], again?: { agentId: string }) => {
+    // In the demo, or without a Meta key: explain or ask for the key, and keep the words.
+    if (!readyForAi("diary", me)) {
+      if (!again) dispatch({ type: "putBack", text });
+      return;
+    }
     dispatch({ type: "send", text, quiet: !!again });
     setNote(null);
     pinned.current = true;
@@ -327,6 +367,10 @@ export function DiaryPanel() {
       const run = client.getQueryData<Run | null>(keys.run(res.runId));
       if (run) dispatch({ type: "runUpdated", run });
     } catch (e) {
+      if (handledAiRefusal(e, "diary")) {
+        dispatch({ type: "putBack", text: again ? "" : text });
+        return;
+      }
       const error = sendErrorCopy(e, { kept: !again });
       if (error.reset === "page" && pageId) setContextDismissed(pageId);
       if (error.reset === "thread") void client.invalidateQueries({ queryKey: keys.threads, exact: true });
@@ -436,7 +480,7 @@ export function DiaryPanel() {
                 </button>
               </p>
             )}
-            {!entries.length && !thread.isLoading && !thread.error && !state.sinking && !gathering && (
+            {!demo && !entries.length && !thread.isLoading && !thread.error && !state.sinking && !gathering && (
               <EmptyConversation agents={agents} onPage={!!contextPage} onPick={(t) => send(t, [])} />
             )}
             <Entries
@@ -444,12 +488,20 @@ export function DiaryPanel() {
               agents={agents}
               liveIds={state.liveEntryIds}
               hiddenId={state.hiddenEntryId}
-              recoverableId={!busy && !state.sinking && entries.at(-1)?.role === "agent" ? entries.at(-1)!.id : null}
+              recoverableId={!demo && !busy && !state.sinking && entries.at(-1)?.role === "agent" ? entries.at(-1)!.id : null}
+              freshIds={freshIds}
+              readOnly={demo}
               onCancel={cancel}
               onRecover={recover}
               onSettled={onSettled}
             />
-            {showStarters && <Starters prompts={contextPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={(t) => send(t, [])} />}
+            {demo && !entries.length && !thread.isLoading && (
+              <div className="diary-empty">
+                <h2 className="diary-headline">{COPY.demoWaitingTitle}</h2>
+                <p className="diary-lede">{COPY.demoWaiting}</p>
+              </div>
+            )}
+            {showStarters && !demo && <Starters prompts={contextPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={(t) => send(t, [])} />}
             {gathering && <Gathering agent={replyAgent} />}
             {state.error && (
               <div className="diary-note" role="alert" data-kind={state.error.kind}>
@@ -470,6 +522,9 @@ export function DiaryPanel() {
           </div>
         </div>
 
+        {demo ? (
+          <DemoNote onTry={() => tryItYourself(client)} />
+        ) : (
         <Composer
           ref={composer}
           agents={agents}
@@ -487,6 +542,7 @@ export function DiaryPanel() {
           onDraftRestored={onDraftRestored}
           onNote={setNote}
         />
+        )}
       </aside>
     </>
   );

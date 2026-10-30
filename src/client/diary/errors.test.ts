@@ -47,9 +47,9 @@ describe("runErrorCopy", () => {
     );
   });
   it("names the model when the provider fails", () => {
-    expect(runErrorCopy("The Meta model couldn't complete this request. Check the API configuration and try again.")).toBe(
-      "Muse Spark couldn't finish this one.",
-    );
+    const failed = "The Meta model couldn't complete this request. Check the API configuration and try again.";
+    expect(runErrorCopy(failed)).toBe("Muse Wonder couldn't finish this one.");
+    expect(runErrorCopy(failed, "muse-spark-1.3-contributor")).toBe("Muse Spark couldn't finish this one.");
   });
   it("passes the runtime's own plain sentences through", () => {
     expect(runErrorCopy("Agent handoff limit reached. Finish with the information available.")).toBe(

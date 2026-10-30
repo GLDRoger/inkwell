@@ -1,19 +1,26 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useServerEvents } from "./lib/events";
 import { api, isNotFound } from "./lib/api";
-import { useMe, usePages } from "./lib/queries";
+import { keys, useMe, usePages } from "./lib/queries";
 import { getUi, setUi, useUi } from "./lib/ui";
 import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
 import { Notices } from "./shell/Notices";
 import { Mark } from "./shell/Mark";
-import { Welcome } from "./welcome/Welcome";
+import { Welcome, type WelcomeChoice } from "./welcome/Welcome";
 import { hasSeenWelcome, markWelcomeSeen, shouldShowWelcome, withoutWelcomeParam } from "./welcome/show";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
 import { NotFound } from "./shell/NotFound";
 import { shortcutFor } from "./shell/shortcuts";
 import { DiaryPanel } from "./diary/DiaryPanel";
+import { DemoBar } from "./shell/DemoBar";
+import { Guide } from "./guide/Guide";
+import { KeyDialog } from "./key/KeyDialog";
+import { getDemo, useDemo } from "./lib/demo";
+import { startDemo, syncDemo, tryItYourself } from "./lib/demo-flow";
+import { setMeSource, type MeWithModels } from "./lib/media";
 
 type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
 
@@ -115,6 +122,7 @@ export function App() {
 function useWelcome() {
   const location = useLocation();
   const navigate = useNavigate();
+  const client = useQueryClient();
   const [phase, setPhase] = useState<"open" | "leaving" | null>(() =>
     shouldShowWelcome({
       pathname: location.pathname,
@@ -127,9 +135,12 @@ function useWelcome() {
   );
   return {
     phase,
-    leave: () => {
+    leave: (choice: WelcomeChoice) => {
       markWelcomeSeen();
       setPhase("leaving");
+      // The demo starts setting up while the welcome leaves; the guide waits for it to go.
+      if (choice === "watch") void startDemo(client);
+      else tryItYourself(client);
     },
     done: () => {
       setPhase(null);
@@ -154,9 +165,22 @@ function SessionGate({ me }: { me: ReturnType<typeof useMe> }) {
   );
 }
 
+/** Catch up with the demo on a reload mid-demo, and whenever its stream reopens. */
+function useDemoSync() {
+  const client = useQueryClient();
+  useEffect(() => {
+    setMeSource(() => client.getQueryData<MeWithModels>(keys.me));
+    if (getDemo().notebook === "demo") void syncDemo(client);
+  }, [client]);
+  return (notebook: string) => notebook === "demo" && void syncDemo(client);
+}
+
 function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
-  useServerEvents();
+  const onStreamOpen = useDemoSync();
+  useServerEvents(onStreamOpen);
   usePresenceReport();
+  const notebook = useDemo((s) => s.notebook);
+  const guide = useUi((s) => s.guideOpen ?? false);
   useGlobalShortcuts(welcome != null);
   const location = useLocation();
   const onMap = location.pathname === "/";
@@ -168,6 +192,8 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
       data-route={onMap ? "map" : "page"}
       data-diary={diaryOpen ? "open" : "closed"}
       data-welcome={welcome ?? undefined}
+      data-notebook={notebook}
+      data-guide={guide ? "open" : undefined}
       inert={welcome != null}
     >
       <a className="skip-link" href="#main">
@@ -188,9 +214,13 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      <DiaryPanel />
+      {/* One diary per notebook: switching starts it fresh, so conversations never mix. */}
+      <DiaryPanel key={notebook} />
+      <DemoBar />
       <CommandPalette />
       <Notices />
+      {welcome == null && <Guide />}
+      <KeyDialog />
     </div>
   );
 }

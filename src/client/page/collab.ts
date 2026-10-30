@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import * as Y from "yjs";
+import { getDemo } from "../lib/demo";
 
 export type CollabStatus = "connecting" | "connected" | "disconnected" | "denied";
 
@@ -21,7 +22,9 @@ export interface CollabState {
   connectingSince: number;
 }
 
-export const collabUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab`;
+/** The demo notebook's pages are opened with ?notebook=demo (read-only on the server). */
+export const collabUrl = () =>
+  `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/collab${getDemo().notebook === "demo" ? "?notebook=demo" : ""}`;
 
 const initial = (): Omit<CollabState, "collab"> => ({
   status: "connecting",

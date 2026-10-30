@@ -141,13 +141,13 @@ export function stopNote(work: Work[], nameOf: (agentId: string) => string): Not
 
 /**
  * A failed run's note: why it ended, then what it had already done, so a
- * Try again doesn't look like it starts from nothing. "Muse Spark stopped
+ * Try again doesn't look like it starts from nothing. "Muse Wonder stopped
  * partway. Scout had already made Summary." Without any changes, just the reason.
  */
 export function failNote(reason: string, work: Work[], nameOf: (agentId: string) => string): NotePart[] {
   if (!work.length) return [reason];
   // "couldn't finish this one" reads oddly beside pages it did make.
-  const lead = /^Muse Spark couldn't finish this one\.$/.test(reason) ? "Muse Spark stopped partway." : reason;
+  const lead = reason.replace(/^(Muse \w+) couldn't finish this one\.$/, "$1 stopped partway.");
   return workNote(lead, work, nameOf);
 }
 

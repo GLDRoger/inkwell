@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Play } from "lucide-react";
 import { Mark } from "../shell/Mark";
 import { prefersReducedMotion } from "../lib/ui";
 import { NARROW, WIDE, type Placed } from "./objects";
@@ -48,18 +48,23 @@ function markReady(img: HTMLImageElement | null) {
   if (img?.complete && img.naturalWidth) img.closest(".welcome-object")?.setAttribute("data-ready", "");
 }
 
+/** What the visitor chose: watch the recorded demo, or go to their own notebook. */
+export type WelcomeChoice = "watch" | "try";
+
 /**
  * The first-visit welcome: a brief logo beat, then one headline over a still life
- * of everyday things. "Open your notebook" sends the objects outward and the view
- * moves into the map, which has been loading underneath all along.
+ * of everyday things. Either button sends the objects outward and the view moves
+ * into the map, which has been loading underneath all along: "Watch it work"
+ * plays the recorded demo there, "Try it yourself" opens the visitor's own notebook.
  */
-export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }) {
+export function Welcome({ onLeave, onDone }: { onLeave(choice: WelcomeChoice): void; onDone(): void }) {
   const reduced = useRef(prefersReducedMotion()).current;
   const narrow = useNarrow();
   const [phase, setPhase] = useState<Phase>(reduced ? "intro" : "mark");
   const rootRef = useRef<HTMLDivElement>(null);
   const leaving = useRef(false);
   const ctaRef = useRef<HTMLButtonElement>(null);
+  const tryRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (phase !== "mark") return;
@@ -73,26 +78,31 @@ export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }
     };
   }, [phase]);
 
-  // Focus the dialog itself (no ring on the button until someone tabs); Enter or Escape opens the notebook.
+  // Focus the dialog itself (no ring on the buttons until someone tabs); Enter watches, Escape opens their own notebook.
   useEffect(() => {
     rootRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const enter = () => {
+  const enter = (choice: WelcomeChoice) => {
     if (leaving.current) return;
     leaving.current = true;
     setPhase("leaving");
-    onLeave();
+    onLeave(choice);
     setTimeout(onDone, reduced ? LEAVE_REDUCED_MS : LEAVE_MS);
   };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || (e.key === "Enter" && e.target === rootRef.current)) enter();
-      // A modal: Tab stays on its one button (the notebook underneath is inert, but focus could still leave for the page body).
+      if (e.key === "Escape") enter("try");
+      else if (e.key === "Enter" && e.target === rootRef.current) enter("watch");
+      // A modal: Tab moves between its two buttons (the notebook underneath is inert, but focus could still leave for the page body).
       else if (e.key === "Tab" && !leaving.current) {
         e.preventDefault();
-        if (phase !== "mark") ctaRef.current?.focus();
+        if (phase === "mark") return;
+        const order = [ctaRef.current, tryRef.current];
+        const at = order.indexOf(document.activeElement as HTMLButtonElement);
+        const next = at < 0 ? (e.shiftKey ? 1 : 0) : (at + (e.shiftKey ? -1 : 1) + order.length) % order.length;
+        order[next]?.focus();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -164,10 +174,17 @@ export function Welcome({ onLeave, onDone }: { onLeave(): void; onDone(): void }
           A notebook that writes&nbsp;back.
         </h1>
         <p className="welcome-line">Write a request. Watch it get done across your pages.</p>
-        <button ref={ctaRef} type="button" className="welcome-cta" onClick={enter} tabIndex={phase === "mark" ? -1 : 0}>
-          Open your notebook
-          <ArrowRight size={16} aria-hidden />
-        </button>
+        <div className="welcome-actions">
+          <button ref={ctaRef} type="button" className="welcome-cta" onClick={() => enter("watch")} tabIndex={phase === "mark" ? -1 : 0}>
+            <Play size={14} aria-hidden fill="currentColor" />
+            Watch it work
+          </button>
+          <button ref={tryRef} type="button" className="welcome-try" onClick={() => enter("try")} tabIndex={phase === "mark" ? -1 : 0}>
+            Try it yourself
+            <ArrowRight size={16} aria-hidden />
+          </button>
+        </div>
+        <p className="welcome-note">A two-minute recording. Nothing to set up.</p>
       </div>
     </div>
   );

@@ -47,7 +47,9 @@ export type DiaryAction =
   | { type: "runUpdated"; run: Run }
   | { type: "cancelled" }
   | { type: "dismissError" }
-  | { type: "draftRestored" };
+  | { type: "draftRestored" }
+  /** The request never left (no Meta key yet): put the words back without an error. */
+  | { type: "putBack"; text: string };
 
 export const initialDiaryState: DiaryState = {
   phase: "idle",
@@ -110,6 +112,8 @@ export function diaryReducer(state: DiaryState, action: DiaryAction): DiaryState
       return { ...state, error: null };
     case "draftRestored":
       return { ...state, restoreDraft: null };
+    case "putBack":
+      return { ...state, phase: "idle", sinking: null, hiddenEntryId: null, restoreDraft: action.text || null };
   }
 }
 

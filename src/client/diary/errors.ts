@@ -1,5 +1,5 @@
 import { ApiError } from "../lib/api";
-import { COPY } from "./copy";
+import { COPY, modelName } from "./copy";
 import type { DiaryError } from "./state";
 
 /** The server's missing-key reason for a failed run (src/server/agents/model.ts). */
@@ -52,11 +52,11 @@ export function sendErrorCopy(e: unknown, opts: { kept?: boolean } = {}): DiaryE
 const CONTINUE = /\s*Ask it to continue(?: from the changes already made)?\.?$/i;
 
 /** A failed run's reason, as shown under the reply (the button beside it says what to do next). */
-export function runErrorCopy(error: string | null | undefined): string {
+export function runErrorCopy(error: string | null | undefined, model?: string | null): string {
   const why = (error ?? "").trim();
   if (!why) return "Something went wrong before this was finished.";
   if (MISSING_KEY.test(why)) return COPY.notConnected;
-  if (MODEL_FAILED.test(why)) return "Muse Spark couldn't finish this one.";
+  if (MODEL_FAILED.test(why)) return `${modelName(model)} couldn't finish this one.`;
   if (/^Interrupted by a server restart/i.test(why)) return "Inkwell restarted while this was being written.";
   if (CONTINUE.test(why)) return why.replace(CONTINUE, "").trim() || "The agent stopped partway.";
   return isPlain(why) ? why : "Something went wrong before this was finished.";

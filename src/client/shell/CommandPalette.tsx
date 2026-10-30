@@ -22,6 +22,7 @@ import { useCreatePage } from "../lib/mutations";
 import { openDiaryWith, setUi, useUi } from "../lib/ui";
 import { paintCover, usePhotoImport } from "../lib/media";
 import { showWelcomeAgain } from "./About";
+import { getDemo } from "../lib/demo";
 import { actionDefs, entryKey, paletteEntries, type ActionId, type Section } from "./paletteModel";
 
 interface Item {
@@ -137,7 +138,11 @@ export function CommandPalette() {
       hits: debounced === q.trim() ? search.data : undefined,
       actions: actionDefs({ theme: currentTheme(), here, onMap }),
     });
-    return entries.map((e): Item => {
+    // The demo notebook is read-only: nothing that writes, asks an agent or makes a page.
+    const demo = getDemo().notebook === "demo";
+    const writes = (e: (typeof entries)[number]) =>
+      e.kind === "ask" || e.kind === "new-titled" || (e.kind === "action" && (e.action.id === "new" || e.action.id === "photo" || e.action.id === "cover"));
+    return entries.filter((e) => !demo || !writes(e)).map((e): Item => {
       const id = entryKey(e);
       switch (e.kind) {
         case "page":

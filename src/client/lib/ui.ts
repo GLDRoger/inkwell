@@ -9,6 +9,10 @@ export interface UiState {
   aboutOpen?: boolean;
   /** Text handed to the diary composer (e.g. "Ask an agent" from the palette). */
   diaryDraft: { text: string; agentId: Id | null; nonce: number } | null;
+  /** The "Use your Meta API key" dialog; `reason` is one line on why it opened (an AI action without a key). */
+  keyDialog?: { reason?: string } | null;
+  /** The four-step guide to the visitor's own notebook. */
+  guideOpen?: boolean;
 }
 
 let state: UiState = { diaryOpen: false, paletteOpen: false, diaryDraft: null };
@@ -30,6 +34,9 @@ export function useUi<T>(select: (s: UiState) => T): T {
 
 export const openDiaryWith = (text: string, agentId: Id | null = null) =>
   setUi({ diaryOpen: true, paletteOpen: false, diaryDraft: { text, agentId, nonce: Date.now() } });
+
+/** Open the key dialog, saying why when an AI action asked for it. */
+export const openKeyDialog = (reason?: string) => setUi({ keyDialog: { reason }, paletteOpen: false, aboutOpen: false });
 
 /** Stable per-person colour for carets and presence dots, from a calm ink palette. */
 const PERSON_INKS = ["#2f5d8a", "#2f6b4f", "#7a4b8c", "#8a5a1f", "#1f6f78", "#6b3f2a"];

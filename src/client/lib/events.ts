@@ -16,6 +16,8 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { DiaryEntry, DiaryThread, Id, MapGraph, Page, PageWithBody, Run, ServerEvent } from "@shared/types";
 import { keys } from "./queries";
+import { applyDemoEvent, useDemo } from "./demo";
+import type { NotebookKind } from "@shared/types";
 
 export type ServerEventType = ServerEvent["type"];
 export type EventOf<T extends ServerEventType> = Extract<ServerEvent, { type: T }>;
@@ -32,7 +34,12 @@ const EVENT_TYPES: ServerEventType[] = [
   "diary.entry",
   "diary.delta",
   "presence",
+  "demo.step",
+  "demo.ended",
 ];
+
+/** The stream for a notebook: the demo's is chosen with ?notebook=demo (docs/DEMO-MODE.md). */
+export const eventsUrl = (notebook: NotebookKind) => (notebook === "demo" ? "/api/events?notebook=demo" : "/api/events");
 
 // ---------------------------------------------------------------- the bus
 
@@ -51,6 +58,7 @@ export function subscribe(listener: (e: ServerEvent) => void): () => void {
 /** Patch caches (when the app shell is mounted) and notify subscribers. */
 export function emit(event: ServerEvent): void {
   if (activeClient) applyServerEvent(activeClient, event);
+  if (event.type === "demo.step" || event.type === "demo.ended") applyDemoEvent(event);
   if (event.type === "presence") {
     presence = event.people;
     presenceListeners.forEach((l) => l());
@@ -217,6 +225,8 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
       });
       return;
     case "presence":
+    case "demo.step":
+    case "demo.ended":
       return;
   }
 }
@@ -253,9 +263,16 @@ function parse(data: string): ServerEvent | null {
   }
 }
 
-/** Mount once, in the app shell. Opens the stream, reconnects with backoff, resyncs after gaps. */
-export function useServerEvents(): void {
+/**
+ * Mount once, in the app shell. Opens the stream for the notebook on show
+ * (reopening it when that changes), reconnects with backoff, resyncs after gaps.
+ * `onOpen` runs each time the stream (re)opens, e.g. to catch up on the demo.
+ */
+export function useServerEvents(onOpen?: (notebook: NotebookKind) => void): void {
   const client = useQueryClient();
+  const notebook = useDemo((s) => s.notebook);
+  const openRef = useRef(onOpen);
+  openRef.current = onOpen;
   useEffect(() => {
     activeClient = client;
     let source: EventSource | null = null;
@@ -272,12 +289,13 @@ export function useServerEvents(): void {
 
     const connect = () => {
       if (disposed) return;
-      source = new EventSource("/api/events", { withCredentials: true });
+      source = new EventSource(eventsUrl(notebook), { withCredentials: true });
       source.onopen = () => {
         if (everOpened) void client.invalidateQueries(); // we may have missed events while away
         everOpened = true;
         attempt = 0;
         setStatus("open");
+        openRef.current?.(notebook);
       };
       source.onmessage = (m) => onData(m.data);
       for (const type of EVENT_TYPES) source.addEventListener(type, (m) => onData((m as MessageEvent).data));
@@ -298,5 +316,5 @@ export function useServerEvents(): void {
       source?.close();
       if (activeClient === client) activeClient = null;
     };
-  }, [client]);
+  }, [client, notebook]);
 }

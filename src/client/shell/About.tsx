@@ -1,7 +1,11 @@
 import { useEffect, useId, useRef } from "react";
-import { ChevronDown } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ChevronDown, Signpost, KeyRound, Play } from "lucide-react";
 import { Mark } from "./Mark";
-import { setUi, useUi } from "../lib/ui";
+import { openKeyDialog, setUi, useUi } from "../lib/ui";
+import { useMetaKey } from "../lib/key";
+import { useDemo } from "../lib/demo";
+import { startDemo, tryItYourself } from "../lib/demo-flow";
 
 /** Start the welcome again (it only reads the URL on load). */
 export const showWelcomeAgain = () => window.location.assign("/?welcome");
@@ -26,6 +30,9 @@ export function AboutText() {
  */
 export function BrandMenu() {
   const open = useUi((s) => s.aboutOpen ?? false);
+  const client = useQueryClient();
+  const { key } = useMetaKey();
+  const demo = useDemo((s) => s.notebook === "demo");
   const ref = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const panelId = useId();
@@ -65,7 +72,51 @@ export function BrandMenu() {
       </button>
       {open && (
         <div id={panelId} className="about" role="region" aria-label="About this notebook">
-          <AboutText />
+          {demo ? (
+            <>
+              <p className="about-title">The recorded demo</p>
+              <p className="about-demo">You're watching a recording in a demo notebook. Your own notebook is untouched.</p>
+            </>
+          ) : (
+            <AboutText />
+          )}
+          <ul className="about-actions">
+            <li>
+              <button
+                type="button"
+                className="about-action"
+                onClick={() => {
+                  setOpen(false);
+                  void startDemo(client);
+                }}
+              >
+                <Play size={15} aria-hidden />
+                {demo ? "Watch the demo again" : "Watch the demo"}
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="about-action"
+                onClick={() => {
+                  setOpen(false);
+                  if (demo) tryItYourself(client);
+                  setUi({ guideOpen: true, diaryOpen: false });
+                }}
+              >
+                <Signpost size={15} aria-hidden />
+                Show the guide
+              </button>
+            </li>
+            {!demo && (
+              <li>
+                <button type="button" className="about-action" onClick={() => openKeyDialog()}>
+                  <KeyRound size={15} aria-hidden />
+                  {key ? "Your Meta API key" : "Add your Meta API key"}
+                </button>
+              </li>
+            )}
+          </ul>
           <button type="button" className="link-button about-welcome" onClick={showWelcomeAgain}>
             Show the welcome again
           </button>
