@@ -30,7 +30,7 @@ function readNotes(response: unknown, boxes: Box[]): Note[] {
   });
 }
 
-export async function importPhoto(services: Services, ctx: SessionCtx, attachmentId: string, meta: MetaClient): Promise<{ pages: Page[] }> {
+export async function importPhoto(services: Services, ctx: SessionCtx, attachmentId: string, meta: MetaClient): Promise<{ pages: Page[]; segmentedBy: "sam-3.1" | null }> {
   const row = getAttachmentRow(services.db, ctx.workspaceId, attachmentId);
   if (!row) mediaError("attachment not found", 404);
   if (row.kind !== "image" || !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(row.mime)) {
