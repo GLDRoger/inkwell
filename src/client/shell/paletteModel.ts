@@ -35,13 +35,22 @@ export type Entry =
 export const entryKey = (e: Entry): string =>
   e.kind === "page" ? `page-${e.page.id}` : e.kind === "show-on-map" ? `map-${e.page.id}` : e.kind === "action" ? e.action.id : e.kind;
 
-export function actionDefs({ theme, here }: { theme: "light" | "dark"; here?: Pick<Page, "title" | "coverUrl"> | null }): ActionDef[] {
+export function actionDefs({
+  theme,
+  here,
+  onMap = false,
+}: {
+  theme: "light" | "dark";
+  here?: Pick<Page, "title" | "coverUrl"> | null;
+  /** Already looking at the map: don't offer to open it. */
+  onMap?: boolean;
+}): ActionDef[] {
   const list: ActionDef[] = [
     { id: "diary", label: "Open the diary", keywords: ["diary", "chat", "agent", "agents", "ask", "conversation", "talk", "message"] },
     { id: "new", label: "New page", keywords: ["create", "add", "write", "blank"] },
-    { id: "map", label: "Open the map", keywords: ["home", "overview", "all", "pages", "back"] },
-    { id: "photo", label: "Turn a photo of notes into cards", keywords: ["photo", "image", "picture", "scan", "import", "camera", "upload", "sticky"] },
   ];
+  if (!onMap) list.push({ id: "map", label: "Open the map", keywords: ["home", "overview", "all", "pages", "back"] });
+  list.push({ id: "photo", label: "Turn a photo of notes into cards", keywords: ["photo", "image", "picture", "scan", "import", "camera", "upload", "sticky"] });
   if (here)
     list.push({
       id: "cover",

@@ -99,9 +99,14 @@
 .prose ul[data-type="taskList"] li > div { flex: 1; min-width: 0; }
 .prose ul[data-type="taskList"] input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--wax); cursor: pointer; }
 .prose ul[data-type="taskList"] li[data-checked="true"] > div { color: var(--ink-faint); text-decoration: line-through; text-decoration-color: var(--rule-strong); }
-.prose .tableWrapper { overflow-x: auto; margin: 1em 0; }
-.prose table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 15px; }
-.prose th, .prose td { border: 1px solid var(--rule); padding: 6px 10px; vertical-align: top; text-align: left; position: relative; }
+/* Tables keep whole words: when the columns don't fit (a phone), the table scrolls sideways instead of breaking "Morning" in two. */
+.prose .tableWrapper { overflow-x: auto; margin: 1em 0; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.prose table { border-collapse: collapse; width: 100%; table-layout: auto; font-size: 15px; }
+.prose th, .prose td {
+  border: 1px solid var(--rule); padding: 6px 10px; vertical-align: top; text-align: left; position: relative;
+  overflow-wrap: break-word; word-break: normal; hyphens: manual;
+}
+.prose th > *, .prose td > * { min-width: 5.5em; }
 .prose th { background: var(--paper-sunken); font-weight: 550; }
 .prose .selectedCell::after { content: ""; position: absolute; inset: 0; background: color-mix(in srgb, var(--wax) 12%, transparent); pointer-events: none; }
 .prose p.is-empty::before, .prose h1.is-empty::before, .prose h2.is-empty::before, .prose h3.is-empty::before {
@@ -210,6 +215,9 @@
 
 @media (max-width: 640px) {
   .page { padding: 8px 20px 120px; }
+  /* Let a wide table run to the screen edges, so it's clear there's more to swipe to. */
+  .prose .tableWrapper { margin-inline: -20px; padding-inline: 20px; scroll-padding-inline: 20px; }
+  .prose table { font-size: 14px; }
   .page-toolbar { margin-bottom: 16px; }
   .page-actions .ghost-button { width: 44px; height: 44px; padding: 0; }
   .page-actions .ghost-button span { display: none; }

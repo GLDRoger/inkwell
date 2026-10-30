@@ -16,12 +16,28 @@ export interface Notice {
   persist?: boolean;
   /** How long a done or error notice stays, ms. */
   duration?: number;
+  /** Stay until dismissed in code or by the person (the owner runs its own clock, e.g. an undo window). */
+  sticky?: boolean;
+  /** The pointer or keyboard focus arrived on the notice: the person is reading it. */
+  onHold?(): void;
+  /** ...and left again. */
+  onRelease?(): void;
+  /** The person closed it with its × button (not called when it times out or is replaced). */
+  onClose?(): void;
 }
 
 const MAX_SHOWN = 3;
 let notices: Notice[] = [];
 const subs = new Set<() => void>();
-const timers = new Map<string, ReturnType<typeof setTimeout>>();
+interface Clock {
+  timer?: ReturnType<typeof setTimeout>;
+  /** When it will dismiss itself, while running. */
+  due: number;
+  /** Time left while held. */
+  left: number;
+  holds: number;
+}
+const clocks = new Map<string, Clock>();
 let next = 0;
 
 const publish = (list: Notice[]) => {
@@ -29,10 +45,57 @@ const publish = (list: Notice[]) => {
   subs.forEach((l) => l());
 };
 
+function stopClock(id: string) {
+  const c = clocks.get(id);
+  if (c) clearTimeout(c.timer);
+  clocks.delete(id);
+}
+
+/** A notice the person can act on (Undo) is never pushed out by newer ones. */
+const droppable = (n: Notice) => n.tone !== "busy" && !n.action;
+
 export function dismiss(id: string) {
-  clearTimeout(timers.get(id));
-  timers.delete(id);
+  stopClock(id);
   if (notices.some((n) => n.id === id)) publish(notices.filter((n) => n.id !== id));
+}
+
+/** The person closed it: tell its owner, then remove it. */
+export function close(id: string) {
+  const n = notices.find((x) => x.id === id);
+  dismiss(id);
+  n?.onClose?.();
+}
+
+/** Pause a notice's clock while it's hovered or focused. Holds nest; see release(). */
+export function hold(id: string) {
+  const n = notices.find((x) => x.id === id);
+  const c = clocks.get(id);
+  if (!n || !c) return;
+  if (c.holds++ === 0) {
+    clearTimeout(c.timer);
+    c.timer = undefined;
+    c.left = Math.max(0, c.due - Date.now());
+    n.onHold?.();
+  }
+}
+
+/** Undo one hold(); the clock restarts with the time it had left once nothing holds it. */
+export function release(id: string) {
+  const n = notices.find((x) => x.id === id);
+  const c = clocks.get(id);
+  if (!n || !c || c.holds === 0) return;
+  if (--c.holds === 0) {
+    run(id, n, c, c.left);
+    n.onRelease?.();
+  }
+}
+
+function run(id: string, n: Notice, c: Clock, ms: number) {
+  clearTimeout(c.timer);
+  c.timer = undefined;
+  if (n.tone === "busy" || n.sticky) return;
+  c.due = Date.now() + ms;
+  c.timer = setTimeout(() => dismiss(id), ms);
 }
 
 /** Clear what belonged to the last screen: everything except busy work and notices marked persist. */
@@ -50,17 +113,22 @@ export function notify(notice: Omit<Notice, "id"> & { id?: string }): string {
   const id = notice.id ?? twin?.id ?? `n${++next}`;
   const item: Notice = { ...notice, id };
   const list = notices.some((n) => n.id === id) ? notices.map((n) => (n.id === id ? item : n)) : [...notices, item];
-  // Too many: drop the oldest that isn't still working.
+  // Too many: drop the oldest finished one. Busy work and anything with a button stay, even past the limit.
   while (list.length > MAX_SHOWN) {
-    const drop = list.findIndex((n) => n.tone !== "busy");
-    const gone = list.splice(drop < 0 ? 0 : drop, 1)[0];
-    clearTimeout(timers.get(gone.id));
-    timers.delete(gone.id);
+    const drop = list.findIndex((n) => n.id !== id && droppable(n));
+    if (drop < 0) break;
+    stopClock(list.splice(drop, 1)[0].id);
   }
   publish(list);
-  clearTimeout(timers.get(id));
-  timers.delete(id);
-  if (item.tone !== "busy") timers.set(id, setTimeout(() => dismiss(id), item.duration ?? (item.tone === "error" ? 8000 : 5000)));
+  const clock = clocks.get(id) ?? { due: 0, left: 0, holds: 0 };
+  clocks.set(id, clock);
+  const ms = item.duration ?? (item.tone === "error" ? 8000 : 5000);
+  // Updated while someone is reading it: keep it paused, with a fresh clock for when they leave.
+  if (clock.holds > 0) {
+    clearTimeout(clock.timer);
+    clock.timer = undefined;
+    clock.left = ms;
+  } else run(id, item, clock, ms);
   return id;
 }
 

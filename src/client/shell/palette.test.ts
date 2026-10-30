@@ -34,6 +34,11 @@ describe("palette entries", () => {
     expect(keysFor("")).toEqual(expect.arrayContaining(["diary", "new", "map", "photo", "theme", "about", "welcome"]));
   });
 
+  it("doesn't offer to open the map while you're on it", () => {
+    expect(actionDefs({ theme: "light", onMap: true }).map((a) => a.id)).not.toContain("map");
+    expect(actionDefs({ theme: "light", onMap: false }).map((a) => a.id)).toContain("map");
+  });
+
   it("filters actions by what you type", () => {
     const keys = keysFor("photo");
     expect(keys).toContain("photo");

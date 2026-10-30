@@ -6,30 +6,33 @@ import type { Agent, Page, Run } from "@shared/types";
 import { isNotFound } from "../lib/api";
 import { childrenOf, pageTitle, useAgents, useMap, useMe, usePage, usePages } from "../lib/queries";
 import { useCreatePage, useUpdatePage } from "../lib/mutations";
-import { openDiaryWith, personColor } from "../lib/ui";
+import { openDiaryWith, personColor, useBrowserOnline } from "../lib/ui";
 import { useCollab, type CollabStatus } from "./collab";
 import { PageEditor } from "./Editor";
 import { timeAgo, useNow } from "../lib/time";
 import { syncView } from "./syncState";
-import { isUntouchedSeed, titleToSave } from "./title";
+import { isUntouchedSeed, TitleDraft } from "./title";
 import { isDeletePending, subtreeOf, useDeleteWithUndo } from "./deleteUndo";
 import { DeleteDialog } from "./DeleteDialog";
 import { paintCover, usePainting } from "../lib/media";
 import { useServerEvent } from "../lib/events";
 
-function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
+/** Exported for tests. */
+export function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
   const update = useUpdatePage(page.id);
   const [value, setValue] = useState(page.title);
   const ref = useRef<HTMLTextAreaElement>(null);
-  /** The person has typed since the last save; only then is the field's value worth saving. */
-  const edited = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const location = useLocation();
+  const serverTitle = useRef(page.title);
+  serverTitle.current = page.title;
+  const mutate = useRef(update.mutate);
+  mutate.current = update.mutate;
+  const [draft] = useState(() => new TitleDraft({ serverTitle: () => serverTitle.current, save: (title) => mutate.current({ title }) }));
 
   // Follow remote renames (an agent retitling the page) unless you're mid-edit.
   useEffect(() => {
-    if (!edited.current) setValue(page.title);
-  }, [page.title]);
+    if (!draft.pending) setValue(page.title);
+  }, [page.title, draft]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -42,14 +45,15 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
     if ((location.state as { fresh?: boolean } | null)?.fresh) ref.current?.focus();
   }, [location.state, page.id]);
 
-  useEffect(() => () => clearTimeout(timer.current), []);
-
-  const save = (title: string) => {
-    clearTimeout(timer.current);
-    const next = titleToSave({ edited: edited.current, value: title, serverTitle: page.title });
-    edited.current = false;
-    if (next != null) update.mutate({ title: next });
-  };
+  // Leaving the page (Back, a link) or the tab going to the background saves what was typed.
+  useEffect(() => {
+    const onHide = () => document.visibilityState === "hidden" && draft.flush();
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      draft.flush();
+    };
+  }, [draft]);
 
   return (
     <textarea
@@ -60,18 +64,16 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
       value={value}
       placeholder="Untitled"
       aria-label="Page title"
-      onBlur={() => save(value)}
+      onBlur={() => draft.flush()}
       onChange={(e) => {
         const next = e.target.value.replace(/\n/g, "");
-        edited.current = true;
         setValue(next);
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => save(next), 600);
+        draft.type(next);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || (e.key === "ArrowDown" && ref.current?.selectionStart === value.length)) {
           e.preventDefault();
-          save(value);
+          draft.flush();
           onEnter();
         }
       }}
@@ -80,14 +82,23 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
 }
 
 function SyncPill(props: Omit<ReturnType<typeof useCollab>, "collab">) {
+  const browserOnline = useBrowserOnline();
   const busy = props.unsynced > 0 || !props.everSynced || props.status !== "connected";
   // Tick while something is pending, so "Saving…" can turn into "Not saving" and "Reconnecting…" into "Offline".
   const now = useNow(busy ? 1_000 : 60_000);
-  const view = syncView({ ...props, now });
+  const view = syncView({ ...props, now, browserOnline });
+  // Edits the server hasn't got yet live only in this tab: ask before a reload or close throws them away.
+  const unsaved = props.unsynced > 0;
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
   return (
     <span className="sync-pill" data-tone={view.tone} role="status" aria-live="polite" title={view.detail}>
       {view.tone === "bad" ? (
-        props.status === "connected" || props.status === "denied" ? <AlertCircle size={13} aria-hidden /> : <CloudOff size={13} aria-hidden />
+        (props.status === "connected" && browserOnline) || props.status === "denied" ? <AlertCircle size={13} aria-hidden /> : <CloudOff size={13} aria-hidden />
       ) : view.tone === "busy" && !props.everSynced ? (
         <Loader2 size={13} className="spin" aria-hidden />
       ) : null}

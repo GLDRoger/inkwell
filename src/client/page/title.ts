@@ -17,3 +17,39 @@ export function isUntouchedSeed(page: Pick<Page, "createdAt" | "updatedAt" | "up
   const made = Date.parse(page.createdAt);
   return Number.isFinite(first) && !Number.isNaN(made) && made - first < 5_000;
 }
+
+/**
+ * The title as the person types it: saved after a pause, on blur, on Enter,
+ * and when the field goes away (Back, a link, the tab hiding) so a quick
+ * rename is never lost. Kept free of React so the timing can be tested.
+ */
+export class TitleDraft {
+  private edited = false;
+  private value = "";
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  constructor(
+    private readonly opts: { serverTitle(): string; save(title: string): void; delay?: number },
+  ) {}
+
+  /** The person typed. */
+  type(value: string) {
+    this.edited = true;
+    this.value = value;
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.flush(), this.opts.delay ?? 600);
+  }
+
+  /** True while there's typing the server hasn't been sent. */
+  get pending(): boolean {
+    return this.edited;
+  }
+
+  /** Save now, if there's anything worth saving. */
+  flush() {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    const next = titleToSave({ edited: this.edited, value: this.value, serverTitle: this.opts.serverTitle() });
+    this.edited = false;
+    if (next != null) this.opts.save(next);
+  }
+}

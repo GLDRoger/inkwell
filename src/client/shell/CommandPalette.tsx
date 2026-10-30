@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useMatch, useNavigate } from "react-router-dom";
+import { useLocation, useMatch, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   CornerDownLeft,
@@ -42,6 +42,18 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+/** Phone-width screens get the short placeholder, so it isn't cut off mid-word. */
+function useNarrow(): boolean {
+  const query = "(max-width: 520px)";
+  const [narrow, setNarrow] = useState(() => matchMedia(query).matches);
+  useEffect(() => {
+    const m = matchMedia(query);
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return narrow;
+}
 
 const currentTheme = (): "light" | "dark" => {
   const set = document.documentElement.dataset.theme;
@@ -68,6 +80,8 @@ export function CommandPalette() {
   const debounced = useDebounced(q.trim(), 160);
   const importPhoto = usePhotoImport();
   const onPage = useMatch("/p/:id")?.params.id;
+  const onMap = useLocation().pathname === "/";
+  const narrow = useNarrow();
 
   const search = useQuery({
     queryKey: keys.search(debounced),
@@ -121,7 +135,7 @@ export function CommandPalette() {
       q,
       pages,
       hits: debounced === q.trim() ? search.data : undefined,
-      actions: actionDefs({ theme: currentTheme(), here }),
+      actions: actionDefs({ theme: currentTheme(), here, onMap }),
     });
     return entries.map((e): Item => {
       const id = entryKey(e);
@@ -151,7 +165,7 @@ export function CommandPalette() {
           };
       }
     });
-  }, [open, pages, q, debounced, search.data, onPage, importPhoto]);
+  }, [open, pages, q, debounced, search.data, onPage, onMap, importPhoto]);
 
   useEffect(() => setIndex(0), [q]);
   const active = items[Math.min(index, items.length - 1)];
@@ -186,7 +200,7 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           className="palette-input"
-          placeholder="Search pages and actions, or ask an agent…"
+          placeholder={narrow ? "Search or ask an agent…" : "Search pages and actions, or ask an agent…"}
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={onKeyDown}

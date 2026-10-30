@@ -17,6 +17,8 @@ export interface SyncInput {
   /** When the page started connecting, or when the connection last dropped (ms). */
   connectingSince: number;
   now: number;
+  /** The browser thinks it has a network (navigator.onLine). Defaults to true. */
+  browserOnline?: boolean;
 }
 
 export type SyncTone = "quiet" | "busy" | "bad";
@@ -34,19 +36,34 @@ export const OFFLINE_GRACE_MS = 2_000;
 /** A first connection that takes longer than this is reported as a problem. */
 export const SLOW_CONNECT_MS = 8_000;
 
+export type OfflineKind = "offline" | "unreachable";
+
+/**
+ * The one explanation for being cut off, shared by the page's save status and
+ * the shell's connection notice so they never disagree. Edits made meanwhile
+ * live only in this tab's memory and are sent when the connection returns.
+ */
+export function offlineMessage(kind: OfflineKind, where: "page" | "map"): string {
+  if (where === "page")
+    return kind === "offline"
+      ? "You're offline. Keep this tab open and your edits will save when you're back online."
+      : "Can't reach your notebook. Keep this tab open and your edits will save when it's back.";
+  return kind === "offline" ? "You're offline. Inkwell will reconnect when you're back online." : "Can't reach your notebook. Trying again…";
+}
+
 export function syncView(s: SyncInput): SyncView {
   if (s.status === "denied")
     return { tone: "bad", label: "Can't open", detail: "This page isn't in your notebook, so it can't be edited here." };
 
-  const online = s.status === "connected";
-  if (!online && s.everSynced && s.now - s.connectingSince < OFFLINE_GRACE_MS) return { tone: "busy", label: "Reconnecting…" };
-  if (!online && s.everSynced)
-    return {
-      tone: "bad",
-      label: s.unsynced > 0 ? "Offline, not saved yet" : "Offline, keep this tab open",
-      detail:
-        "Lost the connection. Keep this tab open: your edits are only in this tab until it reconnects, and reloading or closing it loses them.",
-    };
+  // The browser knows it's offline before the socket notices; believe it straight away.
+  const browserOffline = s.browserOnline === false;
+  const online = s.status === "connected" && !browserOffline;
+  if (!online && !browserOffline && s.everSynced && s.now - s.connectingSince < OFFLINE_GRACE_MS) return { tone: "busy", label: "Reconnecting…" };
+  if (!online && (s.everSynced || browserOffline)) {
+    const kind: OfflineKind = browserOffline ? "offline" : "unreachable";
+    const state = kind === "offline" ? "Offline" : "Not connected";
+    return { tone: "bad", label: s.unsynced > 0 ? `${state}, not saved yet` : state, detail: offlineMessage(kind, "page") };
+  }
 
   if (!s.everSynced) {
     if (s.now - s.connectingSince > SLOW_CONNECT_MS)

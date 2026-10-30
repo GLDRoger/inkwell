@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OFFLINE_GRACE_MS, SLOW_CONNECT_MS, STUCK_AFTER_MS, syncView, type SyncInput } from "./syncState";
+import { OFFLINE_GRACE_MS, SLOW_CONNECT_MS, STUCK_AFTER_MS, offlineMessage, syncView, type SyncInput } from "./syncState";
 
 const base: SyncInput = { status: "connected", synced: true, everSynced: true, unsynced: 0, pendingSince: null, connectingSince: 0, now: 100_000 };
 const view = (patch: Partial<SyncInput>) => syncView({ ...base, ...patch });
@@ -25,14 +25,31 @@ describe("syncView", () => {
     expect(view({ ...first, connectingSince: base.now - SLOW_CONNECT_MS - 1 })).toMatchObject({ tone: "bad", label: "Can't connect" });
   });
 
-  it("gives a dropped connection a moment, then says Offline without promising edits are stored", () => {
+  it("gives a dropped connection a moment, then says it can't reach the notebook", () => {
     const dropped = { status: "connecting" as const, synced: false };
     expect(view({ ...dropped, connectingSince: base.now - 500 })).toMatchObject({ tone: "busy", label: "Reconnecting…" });
     const off = view({ ...dropped, connectingSince: base.now - OFFLINE_GRACE_MS - 1 });
-    expect(off).toMatchObject({ tone: "bad", label: "Offline, keep this tab open" });
-    expect(off.detail).toMatch(/only in this tab/);
-    expect(off.detail).not.toMatch(/kept|saved here/i);
-    expect(view({ ...dropped, unsynced: 3, connectingSince: 0 }).label).toBe("Offline, not saved yet");
+    expect(off).toMatchObject({ tone: "bad", label: "Not connected" });
+    expect(off.detail).toBe(offlineMessage("unreachable", "page"));
+    expect(view({ ...dropped, unsynced: 3, connectingSince: 0 }).label).toBe("Not connected, not saved yet");
+  });
+
+  it("believes the browser when it says it's offline, even before the socket notices", () => {
+    // The socket still looks connected and a change is waiting: that's not "Saving…".
+    const v = view({ browserOnline: false, unsynced: 1, pendingSince: base.now - 100 });
+    expect(v).toMatchObject({ tone: "bad", label: "Offline, not saved yet" });
+    expect(v.detail).toBe(offlineMessage("offline", "page"));
+    expect(view({ browserOnline: false }).label).toBe("Offline");
+  });
+
+  it("tells one story: the save status and the connection notice use the same words", () => {
+    for (const kind of ["offline", "unreachable"] as const) {
+      const page = offlineMessage(kind, "page");
+      expect(page).toMatch(/Keep this tab open/);
+      expect(page).toMatch(/will save when/);
+      expect(page).not.toMatch(/sync|Saving/);
+    }
+    expect(offlineMessage("offline", "map")).not.toMatch(/edits/);
   });
 
   it("goes back to Saved once the connection is back and synced (e.g. after a server restart)", () => {

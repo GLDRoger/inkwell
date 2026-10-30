@@ -1,18 +1,18 @@
-import { Component, lazy, Suspense, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useServerEvents } from "./lib/events";
 import { api, isNotFound } from "./lib/api";
-import { useMe } from "./lib/queries";
+import { useMe, usePages } from "./lib/queries";
 import { getUi, setUi, useUi } from "./lib/ui";
 import { TopBar } from "./shell/TopBar";
 import { CommandPalette } from "./shell/CommandPalette";
-import { ConnectionNotice } from "./shell/ConnectionNotice";
 import { Notices } from "./shell/Notices";
 import { Mark } from "./shell/Mark";
 import { Welcome } from "./welcome/Welcome";
 import { hasSeenWelcome, markWelcomeSeen, shouldShowWelcome, withoutWelcomeParam } from "./welcome/show";
 import { MapPlaceholder } from "./shell/MapPlaceholder";
 import { NotFound } from "./shell/NotFound";
+import { shortcutFor } from "./shell/shortcuts";
 import { DiaryPanel } from "./diary/DiaryPanel";
 
 type MapViewProps = { onOpenPage(id: string): void; focusPageId?: string };
@@ -53,10 +53,16 @@ function MapRoute() {
   );
 }
 
-/** Tell the server which page this person is on, so the map can show them. */
+/**
+ * Tell the server which page this person is on, so the map can show them.
+ * Only pages that are really in this notebook: a not-found or foreign link
+ * reports "on the map" instead of a page the server would reject.
+ */
 function usePresenceReport() {
   const match = useMatch("/p/:id");
-  const pageId = match?.params.id ?? null;
+  const { data: pages } = usePages();
+  const id = match?.params.id ?? null;
+  const pageId = id && pages?.some((p) => p.id === id) ? id : null;
   useEffect(() => {
     let stopped = false;
     const send = () =>
@@ -69,20 +75,21 @@ function usePresenceReport() {
   }, [pageId]);
 }
 
-function useGlobalShortcuts() {
+function useGlobalShortcuts(welcome: boolean) {
+  const welcomeRef = useRef(welcome);
+  welcomeRef.current = welcome;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+      const ui = getUi();
+      const t = e.target as HTMLElement | null;
+      const action = shortcutFor(e, { welcome: welcomeRef.current, diaryOpen: ui.diaryOpen, paletteOpen: ui.paletteOpen, inDiary: !!t?.closest?.(".diary") });
+      if (action === "palette") {
         e.preventDefault();
         setUi((s) => ({ paletteOpen: !s.paletteOpen }));
-      } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+      } else if (action === "diary") {
         e.preventDefault();
         setUi((s) => ({ diaryOpen: !s.diaryOpen, paletteOpen: false }));
-      } else if (e.key === "Escape" && getUi().diaryOpen && !getUi().paletteOpen) {
-        const t = e.target as HTMLElement | null;
-        if (t?.closest(".diary")) setUi({ diaryOpen: false });
-      }
+      } else if (action === "close-diary") setUi({ diaryOpen: false });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -150,7 +157,7 @@ function SessionGate({ me }: { me: ReturnType<typeof useMe> }) {
 function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
   useServerEvents();
   usePresenceReport();
-  useGlobalShortcuts();
+  useGlobalShortcuts(welcome != null);
   const location = useLocation();
   const onMap = location.pathname === "/";
   const diaryOpen = useUi((s) => s.diaryOpen);
@@ -183,7 +190,6 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
       </main>
       <DiaryPanel />
       <CommandPalette />
-      <ConnectionNotice />
       <Notices />
     </div>
   );

@@ -43,3 +43,18 @@ export const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 export const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+/** navigator.onLine, kept live. */
+export function useBrowserOnline(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      window.addEventListener("online", l);
+      window.addEventListener("offline", l);
+      return () => {
+        window.removeEventListener("online", l);
+        window.removeEventListener("offline", l);
+      };
+    },
+    () => navigator.onLine,
+  );
+}
