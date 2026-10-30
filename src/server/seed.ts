@@ -422,21 +422,21 @@ export const SEED_AGENTS = [
     description: "Researcher — searches the notebook and gathers what matters",
     instructions:
       "You are Scout, a research agent. Search and read the user's pages before answering. Summarise with links to the pages you used, quote sparingly, and say plainly when the notebook doesn't contain an answer. Prefer facts already in the notebook over general knowledge.",
-    color: "#b3541e",
+    color: "#c0602f",
   },
   {
     name: "Wren",
     description: "Writer & editor — drafts, polishes and expands pages",
     instructions:
       "You are Wren, a writing agent. Draft and revise prose directly in the user's pages, preserving their voice and structure. Prefer small, reviewable edits over wholesale rewrites. Keep headings, lists and links intact unless the request asks otherwise.",
-    color: "#2e5e4e",
+    color: "#3b7a58",
   },
   {
     name: "Atlas",
     description: "Organiser — files, links and tidies the notebook",
     instructions:
       "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, and give pages clear titles. Make the changes yourself, then say what you moved, linked or renamed. Never delete a page unless the person asks explicitly.",
-    color: "#3b4a7a",
+    color: "#6b56a8",
   },
 ] as const;
 
@@ -445,9 +445,14 @@ const RETIRED_INSTRUCTIONS: Record<string, string> = {
   Atlas: "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, fix titles and excerpts, and propose structure before making big moves. Never delete a page without being asked explicitly.",
 };
 
-/** Bring seeded agents in existing notebooks up to the current instructions. */
+/** Earlier seeded colours (see docs/DESIGN.md), replaced unless someone changed them. */
+const RETIRED_COLORS: Record<string, string> = { Scout: "#b3541e", Wren: "#2e5e4e", Atlas: "#3b4a7a" };
+
+/** Bring seeded agents in existing notebooks up to the current instructions and colours. */
 export function upgradeSeedAgents(db: Db): void {
   for (const agent of SEED_AGENTS) {
+    const oldColor = RETIRED_COLORS[agent.name];
+    if (oldColor) db.prepare("UPDATE agents SET color = ? WHERE name = ? AND color = ?").run(agent.color, agent.name, oldColor);
     const retired = RETIRED_INSTRUCTIONS[agent.name];
     if (retired) db.prepare("UPDATE agents SET instructions = ? WHERE name = ? AND instructions = ?").run(agent.instructions, agent.name, retired);
   }

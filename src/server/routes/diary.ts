@@ -4,6 +4,7 @@ import {
   deleteDiaryEntry, getAgent, getAttachments, getDiaryThread, insertDiaryEntry, insertDiaryThread, listAgents,
 } from "../db.ts";
 import { ToolFailure } from "../agents/errors.ts";
+import { pickAgent } from "../agents/route.ts";
 import type { Services } from "../services.ts";
 import type { AppEnv } from "../session.ts";
 import { parseJsonBody } from "./pages.ts";
@@ -24,7 +25,7 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     if (!parsed.ok) return parsed.response;
     const body = parsed.data;
     const { workspaceId: ws } = c.get("ctx");
-    const agent = body.agentId ? getAgent(s.db, ws, body.agentId) : listAgents(s.db, ws)[0];
+    const agent = body.agentId ? getAgent(s.db, ws, body.agentId) : pickAgent(listAgents(s.db, ws), body.text);
     if (!agent) return c.json({ error: "That agent isn't in this notebook any more. Pick another one.", code: "agent_not_found" }, 404);
     if (body.threadId && !getDiaryThread(s.db, ws, body.threadId)) return c.json({ error: "That conversation no longer exists. Start a new one.", code: "thread_not_found" }, 404);
     if (body.pageId && !s.pages.getPage(ws, body.pageId)) return c.json({ error: "The open page was deleted. Close it and try again.", code: "page_not_found" }, 404);

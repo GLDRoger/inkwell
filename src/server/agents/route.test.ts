@@ -1,0 +1,21 @@
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import type { Agent } from "../../shared/types.ts";
+import { pickAgent } from "./route.ts";
+
+const agents = ["Scout", "Wren", "Atlas"].map(name => ({ id: name.toLowerCase(), name }) as Agent);
+const pick = (text: string) => pickAgent(agents, text)?.name;
+
+describe("Any agent picks who's best", () => {
+  it.each([
+    ["Summarise my reading notes", "Scout"],
+    ["What did I write about fundraising?", "Scout"],
+    ["Draft a packing checklist for Lisbon", "Wren"],
+    ["Polish the hiring plan", "Wren"],
+    ["Plan my 3 days in Lisbon", "Wren"],
+    ["Tidy up the recipes section and link related pages", "Atlas"],
+    ["Rename the roadmap page", "Atlas"],
+    ["Ask Wren to summarise the launch plan", "Wren"],
+    ["hello", "Scout"],
+  ])("%s -> %s", (text, name) => expect(pick(text)).toBe(name));
+});
