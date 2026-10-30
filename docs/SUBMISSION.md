@@ -1,6 +1,6 @@
-# Inkwell: submission draft
+# Inkwell: submission
 
-Draft answers for the submission form. The form's exact fields haven't been checked; paste only after the TODOs at the bottom are resolved.
+Answers for the submission form. The four TODOs at the bottom must be resolved before pasting.
 
 ## Project name
 
@@ -8,82 +8,82 @@ Inkwell
 
 ## Tagline (≤ 70 characters)
 
-A notebook that writes back, with a map of your agents at work.
+A notebook that writes back, and shows you its agents at work.
 
 ## Short description (~150 words)
 
-Inkwell is a notebook that writes back. You write a request in its diary, the reply writes itself in the agent's hand, and the agent does the work in your pages: drafting, editing, linking, filing. While it works, its footprints walk across a map of your notebook, so you can see which page it is reading and which it is changing. Open that page and the new words arrive in front of you as wet ink that dries.
+Inkwell is a notebook where AI agents do the work inside your pages, and you can watch them do it. You write a request in the diary. Scout researches, Wren writes and Atlas organises, all running on Meta's Muse Wonder. They edit, link and file pages and hand work to each other. Every page is a card on a map, and the agent's footprints move between the cards it reads and changes. Click a card and the page opens beside the map, with new words arriving as the agent writes them.
 
-Three agents run on Muse Spark: Scout researches, Wren writes, Atlas organises, and they can hand work to each other. Muse Voice turns speech into a request you check before sending. SAM 3.1 and Muse Spark turn a photo of sticky notes into pages on the map. Muse Image makes page covers.
+Muse Voice turns a spoken request into text you check before sending. SAM 3.1 and Muse Wonder turn a photo of sticky notes into pages. Muse Image paints page covers.
 
-It is for anyone whose plans live in scattered notes: a trip, a launch, a reading list. The work stays in the notebook, and you can watch it happen.
+Watch a two-minute recording of real runs replayed through the live app, with no setup. Or try it with your own Meta API key, which stays in your browser.
 
 ## Full description (~500 words)
 
 Most AI help with notes happens somewhere else. You copy material into a chat, get an answer, and paste it back. Inkwell puts the assistant inside the notebook and shows you what it is doing there.
 
-The diary is the way in. It borrows one idea from Tom Riddle's diary: you write, your ink sinks into the page, and a reply writes itself back. You can ask a particular agent, or leave it on Any agent and Inkwell picks one from what you asked for. Scout researches, Wren writes and Atlas organises. They don't just answer. They search, read, create, edit, rename, move and link pages, and they can ask each other for help. A handoff is a real child run with its own footprints, drawing on the same budget, and its report comes back quoted inside the first agent's reply.
+You write a request in the diary. Pick an agent or let Inkwell choose: Scout researches, Wren writes, Atlas organises. They run on Muse Wonder with eleven tools for the notebook: list, search, read, create, append, edit, rewrite, rename, move and delete pages, and ask another agent for help. A handoff is a real child run with its own footprints, and its report comes back quoted in the first agent's reply.
 
-The home screen borrows one idea from the Marauder's Map: you can see where everyone is. Every page is a card in a group, and each agent walks between them as it reads, writes and thinks. A greeting says what the agents did since you were last there. New pages arrive with an icon. Double-click a card and you are in the page, a live document where the agent's words appear in its colour, with its name on the caret, and dry to ordinary ink.
+The home screen is a map. Every page is a card in a group, and each agent walks between them as it reads and writes. Click a card and the page opens in a panel beside the map; the agent's words arrive in its colour, with its name on the caret, and dry to ordinary ink. You can keep typing. Agents have to prove they have seen the latest text: every read returns a version, and an edit made against an old version is refused, so an agent never writes over what you just typed.
 
-People type while agents write, so agents have to prove they have seen the latest text. Every read returns a version, and an edit with an old version is refused, so an agent never writes over what you just typed. Runs have step, token and time limits, can be stopped, survive a server restart as an honest "interrupted" note with Try again, and say plainly when they ran out of room, with a Continue button.
+The other Meta models cover the other ways in. Muse Voice transcribes a spoken request into the composer so you can correct it before it goes. Photo to cards sends a picture of sticky notes to SAM 3.1, which finds each note; Muse Wonder reads the handwriting using those boxes, and each note becomes a page placed about where it sat on the desk. Muse Image paints page covers, and also painted every object on the welcome screen. Each feature names its model on screen when it works.
 
-Meta's models cover the other ways in. Muse Voice transcribes a spoken request into the composer so you can check it before it goes. Photo to cards sends a picture of sticky notes to SAM 3.1, which finds each note; Muse Spark reads the notes using those regions, and each becomes a page placed about where it was in the photo. Muse Image makes covers that show on the page and its map card. Each feature names its model in the interface: "Written with Muse Spark", "Transcribed by Muse Voice", "Read by SAM 3.1 + Muse Spark".
+Judges arrive knowing nothing, so the first screen offers two paths. Watch it work plays a two-minute demo that is not a video: we recorded every Meta API response from real Muse Wonder, Muse Voice, SAM 3.1 and Muse Image runs, and the app replays them through its live agent runtime in a throwaway notebook. Pages are really created and edited, footprints really walk, and the camera follows the agent while captions explain each step. Try it yourself gives you your own notebook, a four-step guide, and a choice of Muse Wonder or the cheaper Muse Spark Contributor, using your own key. The key stays in your browser and is never stored on our server.
 
-Inkwell is one TypeScript app: React and Tiptap on the client, Hono, SQLite, Yjs and Hocuspocus on the server, and the Vercel AI SDK against the Meta Model API. Agents edit the same Yjs documents the editor uses, so there is no separate copy to merge.
+We tested the agents against the real model with a twelve-case corpus that checks what was saved, not what the agent claimed. The first run found real problems: mistyped page links, misrouted requests, replies longer than asked, and Wonder stalling for up to 90 seconds before answering. Each became a fix: links copied from tool results plus a repair pass, routing by every sentence, prompt rules, and a watchdog that retries a silent call.
 
-"Build for Your World" here means the material people already have: a trip in five open tabs, a launch plan, a reading list, a desk full of sticky notes. Inkwell is built for students, small teams and anyone planning something, though we haven't tested it with them yet. Next we want to run it against the real models at scale, measure where agents go wrong, and add a way to review and undo an agent's edits.
+"Build for Your World" here means the material people already have: a trip in five open tabs, a launch plan, a reading list, a desk of sticky notes.
 
-## How Meta models are used
+## Meta models used
 
-- **Muse Spark (`muse-spark-1.3`):** the three agents. Streamed replies and eleven notebook tools through the OpenAI-compatible chat API, with `tool_choice: "auto"` and `max_completion_tokens` as the API requires. Also reads images attached to a diary request, and reads the text of photographed notes. Code: [`src/server/agents/`](../src/server/agents/).
-- **Muse Voice Transcribe (`muse-voice-transcribe-1.0`):** the browser records 16 kHz WAV; the server checks the format and calls `/asr/transcribe`. The text fills the composer for review. Code: [`recorder.ts`](../src/client/diary/recorder.ts), [`transcribe.ts`](../src/server/media/transcribe.ts).
-- **SAM 3.1 (`sam-3.1`):** called through `/responses` with the photo and the prompt "each sticky note or distinct block of handwriting". Its boxes go to Muse Spark with the image and set where each card lands. Masks aren't used. Code: [`photo.ts`](../src/server/media/photo.ts), [`boxes.ts`](../src/server/media/boxes.ts).
-- **Muse Image (`muse-image-1.0`):** `/images/generations` makes a cover from a page's title and excerpt, stored as an attachment. It also made the welcome screen's photographs ([`scripts/paint-objects.mjs`](../scripts/paint-objects.mjs)). Code: [`illustrate.ts`](../src/server/media/illustrate.ts).
+- **Muse Wonder (`muse-wonder-1.0`):** the three agents, with streamed replies and eleven tools through the OpenAI-compatible chat API (`tool_choice: "auto"` and `max_completion_tokens`, as the API requires). Reads images attached to a diary request, and reads the handwriting in Photo to cards. Code: [`src/server/agents/`](../src/server/agents/), [`photo.ts`](../src/server/media/photo.ts).
+- **Muse Spark Contributor (`muse-spark-1.3-contributor`):** the visitor's cheaper option for the same jobs, chosen in the key dialog. Code: [`meta-access.ts`](../src/server/meta-access.ts).
+- **Muse Voice Transcribe (`muse-voice-transcribe-1.0`):** the browser records 16 kHz WAV; the server posts it to `/asr/transcribe`; the text fills the composer for review. Code: [`recorder.ts`](../src/client/diary/recorder.ts), [`transcribe.ts`](../src/server/media/transcribe.ts).
+- **SAM 3.1 (`sam-3.1`):** finds each note in a photo through `/responses`. Its boxes go to Muse Wonder with the image and set where each card lands. The notice credits SAM only when it found the notes. Code: [`photo.ts`](../src/server/media/photo.ts), [`boxes.ts`](../src/server/media/boxes.ts).
+- **Muse Image (`muse-image-1.0`):** page covers through `/images/generations`, and all 14 welcome-screen objects ([`paint-objects.mjs`](../scripts/paint-objects.mjs)). Code: [`illustrate.ts`](../src/server/media/illustrate.ts).
+
+All five paths were run live on 2026-10-30: `scripts/smoke-meta.mjs` passed 5/5, and the demo cassette was recorded from the real API with every one of them.
 
 ## Technical depth
 
-- **Agents and people in one live document.** Agent tools write through Yjs into the document the Tiptap editor is connected to. Remote text is drawn as wet ink anchored to Yjs relative positions, so it survives paragraph rewrites while it dries.
-- **Version-checked edits.** `read_page` returns a hash of the page's markdown; `edit_page` and `rewrite_page` refuse a stale version. `edit_page` needs one exact match and rejects ambiguous ones. Blocks that can't round-trip through markdown (complex table cells) are refused rather than flattened.
-- **Visible execution.** Each tool call publishes an `agent.moved` event (reading, writing, thinking, leaving) and a run step. Server-sent events carry them with the diary's streamed text; the map turns them into footprints.
-- **Bounded handoffs.** `ask_agent` starts a child run and waits for it. Parent and children share one tool-call budget; a child gets a share of its parent's tokens and time and returns what it didn't use. Handoffs stop three levels deep, and stopping a parent stops its children.
-- **Recovery.** On boot, any run still marked running is closed as "Interrupted by a server restart". Shutdown flushes live documents to SQLite.
-- **Transactional photo import.** The parent page and every note card commit together, and page events wait for the commit, so a failed import leaves nothing behind.
-- **Testing without a key.** 387 unit and integration tests with mocked models; a local stand-in for the Meta API (`npm run rehearse`) that makes real tool calls so every flow runs in a browser; and a twelve-case corpus that checks what was saved through the public API.
+- **Recorded runs replayed through the live runtime.** A cassette holds every Meta exchange of the demo scenario in order (39 exchanges, 229k input tokens, 18k output). On replay the agent runtime and media routes run unchanged, with a transport that answers from the cassette and translates page ids and version tokens from the recording notebook to the demo notebook. The tool calls really execute, so the demo exercises the same code a live run does. Code: [`src/server/demo/`](../src/server/demo/).
+- **Agents and people in one live document.** Agent tools write through Yjs into the document the Tiptap editor is connected to. Version-checked edits refuse a write made against stale text; per-page locks queue writes across runs.
+- **Bounded handoffs.** `ask_agent` starts a child run. Parent and children share one tool-call budget; each child gets a share of its parent's tokens and time. Handoffs stop three levels deep, and stopping a parent stops its children.
+- **Recovery.** A run left running by a restart is closed as interrupted on boot, with Try again; a retry continues the interrupted reply instead of redoing it.
+- **Bring your own key, never persisted.** The key is sent per request as a header and held in memory only for the runs it starts. It is never written to the database, logs, errors or events. The model header is allow-listed.
+- **Safety nets from the real-model eval.** A link-repair pass fixes page links whose id the model mistyped. A first-byte watchdog abandons a silent call after 30 s and retries once with 60 s.
+- **Testing.** 547 unit and integration tests with mocked models; a local stand-in for the Meta API (`npm run rehearse`) that makes real tool calls; and a twelve-case corpus run against real Muse Wonder that checks saved state through the public API.
 
 ## Challenges
 
-- **Agents and people writing at once.** An agent works from what it last read, and a person may have typed since. Every read now returns a version and every stale write is refused, with per-page locks between agents.
-- **Making streamed ink match the saved page.** Diary text, page edits, map events and the database travel on different channels. We gave them shared run and page IDs and test the saved state rather than the agent's "done".
-- **Fitting the Meta API's shape.** Tool choice must be `auto`, the token limit field differs, transcription wants multipart WAV, and SAM returns boxes as tokens in streamed text. Each has an adapter and tests against fixtures of those shapes; none has run against the live API yet.
-- **Keeping the look quiet.** The first version looked like parchment. We kept the Harry Potter ideas in what the app does and moved the look to a plain modern notebook ([`DESIGN.md`](DESIGN.md)).
+- **Muse Wonder's latency stalls.** In the corpus and the demo recordings, some steps got no first byte for 30 to 90 seconds, then answered normally. A run would hang with nothing on screen. The first-byte watchdog in [`model.ts`](../src/server/agents/model.ts) aborts a step that hasn't started answering in 30 s and retries once with 60 s, so the worst case is about 1.5 minutes before a plain "Try again in a moment" message. Recording uses the same watchdog with longer waits (60, 120, 180 s), and refuses to keep a cassette in which any run failed. This is also why judges see a recording first: the demo can't stall.
+- **Muse Image has no transparency.** The API rejects a `background` option, but the welcome objects need clean cut-outs on light and dark themes. We prompt for each object on a plain grey backdrop and cut it out locally: Apple Vision's subject mask, tightened with a colour matte that unmixes the grey from soft edge pixels so nothing haloes on dark backgrounds.
+- **Agents and people writing at once.** An agent works from what it last read, and a person may have typed since. Every read returns a version, every stale write is refused, and the agent is told to read again.
+- **Model mistakes that look like success.** Wonder sometimes typed a page id instead of copying it, so a link pointed nowhere. Tool results now carry ready-made links, and a repair pass fixes the rest. The corpus checks every diary link against live pages.
+- **Replaying a run in a different notebook.** Recorded responses name page ids and versions from the recording notebook. The player translates them by title, creation order and position, so the same recording works in every visitor's fresh demo notebook.
 
 ## What's next
 
-1. Run every model path and the corpus against the real API, read the output by hand, and fix what breaks.
-2. A review step for agent edits: see the change, accept or undo it.
-3. Photo to cards should say when SAM found nothing and Muse Spark did the work alone.
-4. Put Inkwell in front of students and small teams and see whether watching the agents helps them catch mistakes.
-5. Accounts and sharing, so a notebook isn't tied to one browser.
-
-## Track
-
-**TODO:** confirm the track and eligibility in the form.
+1. A review step for agent edits: see the change, then accept or undo it.
+2. A larger evaluation: more cases, several runs each, and Spark Contributor alongside Wonder.
+3. Accounts and sharing, so a notebook isn't tied to one browser.
+4. Put Inkwell in front of students and small teams, and find out whether watching the agents helps them catch mistakes.
+5. More recorded scenarios, so the demo isn't the same Lisbon trip every time.
 
 ## Links
 
-- Live app: https://inkwell.76-13-246-244.sslip.io (custom domain to follow)
+- Live app: https://inkwell.76-13-246-244.sslip.io
 - Repository: https://github.com/GLDRoger/inkwell
 - Video: **TODO**
-- Demo script: [DEMO.md](DEMO.md)
+- Video script: [DEMO.md](DEMO.md)
+
+## AI-assistance disclosure (draft)
+
+Inkwell's code and documentation were written with AI coding agents under the author's direction and review. Most of the work, including the current version, was done with Claude Code using Claude Opus. Earlier phases also used GPT and Muse coding agents for parts of the server, deployment and evaluation corpus. Every AI feature inside the product runs on Meta's models only: Muse Wonder, Muse Spark Contributor, Muse Voice Transcribe, SAM 3.1 and Muse Image.
 
 ## Before submitting
 
-- [ ] **TODO: live smoke of each model.** Set `META_API_KEY` locally and on the host, run `node --env-file=.env scripts/smoke-meta.mjs` (5/5), then try each flow in the browser: an agent run with tool calls, a Wren handoff, a voice transcript, Photo to cards with SAM boxes confirmed in the log, and a cover.
-- [ ] **TODO: corpus run.** `npm run corpus` against the real API with a throwaway `DATA_DIR`; keep the report and the commit it ran on. Don't quote a pass rate, latency or cost until it exists.
-- [ ] **TODO: redeploy.** The host was last deployed at `36d1631`, before round 2, and has no key set. Deploy the commit being submitted.
-- [ ] **TODO: record the demo** following [DEMO.md](DEMO.md) with real models, caption it, upload it, and add the link above.
+- [ ] **TODO: video link.** Record from Watch it work following [DEMO.md](DEMO.md), upload, and add the link above.
 - [ ] **TODO: team details** for the form.
-- [ ] **TODO: AI-assistance disclosure.** Code and docs were written with AI coding agents (Claude Opus, Muse, GPT); confirm the exact wording the form asks for and who reviewed what.
-- [ ] **TODO: confirm the form, track and deadline** against the official event page (our notes: November 4, 2026, 9:00 PM ET; impact 30%, Meta tooling 25%, technical depth 20%, demo 25%).
-- [ ] **Optional before recording:** change the cover prompt in `illustrate.ts` away from "antique parchment map vignette", and make the photo notice honest when SAM returns no boxes.
+- [ ] **TODO: AI-assistance disclosure.** Check the draft above against the wording the form asks for.
+- [ ] **TODO: confirm track and eligibility** on the official event page (our notes: due November 4, 2026, 9:00 PM ET; judged on impact 30%, use of Meta AI tooling 25%, technical depth 20%, demo 25%).
