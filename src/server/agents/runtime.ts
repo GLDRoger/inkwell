@@ -7,9 +7,11 @@ import {
 } from "../db.ts";
 import { ToolFailure } from "./errors.ts";
 import { createMetaModel, MISSING_META_KEY } from "./model.ts";
+import { defaultTextModel, type MetaAccess } from "../meta-access.ts";
 import { createAgentTools, pageLink, type AgentServices } from "./tools.ts";
 
 export interface RuntimeOptions {
+  /** Tests: replaces the Meta model (ignored for runs with their own transport, e.g. demo replay). */
   modelFactory?: (agent: Agent) => LanguageModel;
   maxSteps?: number;
   /** A hard wall-clock bound for a request, including its child runs. */
@@ -29,10 +31,16 @@ interface StartInput {
   threadId?: string;
   pageId?: string;
   parentRunId?: string;
+  /**
+   * The key and model for this request (a visitor's key or the server's). Held only
+   * in memory for the life of the run and its children; never stored. Absent: the
+   * server's own key and the default model.
+   */
+  meta?: MetaAccess;
 }
 export interface RunResult { run: Run; text: string; pageIds: string[] }
 /** Shared by a request and all its child runs. */
-interface Family { remaining: number; children: number }
+interface Family { remaining: number; children: number; meta?: MetaAccess }
 /** One run's own share: a deadline and an output-token allowance. */
 interface Limits { deadline: number; tokens: number }
 interface ActiveRun {
@@ -49,6 +57,7 @@ Link pages as [Page title](/p/PAGE_ID).
 Working with pages:
 - Read before you edit. read_page returns a version; pass it to edit_page or rewrite_page. If a write says the page changed, read it again and retry.
 - Prefer edit_page for changing part of a page, and copy find exactly from read_page. Use rewrite_page only to restructure a whole page.
+- A page's title is shown above its text, so don't repeat it as a heading at the top of the markdown.
 - Write long pages as an outline first, then add each section with append_to_page. Keep each call's markdown under about 1,500 words.
 - Continue long pages with read_page's nextOffset.
 - Search with a few distinctive words; if nothing matches, use list_pages.
@@ -72,6 +81,8 @@ export class AgentRuntime {
   }
 
   get isClosing() { return this.closing; }
+  /** Tests inject a model, so their runs need no Meta key. */
+  get needsMetaKey() { return !this.options.modelFactory; }
   private publish(ws: string, event: ServerEvent) { this.services.bus.publish(ws, event); }
   private patch(ws: string, id: string, patch: Parameters<typeof updateRun>[3]) {
     const run = updateRun(this.services.db, ws, id, patch)!;
@@ -91,7 +102,8 @@ export class AgentRuntime {
       deadline: Date.now() + (this.options.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS),
       tokens: this.options.maxOutputTokens ?? DEFAULT_RUN_OUTPUT_TOKENS,
     };
-    return this.launch(input, { remaining: 72, children: 8 }, 0, limits);
+    const { meta, ...rest } = input;
+    return this.launch(rest, { remaining: 72, children: 8, meta }, 0, limits);
   }
 
   private launch(input: StartInput, family: Family, depth: number, limits: Limits) {
@@ -109,7 +121,8 @@ export class AgentRuntime {
     const { run, entry } = s.db.transaction(() => {
       // Diary-only replies still rest where the agent last worked.
       const lastPageId = listRecentRuns(s.db, ws).find((r) => r.agentId === agent.id && r.pageId && s.pages.getPage(ws, r.pageId))?.pageId;
-      const run = insertRun(s.db, ws, { ...input, pageId: input.pageId ?? lastPageId ?? null });
+      const run = insertRun(s.db, ws, { ...input, pageId: input.pageId ?? lastPageId ?? null,
+        model: family.meta?.model ?? defaultTextModel(), recorded: family.meta?.recorded });
       const entry = input.threadId ? insertDiaryEntry(s.db, ws, {
         threadId: input.threadId, role: "agent", agentId: agent.id, text: "", runId: run.id,
       }) : null;
@@ -231,7 +244,9 @@ export class AgentRuntime {
     try {
       signal.throwIfAborted();
       this.patch(ws, original.id, { status: "running" });
-      const model = this.options.modelFactory ? this.options.modelFactory(agent) : createMetaModel();
+      const meta = family.meta;
+      const model = this.options.modelFactory && !meta?.fetchForRun ? this.options.modelFactory(agent)
+        : createMetaModel({ apiKey: meta?.apiKey, baseURL: meta?.baseUrl, model: meta?.model ?? defaultTextModel(), fetch: meta?.fetchForRun?.(original.id) });
       const aborted = new Promise<never>((_, reject) => {
         abortListener = () => reject(new Error("Run stopped."));
         signal.addEventListener("abort", abortListener, { once: true });

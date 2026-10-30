@@ -102,8 +102,11 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
   );
 
   app.get("/api/files/:id", async (c) => {
-    const { workspaceId } = c.get("ctx");
-    const row = getAttachmentRow(db, workspaceId, c.req.param("id"));
+    const ctx = c.get("ctx");
+    // <img> and <audio> can't send X-Inkwell-Notebook, so a file may come from either
+    // of this session's own notebooks (its own or its demo), never anyone else's.
+    const notebooks = [...new Set([ctx.workspaceId, ctx.ownWorkspaceId, ctx.demoWorkspaceId].filter((id): id is string => Boolean(id)))];
+    const row = notebooks.map((ws) => getAttachmentRow(db, ws, c.req.param("id"))).find(Boolean);
     if (!row) return c.json({ error: "That file doesn't exist." }, 404);
     const filePath = path.join(uploadsDir, path.basename(row.path));
     let bytes: Buffer;

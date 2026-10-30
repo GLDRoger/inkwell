@@ -135,3 +135,35 @@ test("rejects request fields the real API rejects", async () => {
   assert.equal((await post({ model: "m", messages: [], tool_choice: "required" })).status, 400);
   assert.equal((await fetch(`${fake.url}/chat/completions`, { method: "POST", body: "{}" })).status, 401);
 });
+
+test("key check, visitor keys and the demo work against the fake", async () => {
+  const { createApp } = await import("../../src/server/main.ts");
+  const { recordScenario } = await import("../../src/server/demo/record.ts");
+  const { LISBON_TOUR } = await import("../../src/server/demo/scenario.ts");
+  // Record the demo from the fake, then replay it in a fresh app's demo notebook.
+  const recordDir = fs.mkdtempSync(path.join(os.tmpdir(), "inkwell-rehearsal-record-"));
+  const recorder = mods.createServices(recordDir);
+  const cassette = await recordScenario({ services: recorder, scenario: LISBON_TOUR, apiKey: "rehearsal", baseUrl: fake.url, model: "muse-wonder-1.0", secrets: [] });
+  await recorder.close();
+  fs.writeFileSync(path.join(recordDir, "lisbon-tour.json"), JSON.stringify(cassette));
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), "inkwell-rehearsal-app-"));
+  const s = mods.createServices(appDir, {}, { cassettesDir: recordDir, pace: 0 });
+  try {
+    const app = createApp(s);
+    const me = await app.request("/api/me");
+    const cookie = me.headers.get("set-cookie").split(";")[0];
+    const call = (url, init = {}) => app.request(url, { ...init, headers: { Cookie: cookie, ...init.headers } });
+    assert.deepEqual(await (await call("/api/key/check", { method: "POST", headers: { "X-Meta-Key": "visitor-key" } })).json(), { ok: true });
+    assert.equal((await (await call("/api/key/check", { method: "POST", headers: { "X-Meta-Key": "invalid-key" } })).json()).ok, false);
+    const demoWs = (await (await call("/api/me", { headers: { "X-Inkwell-Notebook": "demo" } })).json()).demoWorkspaceId;
+    const ended = new Promise((resolve) => s.bus.subscribe(demoWs, (e) => { if (e.type === "demo.ended") resolve(e.reason); }));
+    assert.equal((await call("/api/demo/start", { method: "POST" })).status, 200);
+    assert.equal(await ended, "finished");
+    const runs = s.db.prepare("SELECT status FROM runs WHERE workspace_id = ? AND recorded = 1").all(demoWs);
+    assert.ok(runs.length >= 4 && runs.every((r) => r.status === "succeeded"), JSON.stringify(runs));
+  } finally {
+    await s.close();
+    fs.rmSync(recordDir, { recursive: true, force: true });
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
+});

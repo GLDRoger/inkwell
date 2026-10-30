@@ -12,6 +12,7 @@ import type {
   RunStatus,
   RunStep,
 } from "../shared/types.ts";
+import { defaultTextModel } from "./meta-access.ts";
 
 export type Db = Database.Database;
 
@@ -176,6 +177,11 @@ export function openDatabase(explicitDataDir?: string): DatabaseHandle {
     db.exec("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT");
   }
   db.exec("CREATE TABLE IF NOT EXISTS pending_file_deletions (path TEXT PRIMARY KEY)");
+  // Demo mode (docs/DEMO-MODE.md): a session's second, read-only notebook, and
+  // which model each run used / whether it was replayed. Additive only.
+  addColumn(db, "sessions", "demo_workspace_id", "TEXT");
+  addColumn(db, "runs", "model", "TEXT");
+  addColumn(db, "runs", "recorded", "INTEGER NOT NULL DEFAULT 0");
 
   const row = db.prepare("SELECT version FROM schema_version LIMIT 1").get() as
     | { version: number }
@@ -190,6 +196,12 @@ export function openDatabase(explicitDataDir?: string): DatabaseHandle {
     uploadsDir,
     close: () => db.close(),
   };
+}
+
+function addColumn(db: Db, table: string, column: string, type: string): void {
+  // Table, column and type are internal constants, never request data.
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 export function getSchemaVersion(db: Db): number {
@@ -269,6 +281,8 @@ export interface RunRow {
   steps: string;
   created_at: string;
   ended_at: string | null;
+  model?: string | null;
+  recorded?: number | null;
 }
 
 export interface AttachmentRow {
@@ -345,6 +359,8 @@ export function rowToRun(row: RunRow): Run {
     steps: parseJsonArray<Run["steps"][number]>(row.steps),
     createdAt: row.created_at,
     endedAt: row.ended_at,
+    ...(row.model ? { model: row.model } : {}),
+    ...(row.recorded ? { recorded: true } : {}),
   };
 }
 
@@ -391,7 +407,7 @@ export function insertAgent(
     description: input.description,
     instructions: input.instructions,
     color: input.color,
-    model: input.model ?? process.env.META_TEXT_MODEL ?? "muse-spark-1.3",
+    model: input.model ?? defaultTextModel(),
   };
   db.prepare(
     `INSERT INTO agents (id, workspace_id, name, description, instructions, color, model, created_at)
@@ -535,6 +551,8 @@ export function insertRun(
     prompt: string;
     status?: RunStatus;
     pageId?: string | null;
+    model?: string;
+    recorded?: boolean;
   },
 ): Run {
   const run: Run = {
@@ -549,10 +567,12 @@ export function insertRun(
     steps: [],
     createdAt: nowIso(),
     endedAt: null,
+    ...(input.model ? { model: input.model } : {}),
+    ...(input.recorded ? { recorded: true } : {}),
   };
   db.prepare(
-    `INSERT INTO runs (id, workspace_id, agent_id, thread_id, parent_run_id, prompt, status, page_id, error, steps, created_at, ended_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', ?, NULL)`,
+    `INSERT INTO runs (id, workspace_id, agent_id, thread_id, parent_run_id, prompt, status, page_id, error, steps, created_at, ended_at, model, recorded)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', ?, NULL, ?, ?)`,
   ).run(
     run.id,
     workspaceId,
@@ -563,6 +583,8 @@ export function insertRun(
     run.status,
     run.pageId,
     run.createdAt,
+    input.model ?? null,
+    input.recorded ? 1 : 0,
   );
   return run;
 }
@@ -695,6 +717,19 @@ export function getAttachmentRow(
     .prepare("SELECT * FROM attachments WHERE workspace_id = ? AND id = ?")
     .get(workspaceId, id) as AttachmentRow | undefined;
   return row ?? null;
+}
+
+/**
+ * Delete everything a notebook holds (not its sessions, people or the workspace row),
+ * in FK order, and queue its files for deletion. Call inside a transaction.
+ */
+export function purgeWorkspaceContent(db: Db, workspaceId: string): void {
+  db.prepare("INSERT OR IGNORE INTO pending_file_deletions (path) SELECT path FROM attachments WHERE workspace_id = ?").run(workspaceId);
+  // pages.ydoc is removed along with the page.
+  for (const table of ["diary_entries", "runs", "diary_threads", "agents", "attachments", "links", "pages_fts", "pages"]) {
+    // Table names are an internal constant allowlist, never request data.
+    db.prepare(`DELETE FROM ${table} WHERE workspace_id = ?`).run(workspaceId);
+  }
 }
 
 /** At most one activity write per session per hour; no unbounded in-memory cache. */

@@ -43,7 +43,7 @@ import {
 } from "./editor-schema.ts";
 import type { PageStore } from "./pages.ts";
 import { MAX_YDOC_BYTES, MAX_WS_PAYLOAD_BYTES } from "./limits.ts";
-import { getSessionFromCookieHeader } from "./session.ts";
+import { getSessionFromCookieHeader, requestedNotebook } from "./session.ts";
 
 export { markdownToTiptapJSON, tiptapJSONToMarkdown } from "./editor-schema.ts";
 
@@ -226,12 +226,17 @@ export function createCollab(deps: {
 
     // The session cookie rides along on the WebSocket upgrade; the provider
     // always sends an (empty) Auth message, which triggers this hook.
-    async onAuthenticate({ documentName, requestHeaders }) {
+    async onAuthenticate({ documentName, requestHeaders, requestParameters, connectionConfig }) {
       const session = getSessionFromCookieHeader(db, requestHeaders.get("cookie"));
       if (!session) throw new Error("unauthorized");
-      const row = pages.getPageRow(session.workspaceId, documentName);
+      // /collab?notebook=demo: the session's demo notebook, which people only watch.
+      const demo = requestedNotebook(null, requestParameters.get("notebook")) === "demo";
+      const workspaceId = demo ? session.demoWorkspaceId : session.workspaceId;
+      if (!workspaceId) throw new Error("unauthorized");
+      const row = pages.getPageRow(workspaceId, documentName);
       if (!row) throw new Error("unauthorized");
-      return { workspaceId: session.workspaceId, actor: session.person };
+      if (demo) connectionConfig.readOnly = true;
+      return { workspaceId, actor: session.person };
     },
 
     async onLoadDocument({ document, documentName, context }) {

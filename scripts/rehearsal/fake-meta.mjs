@@ -10,6 +10,7 @@
 //   POST /v1/asr/transcribe     multipart {request JSON, audio WAV} -> { transcript, turns }
 //   POST /v1/images/generations -> { data: [{ b64_json: <real PNG> }] }
 //   POST /v1/responses          SAM 3.1: SSE with native <|box;...|> tokens
+//   GET  /v1/models             the key check (any key but one starting "invalid")
 // The agent is a small keyword planner: it reads the latest user message and the tool
 // results already in the conversation, then chooses the next real tool call.
 import http from "node:http";
@@ -642,6 +643,13 @@ export function startFakeMeta({ port = 8799, host = "127.0.0.1", fast = false, q
     const model = body?.model ?? (isMultipart ? tryJson(/name="request"[^\r\n]*\r\n(?:[^\r\n]+\r\n)*\r\n(\{[^\r\n]*\})/.exec(raw.toString("latin1"))?.[1] ?? "")?.model : undefined);
 
     if (req.method === "GET" && (route === "/health" || route === "/")) return send(res, 200, { ok: true, service: "inkwell rehearsal Meta API" });
+    // GET /v1/models backs POST /api/key/check. Any key works, except ones starting "invalid".
+    if (req.method === "GET" && route === "/models") {
+      log(`GET ${url.pathname}`);
+      if (!/^Bearer \S+/.test(auth) || /^Bearer invalid/i.test(auth)) return fail(res, 401, "Unauthorized", "authentication_error");
+      return send(res, 200, { object: "list", data: ["muse-wonder-1.0", "muse-spark-1.3-contributor", "muse-image-1.0", "muse-voice-transcribe-1.0", "sam-3.1"]
+        .map((id) => ({ id, object: "model", created: 0, owned_by: "meta" })) });
+    }
     if (req.method !== "POST") return fail(res, 405, "Method not allowed");
     if (!/^Bearer \S+/.test(auth)) return fail(res, 401, "Missing or invalid API key", "authentication_error");
 

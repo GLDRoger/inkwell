@@ -225,7 +225,7 @@ describe("photo import", () => {
     ]);
     const chat = outgoing(1);
     expect(chat.url).toBe("https://api.meta.ai/v1/chat/completions");
-    expect(chat.body.model).toBe("muse-spark-1.3");
+    expect(chat.body.model).toBe("muse-wonder-1.0");
     expect(chat.body.max_completion_tokens).toBe(8192);
     expect(chat.body.messages[1].content[0].text).toContain(JSON.stringify([NOTE_A.box, NOTE_B.box]));
     expect(chat.body.messages[1].content[1]).toEqual({ type: "image_url", image_url: { url: `data:image/png;base64,${PNG.toString("base64")}` } });
@@ -294,7 +294,7 @@ describe("isolation and provider failures", () => {
     ];
     for (const response of responses) {
       expect(response.status).toBe(503);
-      expect(await response.json()).toEqual({ error: "Meta API key isn't configured" });
+      expect(await response.json()).toMatchObject({ code: "meta_not_connected" });
     }
     expect(fetcher).not.toHaveBeenCalled();
   });

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { serve, type ServerType } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { createDemoRoutes } from "./routes/demo.ts";
 import { createDiaryRoutes } from "./routes/diary.ts";
 import { createRunRoutes } from "./routes/runs.ts";
 import { createEventsApp } from "./events.ts";
@@ -29,6 +30,7 @@ export function createApp(
     createSessionMiddleware({ db: services.db, pages: services.pages }),
   );
 
+  app.route("/", createDemoRoutes(services));
   app.route("/", createDiaryRoutes(services));
   app.route("/", createRunRoutes(services));
   app.route("/", createMediaRoutes(services));

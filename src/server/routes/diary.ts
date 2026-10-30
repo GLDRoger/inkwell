@@ -8,6 +8,7 @@ import { pickAgent } from "../agents/route.ts";
 import type { Services } from "../services.ts";
 import type { AppEnv } from "../session.ts";
 import { parseJsonBody } from "./pages.ts";
+import { NOT_CONNECTED, resolveMetaAccess } from "../meta-access.ts";
 
 const bodySchema = z.object({
   threadId: z.string().min(1).max(200).optional(),
@@ -25,6 +26,9 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     if (!parsed.ok) return parsed.response;
     const body = parsed.data;
     const { workspaceId: ws } = c.get("ctx");
+    // The visitor's key (X-Meta-Key) or the server's; held in memory for this run only.
+    const meta = resolveMetaAccess(c);
+    if (!meta && s.runtime.needsMetaKey && !s.runtime.isClosing) return c.json(NOT_CONNECTED, 503);
     const agent = body.agentId ? getAgent(s.db, ws, body.agentId) : pickAgent(listAgents(s.db, ws), body.text);
     if (!agent) return c.json({ error: "That agent isn't in this notebook any more. Pick another one.", code: "agent_not_found" }, 404);
     if (body.threadId && !getDiaryThread(s.db, ws, body.threadId)) return c.json({ error: "That conversation no longer exists. Start a new one.", code: "thread_not_found" }, 404);
@@ -40,7 +44,8 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     })();
     let runId: string;
     try {
-      runId = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId, prompt: body.text, pageId: body.pageId }).run.id;
+      runId = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId, prompt: body.text, pageId: body.pageId,
+        ...(meta ? { meta } : {}) }).run.id;
     } catch (error) {
       // Nothing was answered, so keep nothing: a retry must not duplicate the entry.
       deleteDiaryEntry(s.db, ws, entry.id, threadId);

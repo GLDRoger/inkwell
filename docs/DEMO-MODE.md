@@ -14,7 +14,7 @@ A session owns two notebooks: `own` (always) and `demo` (created on first demo s
 
 | Channel | How the client picks the demo notebook |
 |---|---|
-| HTTP `/api/*` | header `X-Inkwell-Notebook: demo` (absent or `own` → own notebook) |
+| HTTP `/api/*` | header `X-Inkwell-Notebook: demo` (absent or `own` → own notebook); `?notebook=demo` also works |
 | SSE | `GET /api/events?notebook=demo` |
 | Collab websocket | `/collab?notebook=demo` |
 
@@ -23,14 +23,14 @@ The session middleware resolves `ctx.workspaceId` from this. Every existing rout
 ## Endpoints
 
 - `GET /api/me` → `{ workspaceId, person, metaConnected, demoWorkspaceId: Id | null }`. `metaConnected` = the **server** has a key (owner's own deployment); the client treats "connected" as `metaConnected || hasBrowserKey`.
-- `POST /api/demo/start` → resets the demo notebook to a fresh seed and starts the scenario. `{ scenario: DemoScenario }`. Starting again restarts from the top.
+- `POST /api/demo/start` → resets the demo notebook to a fresh seed and starts the scenario. Answers with the `DemoState` (`{ playing: true, scenario, stepIndex: 0 }`); `503 {code: "demo_unavailable"}` if no recording is installed. Starting again restarts from the top.
 - `POST /api/demo/stop` → stops playback (runs cancelled, notebook kept as is). `204`.
 - `GET  /api/demo` → `{ playing: boolean; scenario: DemoScenario | null; stepIndex: number }` (for reloads mid-demo).
 - `POST /api/key/check` with header `X-Meta-Key` → `{ ok: true }` or `{ ok: false, error }` (one cheap authenticated Meta call; the key is not stored or logged).
 
 ## The visitor's key
 
-AI requests (`POST /api/diary`, `/api/transcribe`, `/api/import/photo`, `/api/pages/:id/cover`) accept header `X-Meta-Key`. The server uses it for that request and keeps it **in memory only** for the life of any run it starts (child runs inherit it). Never written to the database, logs, errors or events. If neither the header nor the server env key is present, the server answers as today with `code: "meta_not_connected"` (status 503), and the client opens the key dialog instead of showing an error.
+AI requests (`POST /api/diary`, `/api/transcribe`, `/api/import/photo`, `/api/pages/:id/illustrate`) accept header `X-Meta-Key`. The server uses it for that request and keeps it **in memory only** for the life of any run it starts (child runs inherit it). Never written to the database, logs, errors or events. If neither the header nor the server env key is present, the server answers as today with `code: "meta_not_connected"` (status 503), and the client opens the key dialog instead of showing an error.
 
 ## Which model
 
@@ -42,7 +42,7 @@ Default text/vision model: `muse-wonder-1.0` (owner, 2026-10-30: the others are 
 type DemoStep = {
   id: string;
   caption: string;          // one plain sentence shown to the viewer, e.g. "Wren is planning your trip. Watch her walk the map."
-  model?: "muse-spark" | "muse-voice" | "sam-3.1+muse-spark" | "muse-image"; // shown as a provenance chip
+  model?: "muse-wonder" | "muse-spark" | "muse-voice" | "sam-3.1+muse-wonder" | "sam-3.1+muse-spark" | "muse-image"; // shown as a provenance chip
 };
 type DemoScenario = { id: string; title: string; steps: DemoStep[]; recordedFrom: "rehearsal" | "meta" };
 
@@ -50,22 +50,24 @@ type DemoScenario = { id: string; title: string; steps: DemoStep[]; recordedFrom
 | { type: "demo.ended"; reason: "finished" | "stopped" }
 ```
 
-Replayed runs carry `Run.recorded = true` and their diary entries show "Recorded run · Muse Spark" instead of "Written with Muse Spark".
+`demo.step` repeats with the same `index` whenever the focus changes (the run starts, an agent starts writing a page, photo cards land): treat it as a focus update.
+
+Replayed runs carry `Run.recorded = true` and `Run.model`; their diary entries show "Recorded run · Muse Wonder" instead of "Written with Muse Wonder". Files in the demo notebook (cover, photo, voice clip) are served at their usual `/api/files/:id` URLs to the session that owns the notebook, without the header.
 
 ## Recording ("cassettes")
 
-`scripts/demo/record.mjs` runs the scenario against whatever `META_BASE_URL` points at (the rehearsal fake now, `https://api.meta.ai/v1` once a key exists) on a scratch data dir, captures every Meta HTTP exchange in order, and writes `src/server/demo/cassettes/<scenario>.json` with `recordedFrom`. Replay serves those responses in order instead of calling Meta, translating page ids from the recording notebook to the demo notebook (seed pages by title, created pages by creation order). Tool calls then execute for real against the demo notebook.
+`node --env-file=.env scripts/demo/record.mjs` (or `--fake` for the rehearsal fake) runs the scenario against whatever `META_BASE_URL` points at on a scratch data dir, captures every Meta HTTP exchange in order, and writes `src/server/demo/cassettes/<scenario>.json` with `recordedFrom` (generated images sit beside it as `<scenario>.<n>.png`). It stores responses, never request headers, and scrubs key-like strings. Replay serves those responses in order instead of calling Meta, translating page ids from the recording notebook to the demo notebook (seed pages by title, created pages by creation order). Tool calls then execute for real against the demo notebook.
 
 ## Scenario (first version)
 
 1. Person writes "Plan my 5 days in Lisbon" → Wren reads the trip pages, creates "Plan: 5 days in Lisbon", edits the itinerary live (peek shows ink arriving).
-2. Person speaks "Summarise what I've read this month" (recorded transcript; step model `muse-voice`) → Scout summarises reading notes into a new page.
+2. Person speaks "Summarise my reading notes on a new page" (a bundled voice clip, really transcribed by Muse Voice during recording; step model `muse-voice`) → Scout summarises reading notes into a new page.
 3. "Ask Scout to find what we decided about hiring, then have Wren draft the job post" → handoff Scout → Wren.
 4. Photo to cards on a bundled sample photo of sticky notes (`muse` SAM + vision recorded) → cards land under "Photo notes".
 5. Make a cover for the new Lisbon plan (recorded Muse Image PNG).
 6. Atlas tidies: links the new pages into their areas. End caption: "That's Inkwell. Try it with your own notebook." with the Try it yourself button.
 
-Pacing: each step waits for the previous runs to finish plus ~1.5 s so viewers can read the caption. Whole demo ≈ 2–3 minutes.
+Pacing: each recorded reply waits a bounded fraction of its real latency, and each step waits for the previous runs to finish plus 2.5 s so viewers can read the caption. Whole demo ≈ 1.5 minutes; `INKWELL_DEMO_PACE` scales it (1.5 ≈ 2¼ minutes).
 
 ## Guide (own notebook, first time after "Try it yourself")
 

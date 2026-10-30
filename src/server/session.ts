@@ -2,17 +2,24 @@ import { isIP } from "node:net";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context, MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import type { Actor } from "../shared/types.ts";
+import type { Actor, NotebookKind } from "../shared/types.ts";
 import { newId, nowIso, touchSession, type Db } from "./db.ts";
 import { seedWorkspace } from "./seed.ts";
+import { ensureDemoWorkspace } from "./demo/notebook.ts";
 import type { PageStore } from "./pages.ts";
 
 export const SESSION_COOKIE = "inkwell_sid";
 
 export interface SessionCtx {
+  /** The notebook this request is for: ownWorkspaceId, or the demo notebook when selected. */
   workspaceId: string;
   person: Actor;
   sessionId: string;
+  notebook?: NotebookKind;
+  /** The session's own notebook, whichever one the request selected. */
+  ownWorkspaceId?: string;
+  /** The session's demo notebook, once one exists (docs/DEMO-MODE.md). */
+  demoWorkspaceId?: string | null;
 }
 
 export interface AppEnv {
@@ -26,11 +33,12 @@ interface SessionRow {
   workspace_id: string;
   person_id: string;
   person_name: string;
+  demo_workspace_id: string | null;
 }
 
 const SELECT_SESSION = /* sql */ `
   SELECT s.id AS session_id, s.workspace_id AS workspace_id,
-         p.id AS person_id, p.name AS person_name
+         p.id AS person_id, p.name AS person_name, s.demo_workspace_id AS demo_workspace_id
   FROM sessions s
   JOIN people p ON p.id = s.person_id AND p.workspace_id = s.workspace_id
   WHERE s.id = ?
@@ -45,8 +53,19 @@ export function getSession(db: Db, sessionId: string): SessionCtx | null {
     workspaceId: row.workspace_id,
     person: { kind: "person", id: row.person_id, name: row.person_name },
     sessionId: row.session_id,
+    notebook: "own",
+    ownWorkspaceId: row.workspace_id,
+    demoWorkspaceId: row.demo_workspace_id,
   };
 }
+
+/** Which notebook a request asks for: header X-Inkwell-Notebook, or ?notebook= (SSE, collab, files). */
+export function requestedNotebook(header: string | null | undefined, query: string | null | undefined): NotebookKind {
+  return (header ?? query)?.trim().toLowerCase() === "demo" ? "demo" : "own";
+}
+
+/** Writes people may still make while looking at the demo notebook. */
+const DEMO_WRITES_OK = new Set(["/api/demo/start", "/api/demo/stop", "/api/key/check", "/api/presence"]);
 
 export function parseSessionCookie(cookieHeader: string | null | undefined): string | null {
   if (!cookieHeader) return null;
@@ -104,6 +123,9 @@ export function createWorkspaceSession(
     workspaceId,
     person: { kind: "person", id: personId, name },
     sessionId,
+    notebook: "own",
+    ownWorkspaceId: workspaceId,
+    demoWorkspaceId: null,
   };
   seedWorkspace(deps, workspaceId, ctx.person);
   return ctx;
@@ -186,6 +208,14 @@ export function createSessionMiddleware(deps: {
         maxAge: 60 * 60 * 24 * 365,
         secure: isHttps(c),
       });
+    }
+    if (requestedNotebook(c.req.header("x-inkwell-notebook"), c.req.query("notebook")) === "demo") {
+      const demoWorkspaceId = ensureDemoWorkspace(deps, ctx);
+      ctx = { ...ctx, workspaceId: demoWorkspaceId, notebook: "demo", demoWorkspaceId };
+      // Only the demo runner writes to the demo notebook.
+      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !DEMO_WRITES_OK.has(c.req.path)) {
+        return c.json({ error: "This is the recorded demo, so it can't be changed.", code: "demo_read_only" }, 403);
+      }
     }
     c.set("ctx", ctx);
     await next();

@@ -160,7 +160,7 @@ export interface DemoStep {
   /** One plain sentence shown to the viewer. */
   caption: string;
   /** Provenance chip for the Meta model this step shows off. */
-  model?: "muse-spark" | "muse-voice" | "sam-3.1+muse-spark" | "muse-image";
+  model?: "muse-wonder" | "muse-spark" | "muse-voice" | "sam-3.1+muse-wonder" | "sam-3.1+muse-spark" | "muse-image";
 }
 
 export interface DemoScenario {

@@ -1,4 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { defaultTextModel } from "../meta-access.ts";
 
 export const MISSING_META_KEY = "The Meta API key isn't configured. Set META_API_KEY to let the agents work.";
 
@@ -28,5 +29,5 @@ export function createMetaModel(options: {
     apiKey,
     fetch: options.fetch,
     transformRequestBody: metaRequestBody,
-  }).chatModel(options.model ?? process.env.META_TEXT_MODEL ?? "muse-spark-1.3");
+  }).chatModel(options.model ?? defaultTextModel());
 }

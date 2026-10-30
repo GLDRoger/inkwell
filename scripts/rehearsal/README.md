@@ -29,6 +29,7 @@ META_BASE_URL=http://127.0.0.1:8799/v1 META_API_KEY=rehearsal npm run dev:server
 | `POST /v1/asr/transcribe` | Checks for the multipart `request` and WAV `audio` parts, then returns `{ transcript, turns }` with a fixed transcript: "Ask Wren to draft a packing checklist for the Lisbon trip." |
 | `POST /v1/images/generations` | Returns a procedurally drawn parchment PNG (640×400) as `b64_json`. |
 | `POST /v1/responses` (SAM 3.1) | Streams `response.output_text.delta` events with native `<\|box;…\|>` tokens sized to the uploaded image, then `response.completed`. |
+| `GET /v1/models` | Backs `POST /api/key/check`. Any bearer key passes, except one starting `invalid`, which gets 401 (to rehearse the "key not accepted" path). |
 
 Like the real API, it returns 401 without a bearer token. It returns 400 for `max_tokens`, `stop`, `n`, `logprobs` or a `tool_choice` other than `"auto"`. Each request is logged as `[fake-meta] POST /v1/... model=... agent=Scout step=3 -> tool read_page`.
 
@@ -46,6 +47,10 @@ Like the real API, it returns 401 without a bearer token. It returns 400 for `ma
 | anything else | search, read, answer from the page with links |
 
 It finds pages with `search_pages` on up to three keywords from the message, then falls back to `list_pages` or the page the person has open. If a tool schema asks for a page `version`, it passes the version from its latest read or write.
+
+## Visitor keys and the demo
+
+The rehearsal server has its own placeholder key, so `metaConnected` is true. A visitor key typed into the key dialog is sent as `X-Meta-Key` and also works against the fake. The recorded demo ("Watch it work") replays the committed cassette in `src/server/demo/cassettes/` and calls no API at all; `node scripts/demo/record.mjs --fake` records a cassette from the fake instead (see `docs/DEMO-MODE.md`).
 
 ## Test
 

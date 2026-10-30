@@ -5,6 +5,7 @@ import { createEventBus, type EventBus } from "./events.ts";
 import { createPageStore, type PageStore } from "./pages.ts";
 import { createCollab, type CollabService } from "./collab.ts";
 import { upgradeSeedAgents } from "./seed.ts";
+import { DemoPlayer, type DemoPlayerOptions } from "./demo/player.ts";
 
 export interface Services {
   handle: DatabaseHandle;
@@ -15,6 +16,7 @@ export interface Services {
   pages: PageStore;
   collab: CollabService;
   runtime: AgentRuntime;
+  demo: DemoPlayer;
   close: () => Promise<void>;
 }
 
@@ -22,7 +24,7 @@ export interface Services {
  * Composition root. The agent runtime should use the same Services instance
  * as the HTTP server (via main.ts) so live documents and events are shared.
  */
-export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions = {}): Services {
+export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions = {}, demoOptions: DemoPlayerOptions = {}): Services {
   const handle = openDatabase(dataDir);
   const bus = createEventBus();
   const pages = createPageStore({ db: handle.db, bus });
@@ -38,13 +40,16 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
     pages,
     collab,
     runtime,
+    demo: undefined!,
     async close() {
+      await services.demo.close();
       await stopJanitor();
       await runtime.close();
       await collab.close();
       handle.close();
     },
   };
+  services.demo = new DemoPlayer(services, demoOptions);
   const stopJanitor = startJanitor(services, { maxIdleDays: IDLE_WORKSPACE_DAYS });
   return services;
 }

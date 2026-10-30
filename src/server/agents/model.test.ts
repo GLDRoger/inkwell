@@ -25,7 +25,7 @@ describe("Meta provider wire contract", () => {
     expect(await streamText(options).text).toBe("OK");
     expect((await generateText(options)).text).toBe("OK");
     for (const body of captured) {
-      expect(body).toMatchObject({ model: "muse-spark-1.3", max_completion_tokens: 4096, tool_choice: "auto", reasoning_effort: "low" });
+      expect(body).toMatchObject({ model: "muse-wonder-1.0", max_completion_tokens: 4096, tool_choice: "auto", reasoning_effort: "low" });
       for (const key of ["max_tokens", "stop", "n", "logprobs", "top_logprobs"]) expect(body).not.toHaveProperty(key);
     }
     expect(captured[0]!.messages).toEqual([{ role: "user", content: [
