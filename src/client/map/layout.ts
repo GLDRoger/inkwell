@@ -59,9 +59,14 @@ export interface MapLayout {
   cards: Map<Id, CardBox>;
   regions: RegionBox[];
   bounds: Box;
+  /**
+   * Places worth saving: a photo's notes, just made, tidied under their
+   * heading. Once saved they're ordinary saved places (and can be moved).
+   */
+  settle: Map<Id, { x: number; y: number }>;
 }
 
-type LayoutPage = Pick<Page, "id" | "parentId" | "title" | "position" | "x" | "y">;
+type LayoutPage = Pick<Page, "id" | "parentId" | "title" | "position" | "x" | "y"> & { createdAt?: string; updatedAt?: string };
 
 const hasSavedPos = (p: LayoutPage) =>
   typeof p.x === "number" && typeof p.y === "number" && Number.isFinite(p.x) && Number.isFinite(p.y);
@@ -248,16 +253,42 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", opts
   // 1. Every page with a saved position goes there, unless that would cover a
   //    card already placed: then it slides out the shortest way. Positions saved
   //    for smaller cards, or photo imports of crowded notes, never stack.
+  //    An area made after another (a photo's notes, all at once) moves as one
+  //    to keep a corridor from the older one, rather than spilling in beside
+  //    it: its cards stay together under its name.
   const pinnedGroups = new Set<string>();
-  for (const g of groups) {
-    for (const { page, depth } of g.entries) {
-      if (!hasPos(page)) continue;
-      pinnedGroups.add(g.id);
-      const box: CardBox = { id: page.id, x: page.x!, y: page.y!, w: CARD_W, h: CARD_H, depth, regionId: g.id, pinned: true };
-      separate(box, placed);
-      cards.set(page.id, box);
-      placed.push(box);
+  const frames: { box: Box; newest: number }[] = [];
+  const settle = new Map<Id, { x: number; y: number }>();
+  const pinned = groups
+    .map((g) => ({ g, mine: g.entries.filter(({ page }) => hasPos(page)) }))
+    .filter((x) => x.mine.length)
+    .map((x) => ({ ...x, oldest: Math.min(...x.mine.map(({ page }) => bornAt(page))), newest: Math.max(...x.mine.map(({ page }) => bornAt(page))) }))
+    .sort((a, b) => (a.oldest === b.oldest || Number.isNaN(a.oldest - b.oldest) ? 0 : a.oldest - b.oldest));
+  for (const { g, mine, oldest, newest } of pinned) {
+    pinnedGroups.add(g.id);
+    const boxes: CardBox[] = mine.map(({ page, depth }) => ({ id: page.id, x: page.x!, y: page.y!, w: CARD_W, h: CARD_H, depth, regionId: g.id, pinned: true }));
+    const batch = isFreshBatch(g, groups);
+    if (batch) tidyUnderRoot(boxes);
+    for (let i = 1; i < boxes.length; i++) separate(boxes[i], boxes.slice(0, i));
+    const older = frames.filter((f) => f.newest < oldest).map((f) => f.box);
+    if (older.length) {
+      const frame = regionAround(boxes);
+      const moved = { ...frame };
+      separate(moved, older, REGION_GAP);
+      const dx = moved.x - frame.x;
+      const dy = moved.y - frame.y;
+      for (const b of boxes) {
+        b.x += dx;
+        b.y += dy;
+      }
     }
+    for (const box of boxes) {
+      separate(box, placed);
+      cards.set(box.id, box);
+      placed.push(box);
+      if (batch) settle.set(box.id, { x: Math.round(box.x), y: Math.round(box.y) });
+    }
+    frames.push({ box: regionAround(boxes), newest });
   }
 
   // 2. Unplaced pages in hand-arranged regions take the first free cell near their siblings.
@@ -330,8 +361,64 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", opts
   trimOverlaps(regions, cards);
 
   const bounds = unionBox(regions) ?? { x: 0, y: 0, w: 0, h: 0 };
-  return { cards, regions, bounds };
+  return { cards, regions, bounds, settle };
 }
+
+/** Pages made within this long of each other were made together (one photo import). */
+const BATCH_MS = 5000;
+
+/**
+ * A photo's notes, just made: an area whose pages all have saved places,
+ * were made together, apart from every other area's, and haven't been
+ * touched since. Their places mirror the photo's, which leaves wide holes.
+ */
+function isFreshBatch(g: Group, groups: Group[]): boolean {
+  if (g.id === LOOSE_REGION_ID || g.entries.length < 3) return false;
+  const ps = g.entries.map((e) => e.page);
+  if (!ps.every((p) => hasSavedPos(p) && p.createdAt && p.updatedAt === p.createdAt)) return false;
+  const born = ps.map(bornAt);
+  if (born.some(Number.isNaN)) return false;
+  const lo = Math.min(...born);
+  const hi = Math.max(...born);
+  if (hi - lo > BATCH_MS) return false;
+  for (const o of groups) {
+    if (o === g) continue;
+    for (const { page } of o.entries) {
+      const t = bornAt(page);
+      if (t >= lo - BATCH_MS && t <= hi + BATCH_MS) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * The notes in rows under their heading page, in the photo's reading order
+ * (rows top to bottom, left to right in a row), a gap apart.
+ */
+export function tidyUnderRoot(boxes: CardBox[]) {
+  const root = boxes.find((b) => b.depth === 0);
+  if (!root) return;
+  const rest = boxes.filter((b) => b !== root).sort((a, b) => a.y - b.y || a.x - b.x);
+  const rows: CardBox[][] = [];
+  for (const b of rest) {
+    const row = rows.at(-1);
+    if (row && b.y - row[0].y < CARD_H / 2) row.push(b);
+    else rows.push([b]);
+  }
+  let r = 0;
+  for (const row of rows) {
+    row.sort((a, b) => a.x - b.x);
+    for (let i = 0; i < row.length; i++) {
+      if (i > 0 && i % MAX_SECTION_COLS === 0) r++;
+      row[i].x = root.x + (i % MAX_SECTION_COLS) * (CARD_W + GAP);
+      row[i].y = root.y + (r + 1) * (CARD_H + GAP);
+    }
+    r++;
+  }
+}
+
+/** When a page was made, ms (NaN when unknown: such pages never move as a group). */
+const bornAt = (p: LayoutPage) => (p.createdAt ? Date.parse(p.createdAt) : NaN);
 
 /**
  * Nudge `box` until it covers none of `placed` (with half a gap between),

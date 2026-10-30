@@ -64,6 +64,38 @@ describe("far-out card titles", () => {
     expect(f.fit).toBeCloseTo(10 / 11);
   });
 
+  it("lets the icon take a line of its own rather than shrink the first word", async () => {
+    const { farTitle } = await import("./util");
+    expect(farTitle("Fundraising notes", { icon: true }).fit).toBeCloseTo(10 / 11);
+    // The icon takes room on the first line, so a title that just fits three lines without it doesn't with it.
+    expect(farTitle("Weekend in Porto with friends").text).toBe("Weekend in Porto with friends");
+    expect(farTitle("Weekend in Porto with friends", { icon: true }).text).toBe("Weekend in Porto with…");
+  });
+
+  it("ends a title that runs past three lines at a whole word", async () => {
+    const { farTitle } = await import("./util");
+    expect(farTitle("The Design of Everyday Things", { icon: true }).text).toBe("The Design of Everyday…");
+    expect(farTitle("Trip to Lisbon").text).toBe("Trip to Lisbon");
+    expect(farTitle("Startup: launch plan").text).toBe("Startup: launch plan");
+  });
+
+  it("splits an agent's 'Kind: Name' title so the name keeps its lines", async () => {
+    const { splitTitle, farTitle } = await import("./util");
+    expect(splitTitle("Plan: Fundraising notes")).toEqual({ kind: "Plan", name: "Fundraising notes" });
+    expect(splitTitle("Summary: Startup: launch plan")).toEqual({ kind: "Summary", name: "Startup: launch plan" });
+    expect(splitTitle("Packing checklist: Trip to Lisbon")).toEqual({ kind: "Packing checklist", name: "Trip to Lisbon" });
+    expect(farTitle(splitTitle("Plan: Fundraising notes").name).text).toBe("Fundraising notes");
+  });
+
+  it("leaves other titles with a colon whole", async () => {
+    const { splitTitle } = await import("./util");
+    expect(splitTitle("Startup: launch plan")).toEqual({ kind: null, name: "Startup: launch plan" });
+    expect(splitTitle("Standup at 10:30")).toEqual({ kind: null, name: "Standup at 10:30" });
+    expect(splitTitle("Notes from a very long meeting about things: Q3")).toEqual({ kind: null, name: "Notes from a very long meeting about things: Q3" });
+    expect(splitTitle("Plan:")).toEqual({ kind: null, name: "Plan:" });
+    expect(splitTitle("Weeknight dinners")).toEqual({ kind: null, name: "Weeknight dinners" });
+  });
+
   it("marks a page with no icon by its first letter", async () => {
     const { initial } = await import("./util");
     expect(initial("“Bread” notes")).toBe("B");

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CARD_H, CARD_W, layoutMap, LOOSE_REGION_ID, overlaps } from "./layout";
 
-type P = { id: string; parentId: string | null; title: string; position: string; x: number | null; y: number | null };
+type P = { id: string; parentId: string | null; title: string; position: string; x: number | null; y: number | null; createdAt?: string; updatedAt?: string };
 const page = (id: string, parentId: string | null = null, extra: Partial<P> = {}): P => ({
   id,
   parentId,
@@ -164,5 +164,80 @@ describe("layoutMap", () => {
     expect(b.head).toBeGreaterThanOrEqual(72);
     // Cards stay exactly where they were saved.
     expect(l.cards.get("b")).toMatchObject({ x: 0, y: 700 });
+  });
+
+  it("moves a newer arranged area as one, clear of an older one, keeping its own shape", () => {
+    const old = "2026-10-01T00:00:00Z";
+    const now = "2026-10-30T00:00:00Z";
+    const pages: P[] = [
+      page("rec", null, { x: 820, y: 300, createdAt: old }),
+      page("rec1", "rec", { x: 1180, y: 300, createdAt: old }),
+      page("rec2", "rec", { x: 1180, y: 600, createdAt: old }),
+      // A photo import dropped just right of the recipes, its notes below its heading.
+      page("photo", null, { x: 1500, y: -400, createdAt: now }),
+      page("n1", "photo", { x: 1500, y: 100, createdAt: now }),
+      page("n2", "photo", { x: 1900, y: 120, createdAt: now }),
+      page("n3", "photo", { x: 1560, y: 500, createdAt: now }),
+    ];
+    const l = layoutMap(pages);
+    const rec = l.regions.find((r) => r.id === "rec")!;
+    const photo = l.regions.find((r) => r.id === "photo")!;
+    expect(overlaps(rec, photo)).toBe(false);
+    // Older areas stay put; the photo's cards keep their arrangement.
+    expect(l.cards.get("rec1")!.x).toBe(1180);
+    const p0 = l.cards.get("photo")!;
+    const n1 = l.cards.get("n1")!;
+    const n2 = l.cards.get("n2")!;
+    expect(n1.x - p0.x).toBe(0);
+    expect(n2.x - n1.x).toBe(400);
+    expect(n1.y - p0.y).toBe(500);
+  });
+
+  it("never moves areas made together, or pages with no birth date", () => {
+    const t = "2026-10-01T00:00:00Z";
+    const a = layoutMap([page("a", null, { x: 0, y: 0, createdAt: t }), page("a1", "a", { x: 0, y: 300, createdAt: t }), page("b", null, { x: 500, y: 0, createdAt: t }), page("b1", "b", { x: 500, y: 300, createdAt: t })]);
+    expect(a.cards.get("b")!.x).toBe(500);
+    const n = layoutMap([page("a", null, { x: 0, y: 0 }), page("a1", "a", { x: 0, y: 300 }), page("b", null, { x: 500, y: 0 }), page("b1", "b", { x: 500, y: 300 })]);
+    expect(n.cards.get("b")!.x).toBe(500);
+  });
+
+  it("tidies a photo's notes, just made, into rows under their heading, and says to save them", () => {
+    const old = "2026-10-01T00:00:00Z";
+    const t = "2026-10-30T09:00:00.000Z";
+    const t2 = "2026-10-30T09:00:00.040Z";
+    const at = (createdAt: string) => ({ createdAt, updatedAt: createdAt });
+    const pages: P[] = [
+      page("rec", null, { x: 0, y: 0, ...at(old) }),
+      page("rec1", "rec", { x: 400, y: 0, ...at(old) }),
+      page("photo", null, { x: 2000, y: -400, ...at(t) }),
+      // As on the photo: two up top, far apart; one lower down, left.
+      page("n2", "photo", { x: 2900, y: 60, ...at(t2) }),
+      page("n1", "photo", { x: 2050, y: 0, ...at(t2) }),
+      page("n3", "photo", { x: 2200, y: 900, ...at(t2) }),
+    ];
+    const l = layoutMap(pages);
+    const root = l.cards.get("photo")!;
+    const [n1, n2, n3] = ["n1", "n2", "n3"].map((id) => l.cards.get(id)!);
+    expect(n1).toMatchObject({ x: root.x, y: root.y + CARD_H + 48 });
+    expect(n2).toMatchObject({ x: root.x + CARD_W + 48, y: n1.y });
+    expect(n3).toMatchObject({ x: root.x, y: n1.y + CARD_H + 48 });
+    expect([...l.settle.keys()].sort()).toEqual(["n1", "n2", "n3", "photo"]);
+    expect(l.settle.get("n2")).toEqual({ x: n2.x, y: n2.y });
+    // Saved (touched since), they stay exactly there.
+    const saved = pages.map((p) => (l.settle.has(p.id) ? { ...p, ...l.settle.get(p.id)!, updatedAt: "2026-10-30T09:00:03Z" } : p));
+    const again = layoutMap(saved);
+    expect(again.settle.size).toBe(0);
+    for (const id of ["photo", "n1", "n2", "n3"]) expect(again.cards.get(id)).toMatchObject(l.cards.get(id)!);
+  });
+
+  it("leaves areas made together with others (the demo notebook) or touched since as they are", () => {
+    const t = "2026-10-01T00:00:00Z";
+    const at = { createdAt: t, updatedAt: t };
+    const l = layoutMap([
+      page("a", null, { x: 0, y: 0, ...at }), page("a1", "a", { x: 0, y: 900, ...at }), page("a2", "a", { x: 900, y: 900, ...at }),
+      page("b", null, { x: 2000, y: 0, ...at }), page("b1", "b", { x: 2000, y: 400, ...at }),
+    ]);
+    expect(l.settle.size).toBe(0);
+    expect(l.cards.get("a2")).toMatchObject({ x: 900, y: 900 });
   });
 });

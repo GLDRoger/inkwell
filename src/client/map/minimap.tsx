@@ -125,7 +125,8 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
       draw(cam, vw, vh);
       const moved = last && (cam.x !== last.x || cam.y !== last.y || cam.s !== last.s);
       last = { ...cam };
-      if (!moved) return;
+      // A refit for the diary or a resize isn't someone moving the map: don't wake over the cards.
+      if (!moved || camera.hushed) return;
       dock.current?.setAttribute("data-awake", "");
       clearTimeout(sleep.current);
       sleep.current = setTimeout(() => dock.current?.removeAttribute("data-awake"), AWAKE_MS);

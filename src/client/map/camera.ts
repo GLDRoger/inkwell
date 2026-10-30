@@ -97,6 +97,17 @@ export class CameraController {
   private dirty = true;
   private listeners = new Set<FrameListener>();
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
+  private quietUntil = 0;
+  /**
+   * The next `ms` of movement is the map keeping itself fitted (the diary
+   * opening, the window resizing), not someone moving it: the minimap stays asleep.
+   */
+  hush(ms = 1200) {
+    this.quietUntil = (typeof performance !== "undefined" ? performance.now() : Date.now()) + ms;
+  }
+  get hushed() {
+    return (typeof performance !== "undefined" ? performance.now() : Date.now()) < this.quietUntil;
+  }
   /** Called a moment after the camera stops moving (save it, recull at leisure). */
   onSettle: ((cam: Cam) => void) | null = null;
 

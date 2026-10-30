@@ -163,7 +163,9 @@
     visibility var(--dur);
 }
 
-.greeting[data-away] {
+.greeting[data-away],
+.root[data-presenting] .greeting,
+.root[data-blank] .greeting {
   opacity: 0;
   visibility: hidden;
 }
@@ -237,7 +239,8 @@
 .card[data-detail="dots"] {
   display: grid;
   place-items: center;
-  padding: clamp(3px, calc(var(--s) * 18px), 14px);
+  /* A little more room at the sides than the title's line needs, so a wide word never touches the edge. */
+  padding: clamp(2px, calc(var(--s) * 14px), 12px) clamp(4px, calc(var(--s) * 20px), 16px);
   border-radius: clamp(3px, calc(var(--s) * 30px), 12px);
   box-shadow:
     0 0 0 1px light-dark(rgb(22 21 19 / 0.035), rgb(255 255 255 / 0.05)),
@@ -265,7 +268,7 @@
   --rest-ink: var(--ink);
   max-width: 100%;
   font-weight: 550;
-  font-size: clamp(7.5px, calc(var(--s) * 48px * var(--fit, 1)), 15px);
+  font-size: clamp(7.5px, calc(var(--s) * 46px * var(--fit, 1)), 15px);
   line-height: 1.2;
   letter-spacing: -0.012em;
   text-align: center;
@@ -278,6 +281,48 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* "Plan: Fundraising notes" far out: a small "Plan" line above the name, which keeps its three lines. */
+.kindStack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.chipKind {
+  max-width: 100%;
+  font-weight: 500;
+  font-size: clamp(7px, calc(var(--s) * 38px * var(--kfit, 1)), 11.5px);
+  line-height: 1.25;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kind,
+.kindNear {
+  flex: none;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kind {
+  margin-bottom: -3px;
+}
+
+.kindNear {
+  font-size: 13px;
+  margin-bottom: -4px;
 }
 
 /* Mid: what the page holds. */
@@ -297,6 +342,8 @@
 
 .cover {
   flex: none;
+  /* Edge to edge: out through the card's side padding (the base style caps images at 100%). */
+  max-width: none;
   width: calc(100% + 40px);
   height: 34%;
   margin: -18px -20px 6px;

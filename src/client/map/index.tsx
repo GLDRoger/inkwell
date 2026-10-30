@@ -360,11 +360,15 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // Until someone moves the map, keep it fitted as the window changes, and as
   // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
-    if (placed.current && !camera.touched && size.w) camera.set(fitAll());
+    if (placed.current && !camera.touched && size.w) {
+      camera.hush();
+      camera.set(fitAll());
+    }
   }, [size, camera, fitAll]);
   useEffect(() => {
     const refit = (animate: boolean) => {
       if (!placed.current || camera.touched) return;
+      camera.hush();
       if (animate) {
         camera.flyTo(fitAll());
         camera.touched = false;
@@ -629,6 +633,35 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     for (const [pid, pos] of updates)
       api.updatePage(pid, pos).catch((err) => console.error("[map] couldn't save the card's place", err));
   };
+  // A photo's notes arrive placed as on the photo, holes and all; the layout
+  // tidies them under their heading. Once they've all arrived, save those
+  // places, so from then on they're ordinary cards that stay where moved.
+  const settled = useRef(new Set<Id>());
+  useEffect(() => {
+    if (fixture) return;
+    const todo = [...layout.settle].filter(([id]) => !settled.current.has(id));
+    if (!todo.length) return;
+    const t = setTimeout(() => {
+      const at = new Map(todo);
+      for (const id of at.keys()) settled.current.add(id);
+      // Touched now: the layout stops tidying them, and takes these places as saved.
+      const stamp = new Date().toISOString();
+      const patchPage = (p: Page) => (at.has(p.id) ? { ...p, ...at.get(p.id)!, updatedAt: stamp } : p);
+      setState((st) => {
+        if (!st) return st;
+        const next = new Map(st.pages);
+        for (const id of at.keys()) {
+          const p = next.get(id);
+          if (p) next.set(id, patchPage(p));
+        }
+        return { ...st, pages: next };
+      });
+      client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, pages: old.pages.map(patchPage) } : old));
+      for (const [id, pos] of at) api.updatePage(id, pos).catch((err) => console.error("[map] couldn't save the card's place", err));
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [layout, fixture, client]);
+
   // One click brings a card closer; a second click on it, or a double-click, opens it.
   const clicks = useMemo(
     () => new ClickIntent((id) => handlers.current.onActivate(id), (id) => handlers.current.onOpen(id)),
@@ -769,6 +802,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       data-detail={detail}
       data-compact={compact || undefined}
       data-blank={blank || undefined}
+      data-presenting={presenting || undefined}
       tabIndex={0}
       role="application"
       aria-roledescription="map"

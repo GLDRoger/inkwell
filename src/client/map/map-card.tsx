@@ -6,7 +6,7 @@ import type { Page } from "@shared/types";
 import type { CameraController } from "./camera";
 import type { CardBox } from "./layout";
 import type { Detail } from "./lod";
-import { ago, farTitle, initial, titleOf } from "./util";
+import { ago, farTitle, initial, splitTitle, titleOf } from "./util";
 import css from "./map.module.css";
 
 interface Props {
@@ -75,8 +75,13 @@ export const MapCard = memo(function MapCard(p: Props) {
     "--h": box.h,
     "--d": `${p.inkAt}ms`,
   } as CSSProperties & Record<string, string | number>;
-  const far = detail === "rooms" ? farTitle(title) : null;
+  // "Plan: Fundraising notes" reads as a small "Plan" above the name, so the name keeps its lines.
+  const { kind, name } = splitTitle(title);
+  const far = detail === "rooms" ? farTitle(name, { icon: !kind && !!page.icon }) : null;
   if (far && far.fit !== 1) style["--fit"] = far.fit;
+  // Far out the kind's line is short: a long kind ("Packing checklist") leaves its icon out to keep its words.
+  const kindIcon = !!page.icon && !!kind && [...kind].length <= 9;
+  if (far && kind) style["--kfit"] = Math.max(0.7, Math.min(1, 13 / ([...kind].length + (kindIcon ? 2.5 : 0))));
   if (p.writing) style["--who"] = p.writing;
   if (p.touchedInk) style["--touched"] = p.touchedInk;
   // Fresh ink dries on its own clock, even if the card remounts mid-way.
@@ -89,6 +94,8 @@ export const MapCard = memo(function MapCard(p: Props) {
   const by = page.updatedBy;
   const who = p.you ? "you" : by.name;
   const when = p.seeded ? "when your notebook was made" : ago(page.updatedAt, p.now);
+  // A mid card's byline has one short line.
+  const whenShort = p.seeded ? "from the start" : when;
   const label = `${title}${p.writing ? ", being written now" : ""}. Last edited by ${who} ${when}.`;
 
   return (
@@ -174,27 +181,46 @@ export const MapCard = memo(function MapCard(p: Props) {
     >
       {detail === "dots" && (page.icon ? <span className={css.dotIcon}>{page.icon}</span> : <span className={css.dotLetter} aria-hidden>{initial(title)}</span>)}
 
-      {detail === "rooms" && (
-        <span className={css.chipTitle}>
-          {page.icon && <span className={css.icon}>{page.icon}</span>}
-          {far?.text ?? title}
-        </span>
-      )}
+      {detail === "rooms" &&
+        (kind ? (
+          <span className={css.kindStack}>
+            <span className={css.chipKind}>
+              {kindIcon && <span className={css.icon}>{page.icon}</span>}
+              {kind}
+            </span>
+            <span className={css.chipTitle}>{far?.text ?? name}</span>
+          </span>
+        ) : (
+          <span className={css.chipTitle}>
+            {/* The icon may sit on a line of its own above a long first word. */}
+            {page.icon && <span className={css.icon}>{page.icon}</span>}
+            {page.icon && <wbr />}
+            {far?.text ?? title}
+          </span>
+        ))}
 
       {detail === "mid" && (
         <div className={css.mid}>
           {page.coverUrl && <img className={css.cover} src={page.coverUrl} alt="" draggable={false} />}
           {painting && !page.coverUrl && <span className={css.coverWash} aria-hidden />}
+          {kind && (
+            <span className={css.kind}>
+              {page.icon && <span className={css.icon}>{page.icon}</span>}
+              {kind}
+            </span>
+          )}
           <h3 className={css.midTitle}>
-            {page.icon && <span className={css.icon}>{page.icon}</span>}
-            {title}
+            {page.icon && !kind && <span className={css.icon}>{page.icon}</span>}
+            {kind ? <span className={css.srOnly}>{kind}: </span> : null}
+            {name}
           </h3>
           {page.excerpt.trim() ? (
             <p className={css.excerpt}>{paragraphs(page.excerpt).join(" ")}</p>
           ) : (
             <p className={css.empty}>Nothing written here yet</p>
           )}
-          <Touched by={by} who={who} when={when} short={p.seeded} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
+          {/* A mid card's byline has room for who and when, not "Last edited by". */}
+          <Touched by={by} who={who} when={whenShort} short writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
         </div>
       )}
 
@@ -229,9 +255,16 @@ export const MapCard = memo(function MapCard(p: Props) {
           </div>
           {page.coverUrl && <img className={css.coverNear} src={page.coverUrl} alt="" draggable={false} />}
           {painting && !page.coverUrl && <span className={css.coverWashNear} aria-hidden />}
+          {kind && (
+            <span className={css.kindNear}>
+              {page.icon && <span className={css.icon}>{page.icon}</span>}
+              {kind}
+            </span>
+          )}
           <h2 className={css.nearTitle}>
-            {page.icon && <span className={css.icon}>{page.icon}</span>}
-            {title}
+            {page.icon && !kind && <span className={css.icon}>{page.icon}</span>}
+            {kind ? <span className={css.srOnly}>{kind}: </span> : null}
+            {name}
           </h2>
           <Touched by={by} who={who} when={when} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
           <div className={css.body} data-scrolls>

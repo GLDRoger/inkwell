@@ -48,21 +48,62 @@ export function isTypingTarget(t: EventTarget | null): boolean {
 
 /** About how many characters fit on a line of a far-out card's title (see .chipTitle). */
 export const TITLE_LINE_CHARS = 10;
+/** Lines a far-out card's title may take. */
+export const TITLE_LINES = 3;
+/** Room an icon (and the gap after it) takes at the start of a title's first line, in characters. */
+const ICON_CHARS = 2.5;
+
+/**
+ * A title in two parts when it reads "Kind: Name", the way agents name what
+ * they make ("Plan: Fundraising notes", "Summary: Startup: launch plan"): the
+ * kind is a short lead-in (at most three words) and the name starts with a
+ * capital or a digit. Anything else is all name ("Startup: launch plan").
+ */
+export function splitTitle(title: string): { kind: string | null; name: string } {
+  const m = title.match(/^([^:]{1,24}):\s+(\S.*)$/u);
+  if (!m) return { kind: null, name: title };
+  const kind = m[1].trim();
+  const name = m[2].trim();
+  if (!kind || kind.split(/\s+/).length > 3 || !/^[\p{Lu}\p{N}\p{Emoji_Presentation}"“'‘(]/u.test(name)) return { kind: null, name: title };
+  return { kind, name };
+}
 
 /**
  * A far-out card's title. It's set so about TITLE_LINE_CHARS characters fit a
  * line at any zoom, and words are never broken or hyphenated: a long first
- * word shrinks the type a little (to 0.8) so it fits; a long later word ends
- * the title there with an ellipsis instead ("Lisbon food &…").
+ * word shrinks the type a little (to 0.8) so it fits, and the icon goes on a
+ * line of its own when it doesn't fit beside it; a long later word, or a title
+ * longer than TITLE_LINES lines, ends at a whole word with an ellipsis instead
+ * ("Lisbon food &…").
  */
-export function farTitle(title: string): { text: string; fit: number } {
+export function farTitle(title: string, opts: { icon?: boolean; lines?: number } = {}): { text: string; fit: number } {
   const words = title.split(/\s+/).filter(Boolean);
   const len = (w: string) => [...w].length;
+  const lead = opts.icon ? ICON_CHARS : 0;
   const fit = Math.max(0.8, Math.min(1, TITLE_LINE_CHARS / Math.max(1, len(words[0] ?? ""))));
   const room = TITLE_LINE_CHARS / fit;
-  const cut = words.findIndex((w, i) => i > 0 && len(w) > room + 0.5);
-  if (cut === -1) return { text: title, fit };
-  return { text: `${words.slice(0, cut).join(" ")}…`, fit };
+  const maxLines = opts.lines ?? TITLE_LINES;
+  // Greedy wrap, as the browser would, until a word won't fit or the lines run out.
+  let line = 1;
+  let used = lead;
+  let kept = 0;
+  for (const [i, w] of words.entries()) {
+    const n = len(w);
+    if (i > 0 && n > room + 0.5) break;
+    // The icon's room already counts the gap after it.
+    const next = used ? used + (i === 0 ? 0 : 1) + n : n;
+    if (next <= room + 0.5 || (i === 0 && !lead)) used = next;
+    else {
+      if (line === maxLines) break;
+      line++;
+      used = n;
+    }
+    kept = i + 1;
+  }
+  if (kept === words.length) return { text: title, fit };
+  // Room for the ellipsis on the last line: drop one more word if it would overflow.
+  if (kept > 1 && used + 1 > room + 0.5) kept--;
+  return { text: `${words.slice(0, Math.max(1, kept)).join(" ")}…`, fit };
 }
 
 /** A page with no icon is marked, far out, by its first letter. */
