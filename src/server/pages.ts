@@ -16,7 +16,12 @@ import {
   extractPageLinkIds,
   markdownToPlainText,
   markdownToYDocBytes,
+  yDocBytesToMarkdown,
 } from "./editor-schema.ts";
+
+function safeCanonical(ydoc: Uint8Array): string | null {
+  try { return yDocBytesToMarkdown(ydoc); } catch { return null; }
+}
 
 export function isValidPosition(position: string): boolean {
   if (!position || position.length > 128 || !/^[A-Za-z0-9]+$/.test(position)) return false;
@@ -356,10 +361,21 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
     if (body.ydoc.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("This page is over the 4 MB size limit. Split it into smaller pages.", 413);
     const existing = getPageRow(workspaceId, pageId);
     if (!existing) return null;
-    const markdownChanged = existing.markdown !== body.markdown;
+    // Stored markdown can be the raw text an agent wrote, which differs from the
+    // editor's canonical form (a trailing newline, list markers). Compare content
+    // against the canonical form of the stored document, so a client merely
+    // opening the page (and normalising it) isn't credited with an edit.
+    const markdownChanged = existing.markdown !== body.markdown
+      && !(existing.ydoc && safeCanonical(existing.ydoc) === body.markdown);
     const ydocChanged =
       !existing.ydoc || !Buffer.from(existing.ydoc).equals(body.ydoc);
     if (!markdownChanged && !ydocChanged) return rowToPage(existing);
+    if (!markdownChanged) {
+      // Same content, new bookkeeping (e.g. editor position stores): keep it quietly.
+      db.prepare("UPDATE pages SET ydoc = ?, markdown = ? WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL")
+        .run(body.ydoc, body.markdown, workspaceId, pageId);
+      return rowToPage({ ...existing, ydoc: body.ydoc, markdown: body.markdown });
+    }
 
     const next: PageRow = {
       ...existing,
