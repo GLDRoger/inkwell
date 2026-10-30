@@ -107,6 +107,8 @@ export function createAgentTools(ctx: ToolContext) {
     },
   });
   const id = z.string().min(1).max(200);
+  /** Muse Wonder sometimes sends the string "null" (or "") for "no parent". */
+  const parentRef = z.preprocess((v) => (v === "null" || v === "" ? null : v), id.nullable());
   const markdown = z.string().max(200_000);
   const version = z.string().min(1).max(100)
     .describe("The version from your latest read_page of this page, or from your last write to it.");
@@ -158,7 +160,7 @@ export function createAgentTools(ctx: ToolContext) {
       return { text: JSON.stringify(results.map(({ page, snippet }) => ({ id: page.id, title: page.title, link: pageLink(page.title, page.id), snippet }))), summary: `Searched for ${query}` };
     }),
     create_page: define("create_page", "Create a page, optionally nested under a parent. Give it one fitting emoji as its icon (it marks the page on the map). For a long page, create it with an outline, then add each section with append_to_page.",
-      z.object({ title: z.string().min(1).max(500), icon: z.string().max(16).optional(), markdown: markdown.optional(), parentId: id.nullable().optional() }),
+      z.object({ title: z.string().min(1).max(500), icon: z.string().max(16).optional(), markdown: markdown.optional(), parentId: parentRef.optional() }),
       async ({ title, icon, markdown: body, parentId }) => {
         check();
         const parent = parentId ? page(parentId) : null;
@@ -202,7 +204,7 @@ export function createAgentTools(ctx: ToolContext) {
         return { text: `Renamed to ${pageLink(title, pageId)}.`, summary: `Renamed ${title}`, pageId };
       })),
     move_page: define("move_page", "Move a page under a parent (parentId null = notebook root).",
-      z.object({ pageId: id, parentId: id.nullable() }), ({ pageId, parentId }) => write(pageId, async () => {
+      z.object({ pageId: id, parentId: parentRef }), ({ pageId, parentId }) => write(pageId, async () => {
         if (parentId) page(parentId);
         s.pages.updatePage(ws, actor, pageId, { parentId });
         const moved = page(pageId);

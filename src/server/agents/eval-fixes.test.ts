@@ -213,3 +213,26 @@ describe("first-byte watchdog", () => {
     await expect(pending).rejects.toThrow("Run stopped.");
   });
 });
+
+describe("tool arguments as Wonder sends them", () => {
+  it('reads parentId "null" as no parent (create_page and move_page)', async () => {
+    let step = 0;
+    let f!: ReturnType<typeof helpers.createFixture>;
+    let child = "";
+    const model = new MockLanguageModelV4({ doStream: async () => {
+      step++;
+      if (step === 1) return helpers.call("create_page", { title: "Job post", parentId: "null", markdown: "Hiring." });
+      if (step === 2) {
+        const parent = f.services.pages.createPage(f.ws, f.session.person, { title: "Parent" });
+        child = f.services.pages.createPage(f.ws, f.session.person, { title: "Child", parentId: parent.id }).id;
+        return helpers.call("move_page", { pageId: child, parentId: "null" });
+      }
+      return helpers.answer("Done.");
+    } });
+    f = helpers.createFixture(fixtures, { modelFactory: () => model });
+    const result = await f.start().done;
+    expect(result.run.steps.map((s) => [s.tool, s.ok])).toEqual([["create_page", true], ["move_page", true]]);
+    expect(f.services.pages.listPages(f.ws).find((p) => p.title === "Job post")?.parentId).toBeNull();
+    expect(f.services.pages.getPage(f.ws, child)?.parentId).toBeNull();
+  });
+});
