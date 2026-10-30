@@ -92,6 +92,8 @@ export interface Run {
   steps: RunStep[];
   createdAt: string;
   endedAt: string | null;
+  /** Replayed from a recorded run in the demo notebook (see docs/DEMO-MODE.md). */
+  recorded?: boolean;
 }
 
 export interface RunStep {
@@ -136,7 +138,44 @@ export type ServerEvent =
   | { type: "agent.moved"; runId: Id; agentId: Id; fromPageId: Id | null; toPageId: Id | null; action: "reading" | "writing" | "thinking" | "leaving" }
   | { type: "diary.entry"; entry: DiaryEntry }
   | { type: "diary.delta"; entryId: Id; threadId: Id; text: string }
-  | { type: "presence"; people: { id: Id; name: string; pageId: Id | null }[] };
+  | { type: "presence"; people: { id: Id; name: string; pageId: Id | null }[] }
+  /** Demo notebook only: the demo moved to its next step (docs/DEMO-MODE.md). */
+  | { type: "demo.step"; index: number; step: DemoStep; focus: { pageId?: Id; agentId?: Id; runId?: Id } }
+  | { type: "demo.ended"; reason: "finished" | "stopped" };
+
+/** Which notebook a request is for. Header X-Inkwell-Notebook; ?notebook= on SSE and collab. */
+export type NotebookKind = "own" | "demo";
+
+export interface DemoStep {
+  id: string;
+  /** One plain sentence shown to the viewer. */
+  caption: string;
+  /** Provenance chip for the Meta model this step shows off. */
+  model?: "muse-spark" | "muse-voice" | "sam-3.1+muse-spark" | "muse-image";
+}
+
+export interface DemoScenario {
+  id: string;
+  title: string;
+  steps: DemoStep[];
+  /** Where the cassette came from: the rehearsal stand-in, or Meta's real models. */
+  recordedFrom: "rehearsal" | "meta";
+}
+
+export interface DemoState {
+  playing: boolean;
+  scenario: DemoScenario | null;
+  stepIndex: number;
+}
+
+/** GET /api/me */
+export interface Me {
+  workspaceId: Id;
+  person: Actor;
+  /** The server has its own Meta key. The client is "connected" if this or a browser key is present. */
+  metaConnected: boolean;
+  demoWorkspaceId: Id | null;
+}
 
 /**
  * REST, all JSON, under /api. Session cookie "inkwell_sid" is created on first

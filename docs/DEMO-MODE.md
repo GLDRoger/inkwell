@@ -1,0 +1,72 @@
+# Demo, guide and hands-on: the contract
+
+Inkwell is a hackathon entry. Visitors (judges included) arrive knowing nothing. The flow:
+
+1. **Welcome** (exists): headline, objects, two buttons: **Watch it work** (primary) and **Try it yourself**.
+2. **Demo** — the app plays itself in a separate, throwaway *demo notebook*. Recorded model runs are replayed through the real agent runtime, so pages, footprints, live edits, photo cards and covers really happen in the app — but no model is called and no key is needed. Captions explain each moment; the camera follows the agent and the peek panel shows edits landing. Clearly labelled as recorded.
+3. **Try it yourself** — the visitor's own notebook (the existing per-visitor workspace), a short skippable guide, and an "Add your Meta API key" step. AI features use the visitor's key, kept only in their browser.
+
+Decisions (owner, 2026-10-30): peek panel on single click; demo replays recorded real runs (recorded from the rehearsal fake until a key exists, re-recorded from Muse Spark after); the API key stays in the browser and is sent per request, never stored server-side.
+
+## Notebook selection
+
+A session owns two notebooks: `own` (always) and `demo` (created on first demo start, reset on each start).
+
+| Channel | How the client picks the demo notebook |
+|---|---|
+| HTTP `/api/*` | header `X-Inkwell-Notebook: demo` (absent or `own` → own notebook) |
+| SSE | `GET /api/events?notebook=demo` |
+| Collab websocket | `/collab?notebook=demo` |
+
+The session middleware resolves `ctx.workspaceId` from this. Every existing route keeps working unchanged against whichever notebook was selected. The demo notebook is read-only for people (PATCH/POST/DELETE pages, diary POST, media POSTs → `403 {code: "demo_read_only"}`; collab connections to demo pages are read-only). Only the demo runner writes to it.
+
+## Endpoints
+
+- `GET /api/me` → `{ workspaceId, person, metaConnected, demoWorkspaceId: Id | null }`. `metaConnected` = the **server** has a key (owner's own deployment); the client treats "connected" as `metaConnected || hasBrowserKey`.
+- `POST /api/demo/start` → resets the demo notebook to a fresh seed and starts the scenario. `{ scenario: DemoScenario }`. Starting again restarts from the top.
+- `POST /api/demo/stop` → stops playback (runs cancelled, notebook kept as is). `204`.
+- `GET  /api/demo` → `{ playing: boolean; scenario: DemoScenario | null; stepIndex: number }` (for reloads mid-demo).
+- `POST /api/key/check` with header `X-Meta-Key` → `{ ok: true }` or `{ ok: false, error }` (one cheap authenticated Meta call; the key is not stored or logged).
+
+## The visitor's key
+
+AI requests (`POST /api/diary`, `/api/transcribe`, `/api/import/photo`, `/api/pages/:id/cover`) accept header `X-Meta-Key`. The server uses it for that request and keeps it **in memory only** for the life of any run it starts (child runs inherit it). Never written to the database, logs, errors or events. If neither the header nor the server env key is present, the server answers as today with `code: "meta_not_connected"` (status 503), and the client opens the key dialog instead of showing an error.
+
+## Demo events (SSE, demo notebook only)
+
+```ts
+type DemoStep = {
+  id: string;
+  caption: string;          // one plain sentence shown to the viewer, e.g. "Wren is planning your trip. Watch her walk the map."
+  model?: "muse-spark" | "muse-voice" | "sam-3.1+muse-spark" | "muse-image"; // shown as a provenance chip
+};
+type DemoScenario = { id: string; title: string; steps: DemoStep[]; recordedFrom: "rehearsal" | "meta" };
+
+| { type: "demo.step"; index: number; step: DemoStep; focus: { pageId?: Id; agentId?: Id; runId?: Id } }
+| { type: "demo.ended"; reason: "finished" | "stopped" }
+```
+
+Replayed runs carry `Run.recorded = true` and their diary entries show "Recorded run · Muse Spark" instead of "Written with Muse Spark".
+
+## Recording ("cassettes")
+
+`scripts/demo/record.mjs` runs the scenario against whatever `META_BASE_URL` points at (the rehearsal fake now, `https://api.meta.ai/v1` once a key exists) on a scratch data dir, captures every Meta HTTP exchange in order, and writes `src/server/demo/cassettes/<scenario>.json` with `recordedFrom`. Replay serves those responses in order instead of calling Meta, translating page ids from the recording notebook to the demo notebook (seed pages by title, created pages by creation order). Tool calls then execute for real against the demo notebook.
+
+## Scenario (first version)
+
+1. Person writes "Plan my 5 days in Lisbon" → Wren reads the trip pages, creates "Plan: 5 days in Lisbon", edits the itinerary live (peek shows ink arriving).
+2. Person speaks "Summarise what I've read this month" (recorded transcript; step model `muse-voice`) → Scout summarises reading notes into a new page.
+3. "Ask Scout to find what we decided about hiring, then have Wren draft the job post" → handoff Scout → Wren.
+4. Photo to cards on a bundled sample photo of sticky notes (`muse` SAM + vision recorded) → cards land under "Photo notes".
+5. Make a cover for the new Lisbon plan (recorded Muse Image PNG).
+6. Atlas tidies: links the new pages into their areas. End caption: "That's Inkwell. Try it with your own notebook." with the Try it yourself button.
+
+Pacing: each step waits for the previous runs to finish plus ~1.5 s so viewers can read the caption. Whole demo ≈ 2–3 minutes.
+
+## Guide (own notebook, first time after "Try it yourself")
+
+Four skippable coach marks, re-openable from the brand menu ("Show the guide"): (1) the map — click a page to peek, (2) the diary — ask Scout, Wren or Atlas, (3) Photo to cards and voice, (4) add your Meta API key (opens the key dialog). Plain copy, from the user's side.
+
+## Peek panel
+
+Single click on a map card opens the page in a panel beside the map (right side ≥ 900px wide; bottom sheet on phones), live and editable in the own notebook, read-only in the demo. "Open full page" goes to `/p/:id`; Esc or × closes; clicking another card swaps it. Double-click still opens the full page. The map stays interactive and keeps animating footprints. In the demo, the runner's `focus.pageId` opens the peek automatically when an agent writes.
