@@ -22,6 +22,27 @@ const server = spawn(process.execPath, ["--import", "tsx", "src/server/main.ts"]
   env: { ...process.env, PORT: String(appPort), DATA_DIR: dataDir, META_BASE_URL: fake.url, META_API_KEY: "rehearsal" },
 });
 
+let stopping = false;
+let vite = null;
+const within = (promise, ms) => Promise.race([promise, new Promise((resolve) => setTimeout(resolve, ms))]);
+async function stop(code = 0) {
+  if (stopping) return;
+  stopping = true;
+  // Server first: Vite's close can wait on open live-update connections.
+  if (server.exitCode === null) {
+    server.kill("SIGTERM");
+    await within(new Promise((resolve) => server.once("exit", resolve)), 8000);
+    if (server.exitCode === null) server.kill("SIGKILL");
+  }
+  if (vite) await within(vite.close().catch(() => {}), 2000);
+  await within(fake.close(), 2000);
+  process.exit(code);
+}
+// Registered before anything slow, so a signal during boot can't orphan the server.
+process.on("SIGINT", () => stop(0));
+process.on("SIGTERM", () => stop(0));
+process.on("SIGHUP", () => stop(0));
+
 for (let i = 0; ; i++) {
   try { if ((await fetch(`http://127.0.0.1:${appPort}/api/health`)).ok) break; } catch { /* still booting */ }
   if (server.exitCode !== null || i > 120) { console.error("[rehearse] server failed to start"); await fake.close(); process.exit(1); }
@@ -29,7 +50,7 @@ for (let i = 0; ; i++) {
 }
 
 const { createServer } = await import("vite");
-const vite = await createServer({
+vite = await createServer({
   configFile: path.join(root, "vite.config.ts"),
   server: {
     port: clientPort, strictPort: true,
@@ -45,19 +66,4 @@ console.log(`\n[rehearse] Inkwell with the rehearsal Meta API
   server  http://127.0.0.1:${appPort} (data: ${dataDir})
   meta    ${fake.url}\n`);
 
-let stopping = false;
-async function stop(code = 0) {
-  if (stopping) return;
-  stopping = true;
-  await vite.close().catch(() => {});
-  if (server.exitCode === null) {
-    server.kill("SIGTERM");
-    await Promise.race([new Promise((resolve) => server.once("exit", resolve)), new Promise((resolve) => setTimeout(resolve, 8000))]);
-    if (server.exitCode === null) server.kill("SIGKILL");
-  }
-  await fake.close();
-  process.exit(code);
-}
-process.on("SIGINT", () => stop(0));
-process.on("SIGTERM", () => stop(0));
 server.on("exit", (code) => { if (!stopping) { console.error(`[rehearse] server exited (${code})`); stop(1); } });
