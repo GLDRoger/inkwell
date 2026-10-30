@@ -96,7 +96,11 @@ export interface Run {
   recorded?: boolean;
   /** The Meta text model the run used, e.g. "muse-wonder-1.0". */
   model?: string;
+  /** Tokens this run's own model calls used (child runs count separately). Absent before it ends. */
+  usage?: RunUsage;
 }
+
+export interface RunUsage { inputTokens: number; outputTokens: number; totalTokens: number }
 
 export interface RunStep {
   at: string;

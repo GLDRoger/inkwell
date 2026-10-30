@@ -7,6 +7,7 @@ import { PageStoreError } from "../pages.ts";
 import type { Services } from "../services.ts";
 import { ToolFailure } from "./errors.ts";
 import { pickIcon } from "./icons.ts";
+import { stripTitleHeading } from "./links.ts";
 import { applyFind, applyRewrite, pageVersion, readView } from "./page-edit.ts";
 
 export { ToolFailure } from "./errors.ts";
@@ -130,10 +131,10 @@ export function createAgentTools(ctx: ToolContext) {
   };
 
   const tools = {
-    list_pages: define("list_pages", "List every page: id, title, parentId and a short excerpt.", z.object({}), async () => {
+    list_pages: define("list_pages", "List every page: id, title, a markdown link to paste into replies, parentId and a short excerpt.", z.object({}), async () => {
       await move(null, "thinking");
       const pages = s.pages.listPages(ws).map(({ id, title, parentId, excerpt }) => ({
-        id, title, parentId, excerpt: excerpt.replace(/\s+/g, " ").slice(0, 120),
+        id, title, link: pageLink(title, id), parentId, excerpt: excerpt.replace(/\s+/g, " ").slice(0, 120),
       }));
       return { text: JSON.stringify(pages), summary: `Listed ${pages.length} pages` };
     }),
@@ -150,11 +151,11 @@ export function createAgentTools(ctx: ToolContext) {
           markdown: body.slice(offset, end), nextOffset: end < body.length ? end : null, totalCharacters: body.length }),
         summary: `Read ${target.title}`, pageId };
       }),
-    search_pages: define("search_pages", "Search page titles and text. Returns id, title and a snippet for each match.", z.object({ query: z.string().min(1).max(500) }), async ({ query }) => {
+    search_pages: define("search_pages", "Search page titles and text. Returns id, title, link and a snippet for each match.", z.object({ query: z.string().min(1).max(500) }), async ({ query }) => {
       await move(null, "thinking");
       const results = s.pages.searchPages(ws, query).slice(0, 30);
       if (!results.length) return { text: "No pages matched. Try fewer or different words, or list_pages.", summary: `Searched for ${query}` };
-      return { text: JSON.stringify(results.map(({ page, snippet }) => ({ id: page.id, title: page.title, snippet }))), summary: `Searched for ${query}` };
+      return { text: JSON.stringify(results.map(({ page, snippet }) => ({ id: page.id, title: page.title, link: pageLink(page.title, page.id), snippet }))), summary: `Searched for ${query}` };
     }),
     create_page: define("create_page", "Create a page, optionally nested under a parent. Give it one fitting emoji as its icon (it marks the page on the map). For a long page, create it with an outline, then add each section with append_to_page.",
       z.object({ title: z.string().min(1).max(500), icon: z.string().max(16).optional(), markdown: markdown.optional(), parentId: id.nullable().optional() }),
@@ -164,7 +165,7 @@ export function createAgentTools(ctx: ToolContext) {
         const created = s.pages.createPage(ws, actor, { title, parentId, icon: pickIcon(icon, title, parent?.icon) });
         ctx.touched.add(created.id);
         const v = await write(created.id, async () => ({
-          text: body ? await edit(created.id, () => markdownToTiptapJSON(body)) : pageVersion(""),
+          text: body ? await edit(created.id, () => markdownToTiptapJSON(stripTitleHeading(body, title))) : pageVersion(""),
           summary: "",
         }));
         return { text: `Created ${pageLink(title, created.id)} (id: ${created.id}, version: ${v.text}).`, summary: `Created ${title}`, pageId: created.id };
@@ -190,7 +191,7 @@ export function createAgentTools(ctx: ToolContext) {
       })),
     rewrite_page: define("rewrite_page", "Replace a page's full markdown. Prefer edit_page for small changes. Requires the version from read_page; refuses if the page changed since.",
       z.object({ pageId: id, version, markdown }), ({ pageId, version: v, markdown: body }) => write(pageId, async () => {
-        const next = await edit(pageId, (current) => applyRewrite(current, v, body));
+        const next = await edit(pageId, (current) => applyRewrite(current, v, stripTitleHeading(body, page(pageId).title)));
         const title = page(pageId).title;
         const paragraphs = body.split(/\n\s*\n/).filter(Boolean).length;
         return { text: `Rewrote ${pageLink(title, pageId)} (version: ${next}).`, summary: `Wrote ${paragraphs} paragraphs on ${title}`, pageId };

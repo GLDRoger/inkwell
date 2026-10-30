@@ -6,9 +6,10 @@ import {
   insertDiaryEntry, insertRun, listAgents, listDiaryEntries, listRecentRuns, updateDiaryEntry, updateRun,
 } from "../db.ts";
 import { ToolFailure } from "./errors.ts";
-import { createMetaModel, MISSING_META_KEY } from "./model.ts";
+import { createMetaModel, MISSING_META_KEY, NO_FIRST_BYTE, withFirstByteWatchdog } from "./model.ts";
 import { defaultTextModel, type MetaAccess } from "../meta-access.ts";
 import { createAgentTools, pageLink, type AgentServices } from "./tools.ts";
+import { repairPageLinks } from "./links.ts";
 
 export interface RuntimeOptions {
   /** Tests: replaces the Meta model (ignored for runs with their own transport, e.g. demo replay). */
@@ -18,6 +19,8 @@ export interface RuntimeOptions {
   timeoutMs?: number;
   /** Output tokens a request may generate, including its child runs. */
   maxOutputTokens?: number;
+  /** Abandon (and retry once) a live model step with no first byte after this long. */
+  firstByteMs?: number;
 }
 export const DEFAULT_RUN_TIMEOUT_MS = 8 * 60_000;
 export const DEFAULT_RUN_OUTPUT_TOKENS = 16_000;
@@ -51,20 +54,23 @@ interface ActiveRun {
   stopError?: string;
 }
 
-const PRIMER = `You work inside Inkwell, a live notebook that people edit while you work. Pages contain markdown.
-Link pages as [Page title](/p/PAGE_ID).
+export const PRIMER = `You work inside Inkwell, a live notebook that people edit while you work. Pages contain markdown.
+Link pages as [Page title](/p/PAGE_ID). Copy each link exactly from a tool result (list_pages, search_pages, read_page and create_page give one); never type or retype a page id.
 
 Working with pages:
+- When the request names pages, call list_pages once and use the ids it gives. Use search_pages only to find content when you don't know which page holds it.
 - Read before you edit. read_page returns a version; pass it to edit_page or rewrite_page. If a write says the page changed, read it again and retry.
+- A write tool's success message is authoritative: don't read the page again just to check your edit.
 - Prefer edit_page for changing part of a page, and copy find exactly from read_page. Use rewrite_page only to restructure a whole page.
 - A page's title is shown above its text, so don't repeat it as a heading at the top of the markdown.
 - Write long pages as an outline first, then add each section with append_to_page. Keep each call's markdown under about 1,500 words.
 - Continue long pages with read_page's nextOffset.
-- Search with a few distinctive words; if nothing matches, use list_pages.
+- Respect any length the person asks for ("700–900 words", "a short note", "three bullets"): stay within it.
 
 Replying:
+- Your final reply appears in the person's diary. "Tell me in the diary" or "answer in the diary" means your reply, not a new page.
 - Don't write any text before or between tool calls. Work first, then write one final reply.
-- Keep the final reply short: what you did, with a markdown link to every page you created or changed. Don't paste page contents into it.
+- Unless the person asked for a long answer, keep the final reply short: what you did, with a markdown link to every page you created or changed. Don't paste page contents into it.
 - Never claim edits you didn't make. If something failed, say so plainly.
 
 Safety:
@@ -209,6 +215,8 @@ export class AgentRuntime {
     let failure: string | null = null;
     /** Output tokens this run's own model steps have used (children account separately). */
     let ownTokens = 0;
+    /** Everything this run's own model steps used, recorded on the run when it ends. */
+    const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
     const used = (steps: { usage: { outputTokens?: number } }[]) => steps.reduce((n, step) => n + (step.usage.outputTokens ?? 0), 0);
     const timeout = setTimeout(() => this.stop(original.id, "failed", TIMED_OUT), Math.max(0, limits.deadline - Date.now()));
     timeout.unref();
@@ -246,7 +254,10 @@ export class AgentRuntime {
       this.patch(ws, original.id, { status: "running" });
       const meta = family.meta;
       const model = this.options.modelFactory && !meta?.fetchForRun ? this.options.modelFactory(agent)
-        : createMetaModel({ apiKey: meta?.apiKey, baseURL: meta?.baseUrl, model: meta?.model ?? defaultTextModel(), fetch: meta?.fetchForRun?.(original.id) });
+        : createMetaModel({ apiKey: meta?.apiKey, baseURL: meta?.baseUrl, model: meta?.model ?? defaultTextModel(),
+          // Live calls get a first-byte watchdog. Demo transports don't: a replay must
+          // never skip a recorded answer, and a recording reads whole bodies.
+          fetch: meta?.fetchForRun?.(original.id) ?? withFirstByteWatchdog(globalThis.fetch, { timeoutMs: this.options.firstByteMs }) });
       const aborted = new Promise<never>((_, reject) => {
         abortListener = () => reject(new Error("Run stopped."));
         signal.addEventListener("abort", abortListener, { once: true });
@@ -270,7 +281,12 @@ export class AgentRuntime {
           signal.throwIfAborted();
           if (part.type === "error") throw part.error;
           if (part.type === "start-step") newStep = true;
-          if (part.type === "finish-step") ownTokens += part.usage.outputTokens ?? 0;
+          if (part.type === "finish-step") {
+            ownTokens += part.usage.outputTokens ?? 0;
+            usage.inputTokens += part.usage.inputTokens ?? 0;
+            usage.outputTokens += part.usage.outputTokens ?? 0;
+            usage.totalTokens += part.usage.totalTokens ?? (part.usage.inputTokens ?? 0) + (part.usage.outputTokens ?? 0);
+          }
           if (part.type === "text-delta" && part.text) {
             // Text from separate model steps is separate paragraphs, not one run-on line.
             let delta = part.text;
@@ -296,6 +312,7 @@ export class AgentRuntime {
       // auth headers or upstream diagnostics). Only our own errors are public.
       failure = state.stopError ?? (error instanceof ToolFailure ? error.message :
         error instanceof Error && error.message === MISSING_META_KEY ? MISSING_META_KEY :
+        error instanceof Error && error.message === NO_FIRST_BYTE ? NO_FIRST_BYTE :
         "The Meta model couldn't complete this request. Check the API configuration and try again.");
     } finally {
       // What's left of this run's allowance is what a parent gets back.
@@ -310,13 +327,15 @@ export class AgentRuntime {
     const status = state.stopStatus ?? (failure ? "failed" : "succeeded");
     if (failure) text += `${text ? "\n\n" : ""}${failure}`;
     if (!text) text = status === "succeeded" ? touched.size ? "Done. See the pages I visited." : "Finished without a written reply." : "Run stopped.";
+    // Models sometimes mis-copy a page id; a link must lead to the page it names.
+    text = repairPageLinks(text, s.pages.listPages(ws));
     if (entry) {
       const final = updateDiaryEntry(s.db, ws, entry.id, { text, pageIds: [...touched] });
       if (final) this.publish(ws, { type: "diary.entry", entry: final });
     }
     const from = getRun(s.db, ws, original.id)?.pageId ?? null;
     this.publish(ws, { type: "agent.moved", runId: original.id, agentId: agent.id, fromPageId: from, toPageId: null, action: "leaving" });
-    const run = this.patch(ws, original.id, { status, error: failure });
+    const run = this.patch(ws, original.id, { status, error: failure, usage });
     return { run, text, pageIds: [...touched] };
   }
 

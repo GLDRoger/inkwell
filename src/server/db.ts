@@ -10,6 +10,7 @@ import type {
   Attachment,
   Run,
   RunStatus,
+  RunUsage,
   RunStep,
 } from "../shared/types.ts";
 import { defaultTextModel } from "./meta-access.ts";
@@ -182,6 +183,8 @@ export function openDatabase(explicitDataDir?: string): DatabaseHandle {
   addColumn(db, "sessions", "demo_workspace_id", "TEXT");
   addColumn(db, "runs", "model", "TEXT");
   addColumn(db, "runs", "recorded", "INTEGER NOT NULL DEFAULT 0");
+  // Token usage per run (JSON RunUsage), so evaluations can see what a request cost.
+  addColumn(db, "runs", "usage", "TEXT");
 
   const row = db.prepare("SELECT version FROM schema_version LIMIT 1").get() as
     | { version: number }
@@ -283,6 +286,7 @@ export interface RunRow {
   ended_at: string | null;
   model?: string | null;
   recorded?: number | null;
+  usage?: string | null;
 }
 
 export interface AttachmentRow {
@@ -361,7 +365,16 @@ export function rowToRun(row: RunRow): Run {
     endedAt: row.ended_at,
     ...(row.model ? { model: row.model } : {}),
     ...(row.recorded ? { recorded: true } : {}),
+    ...(row.usage ? { usage: parseUsage(row.usage) } : {}),
   };
+}
+
+function parseUsage(raw: string): RunUsage | undefined {
+  try {
+    const u = JSON.parse(raw) as Partial<RunUsage>;
+    const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    return { inputTokens: n(u.inputTokens), outputTokens: n(u.outputTokens), totalTokens: n(u.totalTokens) };
+  } catch { return undefined; }
 }
 
 export function rowToAttachment(row: AttachmentRow): Attachment {
@@ -603,6 +616,7 @@ export function updateRun(
     error?: string | null;
     steps?: RunStep[];
     endedAt?: string | null;
+    usage?: RunUsage;
   },
 ): Run | null {
   const current = getRun(db, workspaceId, id);
@@ -621,11 +635,13 @@ export function updateRun(
         : terminal
           ? (current.endedAt ?? nowIso())
           : current.endedAt,
+    ...(patch.usage ? { usage: patch.usage } : {}),
   };
   db.prepare(
-    `UPDATE runs SET status = ?, page_id = ?, error = ?, steps = ?, ended_at = ?
+    `UPDATE runs SET status = ?, page_id = ?, error = ?, steps = ?, ended_at = ?, usage = ?
      WHERE workspace_id = ? AND id = ?`,
-  ).run(next.status, next.pageId, next.error, JSON.stringify(next.steps), next.endedAt, workspaceId, id);
+  ).run(next.status, next.pageId, next.error, JSON.stringify(next.steps), next.endedAt,
+    next.usage ? JSON.stringify(next.usage) : null, workspaceId, id);
   return next;
 }
 
