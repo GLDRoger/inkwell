@@ -131,6 +131,11 @@ export class AgentRuntime {
       const page = this.services.pages.getPage(ws, id);
       return page ? `${pageLink(page.title, id)} (id: ${id})` : `a deleted page (id: ${id})`;
     });
+    const status = entry.runId ? getRun(this.services.db, ws, entry.runId)?.status : undefined;
+    if (status === "failed" || status === "cancelled") {
+      // A retry after an interruption must continue the work, not redo it.
+      return `\n\n(This reply was interrupted before it finished. It had already made or changed: ${pages.join(", ")}. If asked again, continue from there: update those pages instead of creating them again.)`;
+    }
     return `\n\n(Pages touched in this reply: ${pages.join(", ")}.)`;
   }
 

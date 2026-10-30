@@ -164,6 +164,20 @@ describe("diary replies", () => {
     expect(JSON.stringify(model.doStreamCalls[0]?.prompt)).toContain(`Pages touched in this reply: [Billing](/p/${f.page.id}) (id: ${f.page.id})`);
   });
 
+  it("tells a retry what an interrupted reply had already done, so it continues instead of redoing it", async () => {
+    const model = new MockLanguageModelV4({ doStream: async () => answer("Picked up where I left off.") });
+    const f = fixture({ modelFactory: () => model });
+    const thread = insertDiaryThread(f.services.db, f.ws, "summarise");
+    insertDiaryEntry(f.services.db, f.ws, { threadId: thread.id, role: "person", text: "Summarise billing" });
+    const failed = insertRun(f.services.db, f.ws, { agentId: f.agent.id, prompt: "Summarise billing", status: "failed", threadId: thread.id });
+    insertDiaryEntry(f.services.db, f.ws, { threadId: thread.id, role: "agent", agentId: f.agent.id, text: "Muse Spark couldn't finish this one.", pageIds: [f.page.id], runId: failed.id });
+    insertDiaryEntry(f.services.db, f.ws, { threadId: thread.id, role: "person", text: "Summarise billing" });
+    await f.services.runtime.start({ workspaceId: f.ws, agentId: f.agent.id, threadId: thread.id, prompt: "Summarise billing" }).done;
+    const prompt = JSON.stringify(model.doStreamCalls[0]?.prompt);
+    expect(prompt).toContain(`This reply was interrupted before it finished. It had already made or changed: [Billing](/p/${f.page.id})`);
+    expect(prompt).toContain("update those pages instead of creating them again");
+  });
+
   it("list_pages includes excerpts; search falls back to any word; a bad edit shows the nearest text", async () => {
     let f!: ReturnType<typeof fixture>;
     let step = 0;
