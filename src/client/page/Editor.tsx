@@ -50,7 +50,11 @@ interface Props {
   user: EditorUser;
   /** Colour of the agent writing here right now, for the wet ink. */
   writerColor: string | null;
+  /** False shows the page without letting anyone type in it (the recorded demo). */
+  editable?: boolean;
   onReady?(editor: TiptapEditor): void;
+  /** Following a link to another page; navigates to it when not given. */
+  onPageLink?(id: string): void;
 }
 
 /** A caret for someone else in the document; an agent's name is written in its hand while it edits. */
@@ -83,7 +87,7 @@ export function baseExtensions() {
   ];
 }
 
-export function PageEditor({ pageId, collab, synced, user, writerColor, onReady }: Props) {
+export function PageEditor({ pageId, collab, synced, user, writerColor, editable = true, onReady, onPageLink }: Props) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const slashStore = useMemo(() => new MenuStore<SlashItem>(), []);
@@ -91,6 +95,8 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
   const syncedRef = useRef(false);
   const writerRef = useRef(writerColor);
   writerRef.current = writerColor;
+  const linkRef = useRef(onPageLink);
+  linkRef.current = onPageLink;
   const { data: pages } = usePages();
   const knownRef = useRef<ReadonlySet<string> | null>(null);
   const known = useMemo(() => (pages ? new Set(pages.filter((p) => !isDeletePending(p.id)).map((p) => p.id)) : null), [pages]);
@@ -105,6 +111,7 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
 
   const editor = useEditor(
     {
+      editable,
       extensions: [
         ...baseExtensions(),
         Placeholder.configure({
@@ -132,7 +139,7 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
         InkDrying.configure({ isEnabled: () => syncedRef.current, getColor: () => writerRef.current }),
       ],
       editorProps: {
-        attributes: { class: "prose", "aria-label": "Page body", spellcheck: "true" },
+        attributes: { class: "prose", "aria-label": editable ? "Page body" : "Page body, read only", spellcheck: "true" },
         handleClickOn: () => false,
         handleDOMEvents: {
           click: (_view, event) => {
@@ -141,7 +148,8 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
             const href = a.getAttribute("href") ?? "";
             if (href.startsWith("/p/") && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
               event.preventDefault();
-              navigate(href);
+              if (linkRef.current) linkRef.current(href.slice(3).split(/[?#]/)[0]);
+              else navigate(href);
               return true;
             }
             if (/^https?:/.test(href) && (event.metaKey || event.ctrlKey)) {
@@ -161,13 +169,17 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
     if (editor) onReady?.(editor);
   }, [editor, onReady]);
 
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && editor.isEditable !== editable) editor.setEditable(editable);
+  }, [editor, editable]);
+
   // Page list changed (a page deleted or created): redraw broken links.
   useEffect(() => {
     if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(brokenLinksKey, true).setMeta("addToHistory", false));
   }, [editor, known]);
 
   return (
-    <div className="editor" data-synced={synced}>
+    <div className="editor" data-synced={synced} data-readonly={!editable || undefined}>
       <EditorContent editor={editor} />
       <SuggestionMenu
         store={slashStore}

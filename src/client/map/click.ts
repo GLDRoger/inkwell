@@ -1,9 +1,9 @@
 /**
- * One click focuses a card; two quick clicks on the same card open it. The
- * single click waits a moment before acting, so the camera doesn't fly the
- * card out from under the second click of a double-click (which is what made
- * opening a page take two steps). Timed by hand rather than with `dblclick`,
- * so a double tap on a phone opens a page too.
+ * One click peeks a card (opens it in the panel beside the map); two quick
+ * clicks on the same card open the full page. The single click waits a moment
+ * before acting, so a double-click doesn't flash the peek open first. Timed
+ * by hand rather than with `dblclick`, so a double tap on a phone opens a
+ * page too.
  */
 export const DOUBLE_MS = 280;
 
@@ -37,13 +37,4 @@ export class ClickIntent {
     if (this.pending) clearTimeout(this.pending.timer);
     this.pending = null;
   }
-}
-
-/**
- * Whether a click on card `id` at zoom `s` opens it: it does when that card
- * was the last one brought close and the map is still at (about) the zoom it
- * was brought to. So from anywhere, a page opens on the second click or tap.
- */
-export function opensOnClick(chosen: { id: string; s: number } | null, id: string, s: number): boolean {
-  return !!chosen && chosen.id === id && Math.abs(Math.log(s / chosen.s)) < 0.25;
 }

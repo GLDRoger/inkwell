@@ -31,8 +31,12 @@ interface Props {
   seeded: boolean;
   /** Cards can be picked up and moved (not on a phone's laid-out map). */
   movable: boolean;
+  /** The recorded demo: nothing on the card changes the page (no cover button). */
+  readOnly?: boolean;
+  /** Open in the peek panel right now. */
+  peeked?: boolean;
   camera: CameraController;
-  /** A click: the map decides whether it's one (focus) or the second of two (open). */
+  /** A click: the map decides whether it's one (peek) or the first of a double-click (open). */
   onClick(id: string): void;
   onOpen(id: string): void;
   onMove(id: string, x: number, y: number): void;
@@ -111,6 +115,8 @@ export const MapCard = memo(function MapCard(p: Props) {
       data-root={box.depth === 0 ? "" : undefined}
       data-arrive={arrival?.kind === "held" ? "held" : arrival ? "in" : undefined}
       data-painting={painting || undefined}
+      data-peeked={p.peeked || undefined}
+      aria-current={p.peeked || undefined}
       aria-busy={painting || undefined}
       tabIndex={0}
       role={near ? "article" : "button"}
@@ -228,7 +234,7 @@ export const MapCard = memo(function MapCard(p: Props) {
         <div className={css.near}>
           <div className={css.nearHead}>
             <span className={css.crumb}>{p.crumb}</span>
-            <button
+            {!p.readOnly && (<button
               type="button"
               className={css.paint}
               disabled={painting}
@@ -240,7 +246,7 @@ export const MapCard = memo(function MapCard(p: Props) {
               title={page.coverUrl ? "Make a new cover" : "Make a cover"}
             >
               <ImagePlus size={15} strokeWidth={1.75} aria-hidden />
-            </button>
+            </button>)}
             <button
               type="button"
               className={css.open}

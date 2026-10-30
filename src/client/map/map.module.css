@@ -148,7 +148,7 @@
   z-index: 2;
   top: calc(var(--shell-top, 0px) + 72px);
   left: 12px;
-  right: calc(var(--diary-inset, 0px) + 12px);
+  right: calc(var(--map-inset, var(--diary-inset, 0px)) + 12px);
   margin: 0 auto;
   width: fit-content;
   max-width: min(560px, calc(100% - 24px));
@@ -231,6 +231,12 @@
 
 .card:focus-visible {
   outline: 2px solid var(--wax);
+  outline-offset: 3px;
+}
+
+/* Open in the peek panel: a quiet ring, so you can see which card the panel shows. */
+.card[data-peeked] {
+  outline: 1.5px solid color-mix(in oklab, var(--wax) 55%, transparent);
   outline-offset: 3px;
 }
 
@@ -756,7 +762,7 @@
   position: absolute;
   top: calc(var(--shell-top, 0px) + 6px);
   left: 12px;
-  right: calc(var(--diary-inset, 0px) + 12px);
+  right: calc(var(--map-inset, var(--diary-inset, 0px)) + 12px);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -893,8 +899,8 @@
 
 .dock {
   position: absolute;
-  right: calc(var(--diary-inset, 0px) + 12px);
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  right: calc(var(--map-inset, var(--diary-inset, 0px)) + 12px);
+  bottom: calc(var(--map-bottom, 0px) + 12px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -962,11 +968,11 @@
   outline-offset: 2px;
 }
 
-/* Said once, the first time the cards come close: how to open one. */
+/* Said once, soon after the map first shows its cards: how to peek and open a page. */
 .hint {
   position: absolute;
-  left: calc(50% - var(--diary-inset, 0px) / 2);
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  left: calc(50% - var(--map-inset, var(--diary-inset, 0px)) / 2);
+  bottom: calc(var(--map-bottom, 0px) + 14px + env(safe-area-inset-bottom, 0px));
   translate: -50% 0;
   margin: 0;
   padding: 9px 16px;
@@ -1053,14 +1059,14 @@
   position: absolute;
   top: calc(var(--shell-top, 0px) + 6px);
   left: 10px;
-  right: calc(var(--diary-inset, 0px) + 10px);
+  right: calc(var(--map-inset, var(--diary-inset, 0px)) + 10px);
 }
 
 /* The photo button moves to the free bottom-left corner, in reach of a thumb. */
 .root[data-compact] .photo {
   position: absolute;
   left: 12px;
-  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--map-bottom, 0px) + 12px + env(safe-area-inset-bottom, 0px));
   height: 44px;
   margin: 0;
 }
@@ -1180,7 +1186,7 @@
 .presents {
   position: absolute;
   top: calc(var(--shell-top, 0px) + 16%);
-  left: calc(50% - var(--diary-inset, 0px) / 2);
+  left: calc(50% - var(--map-inset, var(--diary-inset, 0px)) / 2);
   translate: -50% 0;
   z-index: 4;
   display: flex;
@@ -1357,4 +1363,11 @@
 .cardMenu button:hover,
 .cardMenu button:focus-visible {
   background: var(--paper-sunken);
+}
+
+/* The peek's sheet fully open on a phone: the bottom controls wait until it comes down. */
+.root[data-sheet-full] .dock,
+.root[data-sheet-full] .photo,
+.root[data-sheet-full] .hint {
+  visibility: hidden;
 }

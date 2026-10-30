@@ -1,15 +1,18 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { ArrowUpRight, ImagePlus, ScanText } from "lucide-react";
 import type { Id, MapGraph, Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { emit, subscribe } from "../lib/events";
 import { keys } from "../lib/queries";
+import { useDemo } from "../lib/demo";
+import { useUi } from "../lib/ui";
 import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
 import { layoutMap, REGION_PAD, unionBox, type Box, type CardBox } from "./layout";
 import { detailFor, scaleFor, type Detail, type Lod } from "./lod";
-import { ClickIntent, opensOnClick } from "./click";
+import { ClickIntent } from "./click";
 import { Greeting, hello } from "./greeting";
 import { MapCard } from "./map-card";
 import { Minimap } from "./minimap";
@@ -21,6 +24,10 @@ import { aspectBucket, overviewCamera } from "./overview";
 import { isUntouchedSeed } from "../page/title";
 import { Names, Prints, useWalks } from "./walkers";
 import { INK_SPAN_MS, inkDelay, WorldBack, worldFrame } from "./world";
+import { BOTH_PANELS_MIN_W, PeekPanel, type PeekCover } from "../peek/PeekPanel";
+import { peekFrom, peekHistory, withPeek } from "../peek/url";
+import { FollowGate, peekCamera } from "../peek/follow";
+import { useDemoFollow } from "../peek/useDemoFollow";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -30,7 +37,9 @@ export interface MapViewProps {
 
 const CAMERA_KEY = "inkwell:map-camera";
 const INKED_KEY = "inkwell:map-inked";
-const HINT_KEY = "inkwell:map-open-hint";
+const HINT_KEY = "inkwell:map-peek-hint";
+/** The hint waits this long after the map first shows its cards. */
+const HINT_AFTER_MS = 1800;
 const SEEN_KEY = "inkwell:map-last-seen";
 const REVEAL_MS = 2600;
 /** A page made this recently, while we watched, settles onto the map. */
@@ -103,6 +112,36 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // Who "you" are, so a card says "Last edited by you".
   const me = useQuery({ queryKey: keys.me, queryFn: api.me, staleTime: Infinity, enabled: !fixture, retry: 1 });
   const meId = me.data?.person.id ?? null;
+  // The recorded demo's notebook is for watching: no moving cards, no editing, no menus.
+  const demo = useDemo((s) => s.notebook === "demo");
+  const playing = useDemo((s) => s.playing);
+  const demoFocus = useDemo((s) => s.focus);
+  const following = demo && playing && !fixture;
+
+  // ------------------------------------------------------------ the peek
+  // A single click opens a page beside the map; the URL (?peek=) remembers which.
+  const [params, setParams] = useSearchParams();
+  const peekId = peekFrom(params);
+  const peekRef = useRef(peekId);
+  peekRef.current = peekId;
+  const setPeek = useCallback(
+    (id: Id | null, by: "person" | "demo" = "person") => {
+      const how = peekHistory(peekRef.current, id, by);
+      if (!how) return;
+      peekRef.current = id;
+      setParams((q) => new URLSearchParams(withPeek(q, id)), { replace: how === "replace" });
+    },
+    [setParams],
+  );
+  /** How much of the screen the open peek covers (right edge on wide screens, bottom on phones). */
+  const [cover, setCover] = useState<PeekCover>({ right: 0, bottom: 0 });
+  const coverRef = useRef(cover);
+  coverRef.current = cover;
+  const onCover = useCallback((c: PeekCover) => setCover((o) => (o.right === c.right && o.bottom === c.bottom ? o : c)), []);
+  /** The demo's follow: paused for a while whenever the viewer moves the map or picks a page. */
+  const gate = useRef(new FollowGate());
+  const followingRef = useRef(following);
+  followingRef.current = following;
 
   // ------------------------------------------------------------ live state
   const [state, setState] = useState<MapState | null>(null);
@@ -165,7 +204,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         setShape((s) => (s.aspect === aspect && s.flow === flow ? s : { aspect, flow }));
       }
       setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
-      const right = insetProbe.current?.offsetWidth ?? 0;
+      const right = Math.max(insetProbe.current?.offsetWidth ?? 0, coverRef.current.right);
       setFreeW((f) => (f === w - right ? f : w - right));
     };
     const ro = new ResizeObserver(measure);
@@ -173,7 +212,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     if (insetProbe.current) ro.observe(insetProbe.current);
     measure();
     return () => ro.disconnect();
-  }, [camera]);
+  }, [camera, cover]);
 
   const recull = useCallback((c: Cam, vw: number, vh: number) => {
     if (!vw) return;
@@ -260,9 +299,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const insets = useCallback((): Insets => {
     const p = insetProbe.current;
     const top = p?.offsetHeight ?? 0;
-    const right = p?.offsetWidth ?? 0;
-    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: compact ? 72 : 64, left: 12 };
-  }, [compact]);
+    const right = Math.max(p?.offsetWidth ?? 0, cover.right);
+    const bottom = compact ? 72 : 64;
+    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: bottom + cover.bottom, left: 12 };
+  }, [compact, cover]);
   // Phones on their side, or a map squeezed beside the diary, have no room for the greeting.
   const greets = size.h >= 560 && freeW >= Math.min(GREETING_MIN_W, size.w);
   // The overview: everything, with room above it for the greeting, as long as
@@ -280,6 +320,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   );
   /** "Show the whole map": the overview, and pressed again there, everything. */
   const showWhole = useCallback(() => {
+    camera.byUser();
     const o = fitAll();
     const c = camera.cam;
     const atOverview = Math.abs(Math.log(c.s / o.s)) < 0.05 && Math.hypot(c.x - o.x, c.y - o.y) * c.s < 24;
@@ -487,10 +528,12 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           break;
         case "+":
         case "=":
+          camera.byUser();
           camera.flyTo({ ...camera.cam, s: camera.cam.s * 1.35 }, 200);
           break;
         case "-":
         case "_":
+          camera.byUser();
           camera.flyTo({ ...camera.cam, s: camera.cam.s / 1.35 }, 200);
           break;
         case "0":
@@ -551,62 +594,62 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const menuPage = menu ? pages?.get(menu.id) : undefined;
   const importPhoto = usePhotoImport();
 
-  // ------------------------------------------------------------ the open hint
-  // The first time someone reaches the cards, say once how to open one.
+  // ------------------------------------------------------------ the peek hint
+  // Said once, a moment after the map first shows its cards: how to peek and open a page.
   const [hint, setHint] = useState(false);
   const hintTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const coarse = useMemo(() => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches, []);
-  const dismissHint = useCallback((forever = false) => {
+  const dismissHint = useCallback(() => {
     clearTimeout(hintTimer.current);
     setHint(false);
-    if (forever)
-      try {
-        localStorage.setItem(HINT_KEY, "1");
-      } catch {
-        /* no storage: it may show again, harmless */
-      }
+    try {
+      localStorage.setItem(HINT_KEY, "1");
+    } catch {
+      /* no storage: it may show again, harmless */
+    }
   }, []);
-  /** Said once, the first time a page is brought close: how to open it. */
-  const offerHint = useCallback(() => {
+  const hasCards = layout.cards.size > 0;
+  useEffect(() => {
+    // The demo has its own captions; a deep link to a peek already knows.
+    if (!hasCards || demo || fixture) return;
     try {
       if (localStorage.getItem(HINT_KEY)) return;
-      localStorage.setItem(HINT_KEY, "1");
     } catch {
       return;
     }
-    setHint(true);
-    clearTimeout(hintTimer.current);
-    hintTimer.current = setTimeout(() => setHint(false), 6000);
-  }, []);
+    const show = setTimeout(() => {
+      if (peekRef.current) return;
+      setHint(true);
+      try {
+        localStorage.setItem(HINT_KEY, "1");
+      } catch {
+        /* shown once per visit then */
+      }
+      hintTimer.current = setTimeout(() => setHint(false), 7000);
+    }, HINT_AFTER_MS);
+    return () => clearTimeout(show);
+  }, [hasCards, demo, fixture]);
   useEffect(() => () => clearTimeout(hintTimer.current), []);
 
   // ------------------------------------------------------------ actions
   const handlers = useRef({
-    onActivate: (_id: Id) => {},
+    onPeek: (_id: Id) => {},
     onOpen: (_id: Id) => {},
     onMove: (_id: Id, _x: number, _y: number) => {},
   });
-  // The page last brought close, and the zoom it was brought to: clicking (or
-  // tapping) it again there opens it. Two clicks, or two taps, from anywhere.
-  const chosen = useRef<{ id: Id; s: number } | null>(null);
-  handlers.current.onActivate = (id) => {
-    if (opensOnClick(chosen.current, id, camera.cam.s)) {
-      handlers.current.onOpen(id);
-      return;
-    }
-    const d = detailRef.current;
-    const level: Lod = d === "near" ? "near" : d === "mid" ? "near" : "mid";
-    focusOn(id, level);
-    chosen.current = { id, s: scaleFor(level, camera.vw, camera.vh) };
-    offerHint();
+  // A click (or tap) peeks the page beside the map; the demo stops following for a while.
+  handlers.current.onPeek = (id) => {
+    if (following) gate.current.pause(Date.now());
+    if (hint) dismissHint();
+    setPeek(id);
   };
   handlers.current.onOpen = (id) => {
-    chosen.current = null;
     camera.onSettle?.(camera.cam);
-    dismissHint(true);
+    if (hint) dismissHint();
     onOpenPage(id);
   };
   handlers.current.onMove = (id, x, y) => {
+    if (demo) return;
     const l = layoutRef.current;
     const box = l.cards.get(id);
     if (!box || (box.x === x && box.y === y)) return;
@@ -638,7 +681,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // places, so from then on they're ordinary cards that stay where moved.
   const settled = useRef(new Set<Id>());
   useEffect(() => {
-    if (fixture) return;
+    if (fixture || demo) return;
     const todo = [...layout.settle].filter(([id]) => !settled.current.has(id));
     if (!todo.length) return;
     const t = setTimeout(() => {
@@ -660,11 +703,11 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       for (const [id, pos] of at) api.updatePage(id, pos).catch((err) => console.error("[map] couldn't save the card's place", err));
     }, 2000);
     return () => clearTimeout(t);
-  }, [layout, fixture, client]);
+  }, [layout, fixture, demo, client]);
 
-  // One click brings a card closer; a second click on it, or a double-click, opens it.
+  // One click peeks a page; a double-click (or double tap) opens it.
   const clicks = useMemo(
-    () => new ClickIntent((id) => handlers.current.onActivate(id), (id) => handlers.current.onOpen(id)),
+    () => new ClickIntent((id) => handlers.current.onPeek(id), (id) => handlers.current.onOpen(id)),
     [],
   );
   useEffect(() => () => clicks.cancel(), [clicks]);
@@ -675,6 +718,49 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   }, [clicks]);
   const onMove = useCallback((id: Id, x: number, y: number) => handlers.current.onMove(id, x, y), []);
   const follow = useCallback((pageId: Id) => focusOn(pageId, "mid"), [focusOn]);
+
+  // ------------------------------------------------------------ peek camera
+  // Keep the peeked card in view beside the panel, once the panel has taken its place.
+  const midScale = useCallback(() => scaleFor("mid", camera.vw, camera.vh), [camera]);
+  // Looked at again when the panel moves or resizes (the diary opening beside it), not on every render.
+  const peekShown = useRef<string | null>(null);
+  const coverKnown = cover.right > 0 || cover.bottom > 0;
+  const peekKey = peekId ? `${peekId}:${cover.right}:${cover.bottom}` : null;
+  useEffect(() => {
+    if (!peekId || !peekKey) {
+      peekShown.current = null;
+      return;
+    }
+    if (!placed.current || !coverKnown || peekShown.current === peekKey) return;
+    const box = layout.cards.get(peekId);
+    if (!box) return;
+    peekShown.current = peekKey;
+    const target = peekCamera(box, camera.cam, camera.vw, camera.vh, insets(), midScale());
+    if (!target) return;
+    if (followingRef.current) camera.hush(1600);
+    camera.flyTo(target, followingRef.current ? 1100 : undefined);
+  }, [peekId, peekKey, coverKnown, layout, size, camera, insets, midScale]);
+  const closePeek = useCallback(() => {
+    const id = peekRef.current;
+    if (followingRef.current) gate.current.pause(Date.now());
+    setPeek(null);
+    // Closed from inside the panel: back to the card it showed, for keyboard users.
+    if (id && document.activeElement?.closest?.(".peek"))
+      requestAnimationFrame(() => (cardsRef.current?.querySelector(`[data-card="${CSS.escape(id)}"]`) as HTMLElement | null)?.focus({ preventScroll: true }));
+  }, [setPeek]);
+  const onPeekOpenFull = useCallback((id: Id) => handlers.current.onOpen(id), []);
+  const onPeekSwap = useCallback((id: Id) => handlers.current.onPeek(id), []);
+  // Opening the diary where it and the peek can't sit side by side: the diary comes to the front.
+  const diaryOpen = useUi((u) => u.diaryOpen);
+  const diaryWas = useRef(diaryOpen);
+  useEffect(() => {
+    const was = diaryWas.current;
+    diaryWas.current = diaryOpen;
+    if (!was && diaryOpen && peekRef.current && window.innerWidth < BOTH_PANELS_MIN_W) setPeek(null);
+  }, [diaryOpen, setPeek]);
+
+  // ------------------------------------------------------------ demo camera
+  useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek, insets, midScale });
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [] }, 0), []);
@@ -794,7 +880,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const error = !fixture && query.isError ? query.error : null;
   const hour = new Date(now).getHours();
 
-  return (
+  const view = (
     <div
       ref={rootRef}
       className={css.root}
@@ -803,6 +889,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       data-compact={compact || undefined}
       data-blank={blank || undefined}
       data-presenting={presenting || undefined}
+      data-peeking={peekId ? "" : undefined}
+      // A fully open sheet leaves no room below the bar for the zoom and photo buttons.
+      data-sheet-full={cover.bottom > size.h * 0.7 || undefined}
+      data-readonly={demo || undefined}
+      style={
+        {
+          ...(cover.right ? { "--map-inset": `${size.w - freeW}px` } : null),
+          ...(cover.bottom ? { "--map-bottom": `${cover.bottom}px` } : null),
+        } as CSSProperties
+      }
       tabIndex={0}
       role="application"
       aria-roledescription="map"
@@ -828,7 +924,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       <div ref={insetProbe} className={css.insetProbe} aria-hidden />
       <p id="inkwell-map-help" className={css.srOnly}>
         Drag or scroll to move, pinch or Control and scroll to zoom. Arrow keys move, plus and minus zoom, 0 shows
-        everything. Click a page to bring it closer and click it again, or press Enter on it, to open it.
+        everything. Click a page, or press Space on it, to peek at it beside the map; double-click it, or press Enter, to
+        open it. Escape closes the peek.
       </p>
       <p className={css.srOnly} aria-live="polite">
         {announce}
@@ -839,7 +936,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         <div className={css.chrome}>
           <div className={css.topRow}>
             <Roster state={state} narrow={narrow} room={freeW - 24 - (fixture ? 0 : compact || freeW >= 560 ? 170 : 50)} onFollow={follow} />
-            {!fixture && (
+            {!fixture && !demo && (
               <button
                 type="button"
                 className={`${css.pill} ${css.photo}`}
@@ -870,9 +967,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             />
           )}
 
-          {hint && (
+          {hint && !demo && (
             <p className={css.hint} role="status" onClick={() => dismissHint()}>
-              {coarse ? "Tap the page again to open it" : "Click the page again to open it"}
+              {coarse ? "Tap a page to peek." : "Click a page to peek. Double-click to open it."}
             </p>
           )}
         </div>
@@ -934,12 +1031,14 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   now={now}
                   you={meId !== null && page.updatedBy.kind === "person" && page.updatedBy.id === meId}
                   seeded={isUntouchedSeed(page, firstMade)}
-                  movable={!shape.flow}
+                  movable={!shape.flow && !demo}
+                  readOnly={demo}
+                  peeked={peekId === id}
                   camera={camera}
                   onClick={onCardClick}
                   onOpen={onOpen}
                   onMove={onMove}
-                  onMenu={fixture ? undefined : onMenu}
+                  onMenu={fixture || demo ? undefined : onMenu}
                 />
               );
             })}
@@ -1020,6 +1119,25 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       )}
       {state && layout.cards.size === 0 && <p className={css.status}>No pages yet. Write one and it appears here.</p>}
     </div>
+  );
+
+  // The peek sits beside the map, outside it: its scrolling and typing aren't the map's gestures and keys.
+  return (
+    <>
+      {view}
+      {peekId && (
+        <PeekPanel
+          pageId={peekId}
+          page={pages?.get(peekId)}
+          readOnly={demo}
+          fixture={!!fixture}
+          onClose={closePeek}
+          onOpenFull={onPeekOpenFull}
+          onSwap={onPeekSwap}
+          onCover={onCover}
+        />
+      )}
+    </>
   );
 }
 

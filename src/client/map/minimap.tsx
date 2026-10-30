@@ -145,11 +145,12 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
     const x = (e.clientX - r.left - ox) / k;
     const y = (e.clientY - r.top - oy) / k;
     const target = { ...camera.cam, x, y };
+    camera.byUser();
     if (glide) camera.flyTo(target, 280);
     else camera.set(target);
   };
 
-  const zoomBy = (f: number) => camera.flyTo({ ...camera.cam, s: camera.cam.s * f }, 220);
+  const zoomBy = (f: number) => (camera.byUser(), camera.flyTo({ ...camera.cam, s: camera.cam.s * f }, 220));
   return (
     <div ref={dock} className={css.dock} data-map-control>
       <span ref={probe} className={css.probe} aria-hidden />

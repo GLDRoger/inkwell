@@ -1,0 +1,256 @@
+/*
+ * The peek panel: a page opened beside the map (docs/DEMO-MODE.md, "Peek panel").
+ *
+ * Layout:
+ *   >= 900px, diary closed     right side, min(560px, 45vw) wide.
+ *   >= 1240px, diary open      left of the diary, as wide as leaves the map ~480px (360-520px).
+ *   900-1239px, diary open     in front of the diary, in its place.
+ *   < 900px                    a bottom sheet, half or fully open (in front of an open diary).
+ * Below 1240px the last panel opened is in front: opening the diary closes the peek (map/index.tsx).
+ */
+.peek {
+  position: fixed;
+  z-index: 35;
+  top: var(--shell-top, 66px);
+  right: 12px;
+  bottom: 12px;
+  width: min(560px, 45vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper-raised);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  container-type: inline-size;
+  outline: none;
+  animation: peek-in var(--dur) var(--ease-ink) both;
+}
+
+@keyframes peek-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+}
+
+@media (min-width: 900px) {
+  .app[data-diary="open"] .peek {
+    z-index: 42;
+    width: min(var(--panel-w), calc(100vw - 24px));
+  }
+}
+@media (min-width: 1240px) {
+  .app[data-diary="open"] .peek {
+    z-index: 35;
+    right: calc(var(--diary-inset, 0px) + 12px);
+    width: clamp(360px, calc(100vw - var(--diary-inset, 0px) - 504px), 520px);
+  }
+}
+
+.peek[data-mode="sheet"] {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  max-width: 720px;
+  margin: 0 auto;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  transition: translate var(--dur) var(--ease-ink);
+  animation-name: peek-up;
+}
+/* Peeked while the diary is open on a tablet: in front of it, until the diary is opened again. */
+.app[data-diary="open"] .peek[data-mode="sheet"] {
+  z-index: 42;
+}
+.peek[data-mode="sheet"][data-dragging] {
+  transition: none;
+}
+@keyframes peek-up {
+  from {
+    transform: translateY(60%);
+    opacity: 0;
+  }
+}
+
+.peek-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 10px 10px 18px;
+  border-bottom: 1px solid var(--rule);
+  flex: none;
+}
+.peek[data-mode="sheet"] .peek-head {
+  padding-top: 18px;
+  touch-action: none;
+  cursor: grab;
+}
+.peek-grip {
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: 2px;
+  background: var(--rule-strong);
+}
+.peek-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-faint);
+}
+.peek-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font: 400 21px/1.2 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.peek-open,
+.peek-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: none;
+  height: 34px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-soft);
+  font: 500 13px/1 var(--font-ui);
+  cursor: pointer;
+}
+.peek-open {
+  padding: 0 12px 0 14px;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.peek-close {
+  width: 34px;
+}
+.peek-open-short {
+  display: none;
+}
+/* A narrow panel (beside the diary, or a phone) keeps the title's room: "Open" says enough. */
+@container (max-width: 460px) {
+  .peek-open-long {
+    display: none;
+  }
+  .peek-open-short {
+    display: inline;
+  }
+}
+.peek-open:hover,
+.peek-close:hover {
+  background: var(--paper-sunken);
+  color: var(--ink);
+}
+.peek-open:focus-visible,
+.peek-close:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 2px;
+}
+@media (max-width: 640px) {
+  .peek-open,
+  .peek-close {
+    height: 44px;
+  }
+  .peek-close {
+    width: 44px;
+  }
+}
+
+.peek-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.peek[data-mode="sheet"] .peek-scroll {
+  /* Half open, the sheet's lower part is off screen: let the end of the page scroll up into view. */
+  padding-bottom: calc(var(--sheet-hidden, 0px) + env(safe-area-inset-bottom, 0px));
+}
+
+.peek-doc {
+  padding: 18px 26px 64px;
+}
+.peek[data-mode="sheet"] .peek-doc {
+  padding: 14px 18px 48px;
+}
+.peek-doc .prose {
+  min-height: 12em;
+  font-size: 15.5px;
+}
+.peek-doc .editor[data-readonly] .prose {
+  caret-color: transparent;
+}
+.peek-cover {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  margin-bottom: 16px;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+.peek-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.peek-meta .page-meta {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek-doc .writers {
+  margin: 0 0 14px;
+}
+.peek-missing p {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+.peek-missing .muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+:root[data-theme="dark"] .peek-cover {
+  filter: brightness(0.9);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .peek-cover {
+    filter: brightness(0.9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peek,
+  .peek[data-mode="sheet"] {
+    animation: peek-fade var(--dur-fast) linear both;
+    transition: none;
+  }
+  @keyframes peek-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}

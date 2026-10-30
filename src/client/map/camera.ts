@@ -110,6 +110,12 @@ export class CameraController {
   }
   /** Called a moment after the camera stops moving (save it, recull at leisure). */
   onSettle: ((cam: Cam) => void) | null = null;
+  /** Called whenever a person moves the camera (pan, zoom, a control): the demo's follow steps back. */
+  onUser: (() => void) | null = null;
+  /** Mark the next move as a person's (controls that fly the camera call this). */
+  byUser() {
+    this.onUser?.();
+  }
 
   listen(fn: FrameListener): () => void {
     this.listeners.add(fn);
@@ -131,6 +137,7 @@ export class CameraController {
   }
 
   panBy(dx: number, dy: number) {
+    this.onUser?.();
     this.touched = true;
     this.tween = null;
     this.cam = { ...this.cam, x: this.cam.x - dx / this.cam.s, y: this.cam.y - dy / this.cam.s };
@@ -138,6 +145,7 @@ export class CameraController {
   }
 
   zoomAt(factor: number, sx = this.vw / 2, sy = this.vh / 2) {
+    this.onUser?.();
     this.touched = true;
     this.tween = null;
     this.cam = zoomAround(this.cam, factor, sx, sy, this.vw, this.vh);

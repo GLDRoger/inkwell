@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import "../theme.css";
+import "../styles/page.css";
 import { MapView } from "./index";
 
 const params = new URLSearchParams(location.search);

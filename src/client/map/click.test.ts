@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ClickIntent, DOUBLE_MS, opensOnClick } from "./click";
+import { ClickIntent, DOUBLE_MS } from "./click";
 
 describe("ClickIntent", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("opens on a double-click and never focuses first", () => {
+  it("opens on a double-click and never peeks first", () => {
     const single = vi.fn();
     const double = vi.fn();
     const c = new ClickIntent(single, double);
@@ -16,7 +16,7 @@ describe("ClickIntent", () => {
     expect(single).not.toHaveBeenCalled();
   });
 
-  it("focuses on a single click, once the double-click window has passed", () => {
+  it("peeks on a single click, once the double-click window has passed", () => {
     const single = vi.fn();
     const double = vi.fn();
     const c = new ClickIntent(single, double);
@@ -40,6 +40,18 @@ describe("ClickIntent", () => {
     expect(single).toHaveBeenCalledWith("b");
   });
 
+  it("a second single click on the same card after the window just peeks it again (no two-step open)", () => {
+    const single = vi.fn();
+    const double = vi.fn();
+    const c = new ClickIntent(single, double);
+    c.click("a", 0);
+    vi.advanceTimersByTime(DOUBLE_MS + 50);
+    c.click("a", DOUBLE_MS + 600);
+    vi.runAllTimers();
+    expect(single).toHaveBeenNthCalledWith(2, "a");
+    expect(double).not.toHaveBeenCalled();
+  });
+
   it("treats two slow clicks as two single clicks", () => {
     const single = vi.fn();
     const double = vi.fn();
@@ -50,15 +62,5 @@ describe("ClickIntent", () => {
     vi.runAllTimers();
     expect(single).toHaveBeenCalledTimes(2);
     expect(double).not.toHaveBeenCalled();
-  });
-});
-
-describe("opening with a second click or tap", () => {
-  it("opens the card that was brought close, at the zoom it was brought to", () => {
-    expect(opensOnClick(null, "a", 0.85)).toBe(false);
-    expect(opensOnClick({ id: "a", s: 0.85 }, "a", 0.85)).toBe(true);
-    expect(opensOnClick({ id: "a", s: 0.85 }, "b", 0.85)).toBe(false);
-    // Zoomed well away since: bring it close again first.
-    expect(opensOnClick({ id: "a", s: 0.85 }, "a", 0.3)).toBe(false);
   });
 });
