@@ -138,3 +138,16 @@ Welcome → "Watch it work" (recorded demo replayed through the real runtime in 
 Real key in local .env: smoke 5/5 on Spark and Wonder (2026-10-30).
 In flight: server (demo notebook, BYOK, Wonder, cassettes recorded from real Wonder), client flow (welcome buttons, demo UI, guide, key dialog), map peek panel + demo camera, real-Wonder corpus evaluation (read-only).
 Then: apply eval fixes, re-record cassette, full audit of the new flow, deploy (no server key needed: demo is recorded, hands-on is BYOK), regenerate welcome objects with Muse Image, record the demo video from the in-app demo, README/SUBMISSION re-pitched for judges, domain.
+
+### Real Muse Wonder eval (2026-10-30, report: /tmp/inkwell-eval-results/) — corpus 11/12 (judged ~10/12), ~$1.93
+Apply after the server worker lands, then re-record the demo cassette:
+1. list_pages entries carry `link: pageLink(title,id)`; primer: copy links from tool results, never type ids; safety net rewriting /p/ID links whose id is missing or whose label matches another page's title (runtime.ts before final updateDiaryEntry).
+2. Primer: the final reply appears in the person's diary; "tell me in the diary" means the reply, not a page.
+3. Primer: a write tool's success is authoritative; don't re-read to verify.
+4. Primer: when pages are named, list_pages once and use those ids; search only for content.
+5. Primer: respect requested lengths. Corpus long_diary_stream check ≤ ~1000 words.
+6. route.ts: test LEADING per sentence; image attached + no agent named → Wren.
+7. seed.ts Scout: record facts without commentary on gaps; mention gaps once in the reply.
+8. Record input+output tokens on runs (run.usage.totalTokens) so the corpus shows usage.
+9. Corpus: ambiguous_tidy checks containment not identity; check diary link labels match target titles.
+10. Per-step first-byte watchdog (~30s abort + one retry) for demo safety.
