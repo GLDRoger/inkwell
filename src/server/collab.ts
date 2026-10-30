@@ -142,6 +142,13 @@ export interface CollabService {
 const POSITION_STORE_PREFIX = "__tiptap_position_migrations:";
 const MAX_POSITION_STORES = 4;
 
+function prunePositionStores(document: Y.Doc) {
+  const stores = [...document.share.keys()].filter(key => key.startsWith(POSITION_STORE_PREFIX));
+  const nonEmpty = stores.map(key => document.getMap(key)).filter(map => map.size > 0);
+  if (!nonEmpty.length) return;
+  document.transact(() => { for (const map of nonEmpty) map.clear(); }, "inkwell:prune-position-stores");
+}
+
 const SYSTEM_ACTOR: Actor = { kind: "agent", id: "system", name: "Inkwell" };
 
 export function createCollab(deps: {
@@ -246,6 +253,10 @@ export function createCollab(deps: {
       const workspaceId = lastContext?.workspaceId;
       if (!workspaceId) return;
       try {
+        // y-tiptap's position stores only help editors that are connected right now
+        // remap cursors; they grow with every Enter and never shrink. Clear them once
+        // nobody is editing so a long-lived page can't creep up to the size cap.
+        if (document.getConnectionsCount() === 0) prunePositionStores(document);
         const ydoc = Buffer.from(validate(document));
         const markdown = yDocToMarkdown(document);
         pages.syncPageBody(workspaceId, documentName, {

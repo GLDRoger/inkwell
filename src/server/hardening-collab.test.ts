@@ -160,3 +160,17 @@ it('still rejects other hidden maps alongside a position store', async () => {
   await until(() => closed);
   provider.destroy();
 });
+it('clears editor position stores once nobody is editing the page', async () => {
+  const page = s.pages.createPage(ctx.workspaceId, ctx.person, { markdown: 'hello' });
+  const { provider, doc } = await connect(page.id);
+  doc.transact(() => {
+    const store = doc.getMap('__tiptap_position_migrations:root:default');
+    for (let i = 0; i < 50; i++) store.set(`1:${i}`, { seen: [1, i] });
+  });
+  await until(() => (s.collab.hocuspocus.documents.get(page.id)?.getMap('__tiptap_position_migrations:root:default').size ?? 0) === 50);
+  provider.destroy();
+  await pause(3500);
+  const saved = new Y.Doc(); Y.applyUpdate(saved, s.pages.getPageRow(ctx.workspaceId, page.id)!.ydoc!);
+  expect(saved.getMap('__tiptap_position_migrations:root:default').size).toBe(0);
+  expect(yDocToMarkdown(saved)).toContain('hello'); saved.destroy();
+}, 10_000);
