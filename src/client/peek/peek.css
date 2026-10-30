@@ -56,7 +56,15 @@
   max-width: 720px;
   margin: 0 auto;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  transition: translate var(--dur) var(--ease-ink);
+  /*
+   * Half open, the rest of the sheet hangs below the screen. Lifted above the
+   * demo's docked caption bar, it would show around the bar: cut it off at the
+   * sheet's resting edge (the shadow above stays). Moves with the translate.
+   */
+  clip-path: inset(-48px -48px var(--sheet-clip, 0px) -48px);
+  transition:
+    translate var(--dur) var(--ease-ink),
+    clip-path var(--dur) var(--ease-ink);
   animation-name: peek-up;
 }
 /* Peeked while the diary is open on a tablet: in front of it, until the diary is opened again. */

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { DemoScenario } from "@shared/types";
 import { getDemo, initialDemo, setDemo } from "./demo";
-import { MAP_CAMERA_KEY, leaveDemo, startDemo, stopDemo, syncDemo, tryItYourself } from "./demo-flow";
+import { MAP_CAMERA_KEY, demoBarDocked, getDemoBarRoom, leaveDemo, measureDemoBar, startDemo, stopDemo, syncDemo, tryItYourself, watchDemoBar } from "./demo-flow";
 import { keys } from "./queries";
 import { getUi, setUi } from "./ui";
 import { GUIDED_KEY } from "../guide/seen";
@@ -105,5 +105,56 @@ describe("a reload mid-demo", () => {
     fetchMock.mockImplementation(async () => json({ playing: false, scenario: null, stepIndex: -1 }));
     await syncDemo(client);
     expect(getDemo().notebook).toBe("own");
+  });
+});
+
+describe("room for the demo's caption bar", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    document.documentElement.removeAttribute("data-demo-dock");
+    document.documentElement.style.removeProperty("--peek-cover-right");
+    measureDemoBar();
+  });
+
+  it("docks along the bottom on phones, over a bottom sheet, or when the free map is too narrow", () => {
+    expect(demoBarDocked({ vw: 375, diary: 0, peek: 0, sheet: false })).toBe(true);
+    expect(demoBarDocked({ vw: 768, diary: 0, peek: 0, sheet: true })).toBe(true);
+    // 768 with the diary open leaves 316px of map: too narrow to float in.
+    expect(demoBarDocked({ vw: 768, diary: 452, peek: 0, sheet: false })).toBe(true);
+    expect(demoBarDocked({ vw: 1280, diary: 0, peek: 572, sheet: false })).toBe(false);
+    expect(demoBarDocked({ vw: 1280, diary: 452, peek: 0, sheet: false })).toBe(false);
+  });
+
+  it("publishes where the bar is on <html>, and clears it once the bar has gone", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+    document.body.innerHTML = `<div class="app" data-diary="closed"><section class="demo-bar"></section><aside class="peek" data-mode="sheet"></aside></div>`;
+    measureDemoBar();
+    const root = document.documentElement;
+    expect(root.hasAttribute("data-demo-dock")).toBe(true);
+    expect(root.style.getPropertyValue("--demo-bar-space")).toMatch(/^\d+px$/);
+    expect(getDemoBarRoom()).toMatchObject({ docked: true });
+    document.querySelector(".peek")!.remove();
+    measureDemoBar();
+    expect(root.hasAttribute("data-demo-dock")).toBe(false);
+    document.body.innerHTML = "";
+    measureDemoBar();
+    expect(root.style.getPropertyValue("--demo-bar-space")).toBe("");
+    expect(getDemoBarRoom()).toEqual({ space: 0, docked: false });
+  });
+});
+
+describe("watching the caption bar", () => {
+  it("leaves nothing docked once the last watcher stops", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    document.body.innerHTML = `<section class="demo-bar"></section>`;
+    const a = watchDemoBar();
+    const b = watchDemoBar();
+    expect(document.documentElement.hasAttribute("data-demo-dock")).toBe(true);
+    a();
+    expect(document.documentElement.hasAttribute("data-demo-dock")).toBe(true);
+    b();
+    expect(document.documentElement.hasAttribute("data-demo-dock")).toBe(false);
+    expect(document.documentElement.style.getPropertyValue("--demo-bar-space")).toBe("");
+    document.body.innerHTML = "";
   });
 });

@@ -53,3 +53,14 @@ export class TitleDraft {
     if (next != null) this.opts.save(next);
   }
 }
+
+/**
+ * Who edited a page last, as a byline says it: the agent's or person's name,
+ * "You" for yourself, and "Demo" in the recorded demo, where nobody watching
+ * wrote anything (its photo and cover are the recording's, not the viewer's).
+ */
+export function editorName(by: Pick<Page["updatedBy"], "kind" | "id" | "name">, o: { meId: string | null | undefined; demo: boolean }): string {
+  if (by.kind === "agent") return by.name;
+  if (o.demo) return "Demo";
+  return o.meId != null && by.id === o.meId ? "You" : by.name;
+}

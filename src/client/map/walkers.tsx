@@ -83,7 +83,7 @@ export function standingSpots(state: MapState, layout: MapLayout, s: number): Ma
   const out = new Map<string, Standing>();
   const taken: Box[] = [];
   const far = s < MID_AT;
-  const areas = layout.regions.map((r) => areaNameBox(r.x + REGION_PAD, r.y + r.head, r.title, s));
+  const areas = layout.regions.map((r) => areaNameBox(r.x + REGION_PAD, r.y + r.head, r.title, s, r.w - REGION_PAD * 2));
   for (const [pageId, list] of byPage) {
     list.sort((a, b) => (a.kind === b.kind ? (a.key < b.key ? -1 : 1) : a.kind === "agent" ? -1 : 1));
     const card = layout.cards.get(pageId)!;

@@ -96,7 +96,8 @@ export const MapCard = memo(function MapCard(p: Props) {
   if (arrival?.kind === "arriving") style["--arrive-delay"] = `${Math.round(arrival.delayMs)}ms`;
 
   const by = page.updatedBy;
-  const who = p.you ? "you" : by.name;
+  // In the recorded demo, what a person did (a photo, a cover) was the recording's, not yours.
+  const who = by.kind === "person" && p.readOnly ? "Demo" : p.you ? "you" : by.name;
   const when = p.seeded ? "when your notebook was made" : ago(page.updatedAt, p.now);
   // A mid card's byline has one short line.
   const whenShort = p.seeded ? "from the start" : when;
@@ -121,6 +122,7 @@ export const MapCard = memo(function MapCard(p: Props) {
       tabIndex={0}
       role={near ? "article" : "button"}
       aria-label={label}
+      aria-describedby={CARD_KEYS_ID}
       title={detail === "dots" || detail === "rooms" ? title : undefined}
       onClick={(e) => {
         if (justDragged.current) {
@@ -297,6 +299,10 @@ export const MapCard = memo(function MapCard(p: Props) {
     </div>
   );
 });
+
+/** The id of the map's one hidden line that tells a card's keys (rendered by map/index.tsx). */
+export const CARD_KEYS_ID = "inkwell-card-keys";
+export const CARD_KEYS_TEXT = "Press Space to peek, Enter to open.";
 
 function Touched({
   by,

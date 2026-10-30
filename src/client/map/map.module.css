@@ -113,12 +113,15 @@
       round(calc(var(--y) * var(--s) * 1px), 1px)
     )
     translateY(calc(-100% - clamp(14px, calc(var(--s) * 16px), 18px)));
-  max-width: max(120px, calc((var(--w) + 110) * var(--s) * 1px));
+  --room: max(120px, calc((var(--w) + 110) * var(--s) * 1px));
+  --cap: 116px;
+  max-width: var(--room);
   padding: 0.08em 0.12em 0.12em 0;
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 340;
-  font-size: clamp(17px, calc(var(--s) * 92px), 116px);
+  /* Shrinks so the whole name fits over its area instead of being cut ("Other pa…"); labels.ts areaFontPx. */
+  font-size: min(clamp(17px, calc(var(--s) * 92px), var(--cap)), max(14px, calc(var(--room) / (var(--chars, 8) * 0.45))));
   line-height: 1;
   letter-spacing: -0.02em;
   color: color-mix(in oklab, var(--ink-faint) 62%, transparent);
@@ -129,7 +132,7 @@
 }
 
 .root[data-compact] .area {
-  font-size: clamp(17px, calc(var(--s) * 92px), 64px);
+  --cap: 64px;
 }
 
 .root[data-detail="mid"] .area,

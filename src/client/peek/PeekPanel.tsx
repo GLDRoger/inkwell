@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowUpRight, FileText, X } from "lucide-react";
 import type { Id, Page } from "@shared/types";
+import { useDemoBarRoom } from "../lib/demo-flow";
 import { settleSheet, snapHeight, type Snap } from "./sheet";
 import "./peek.css";
 
@@ -48,6 +49,14 @@ const chromeTop = () => {
 
 /** Too narrow for both side by side, so the peek sits in front of the open diary (see peek.css). */
 export const BOTH_PANELS_MIN_W = 1240;
+/**
+ * The recorded demo is about the map: below this width it shows one panel at a
+ * time (the diary while a request is made, the peek while an agent writes), so
+ * the map in between stays wide enough to watch.
+ */
+export const DEMO_BOTH_PANELS_MIN_W = 1400;
+/** Can the diary and the peek both stay open at this width? */
+export const panelsSideBySide = (vw: number, demo: boolean) => vw >= (demo ? DEMO_BOTH_PANELS_MIN_W : BOTH_PANELS_MIN_W);
 const coversDiary = () => window.innerWidth < BOTH_PANELS_MIN_W && !!document.querySelector('.app[data-diary="open"]');
 
 /**
@@ -60,7 +69,10 @@ export function PeekPanel({ pageId, page, readOnly, fixture, onClose, onOpenFull
   const ref = useRef<HTMLElement>(null);
   const wide = useWide();
   const [snap, setSnap] = useState<Snap>("half");
-  const [vh, setVh] = useState(() => (typeof window === "undefined" ? 800 : window.innerHeight));
+  const [screenH, setVh] = useState(() => (typeof window === "undefined" ? 800 : window.innerHeight));
+  // The demo's caption bar, docked along the bottom, stays in front: the sheet rests above it.
+  const bar = useDemoBarRoom(readOnly);
+  const vh = Math.max(240, screenH - (bar.docked ? bar.space : 0));
   const top = typeof document === "undefined" ? 66 : chromeTop();
   const full = snapHeight("full", vh, top);
   const visible = snapHeight(snap, vh, top);
@@ -137,15 +149,20 @@ export function PeekPanel({ pageId, page, readOnly, fixture, onClose, onOpenFull
   }, [pageId]);
 
   // ------------------------------------------------------------ sheet drag
+  const restRef = useRef(0);
+  restRef.current = full - visible;
   const drag = useRef<{ id: number; y0: number; v0: number; t: number; y: number; v: number } | null>(null);
   const placeSheet = (shown: number | null) => {
     const el = ref.current;
     if (!el) return;
     if (shown == null) {
-      el.style.removeProperty("translate");
+      // Back to where this render put it; a new snap's render moves it on from there.
+      el.style.translate = `0 ${restRef.current}px`;
+      el.style.setProperty("--sheet-clip", `${restRef.current}px`);
       el.removeAttribute("data-dragging");
     } else {
       el.style.translate = `0 ${Math.round(full - shown)}px`;
+      el.style.setProperty("--sheet-clip", `${Math.round(full - shown)}px`);
       el.setAttribute("data-dragging", "");
     }
   };
@@ -176,7 +193,7 @@ export function PeekPanel({ pageId, page, readOnly, fixture, onClose, onOpenFull
     else setSnap(next);
   };
 
-  const style = (wide ? {} : { height: full, translate: `0 ${full - visible}px`, "--sheet-hidden": `${full - visible}px` }) as CSSProperties;
+  const style = (wide ? {} : { height: full, translate: `0 ${full - visible}px`, "--sheet-hidden": `${full - visible}px`, "--sheet-clip": `${full - visible}px` }) as CSSProperties;
 
   return (
     <aside

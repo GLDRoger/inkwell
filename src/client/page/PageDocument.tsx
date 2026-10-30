@@ -9,7 +9,8 @@ import { timeAgo, useNow } from "../lib/time";
 import { useCollab } from "./collab";
 import { PageEditor } from "./Editor";
 import { syncView, warnBeforeUnload } from "./syncState";
-import { isUntouchedSeed } from "./title";
+import { editorName, isUntouchedSeed } from "./title";
+import { useDemo } from "../lib/demo";
 
 /**
  * The parts of a page that both the full page (`/p/:id`) and the map's peek
@@ -101,6 +102,7 @@ export function Authorship({ page, pages }: { page: Page; pages: Page[] }) {
   const { data: me } = useMe();
   const { data: agents } = useAgents();
   const now = useNow();
+  const demo = useDemo((s) => s.notebook === "demo");
   const by = page.updatedBy;
   const color = by.kind === "agent" ? agents?.find((a) => a.id === by.id)?.color : undefined;
   return (
@@ -108,10 +110,8 @@ export function Authorship({ page, pages }: { page: Page; pages: Page[] }) {
       Last edited by{" "}
       {by.kind === "agent" ? (
         <span className="agent-name" style={{ ["--agent" as string]: color ?? "var(--ink-soft)" }}>{by.name}</span>
-      ) : by.id === me?.person.id ? (
-        "You"
       ) : (
-        by.name
+        editorName(by, { meId: me?.person.id, demo })
       )}
       {" · "}
       <time dateTime={page.updatedAt} title={new Date(page.updatedAt).toLocaleString()}>

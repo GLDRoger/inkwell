@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isUntouchedSeed, TitleDraft, titleToSave } from "./title";
+import { editorName, isUntouchedSeed, TitleDraft, titleToSave } from "./title";
 
 describe("titleToSave", () => {
   it("saves nothing on blur when the person didn't type, so an agent's rename survives", () => {
@@ -59,5 +59,15 @@ describe("TitleDraft", () => {
     const { save, draft } = make();
     draft.flush();
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe("editorName", () => {
+  const person = { kind: "person" as const, id: "u", name: "Sam" };
+  it("names agents, says You for yourself, and Demo for anything a person did in the demo", () => {
+    expect(editorName({ kind: "agent", id: "a", name: "Wren" }, { meId: "u", demo: true })).toBe("Wren");
+    expect(editorName(person, { meId: "u", demo: false })).toBe("You");
+    expect(editorName(person, { meId: "other", demo: false })).toBe("Sam");
+    expect(editorName(person, { meId: "u", demo: true })).toBe("Demo");
   });
 });

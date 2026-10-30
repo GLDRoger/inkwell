@@ -8,6 +8,7 @@ import { childrenOf, pageTitle, usePage, usePages } from "../lib/queries";
 import { useCreatePage, useUpdatePage } from "../lib/mutations";
 import { openDiaryWith } from "../lib/ui";
 import { useDemo } from "../lib/demo";
+import { useDemoBarRoom } from "../lib/demo-flow";
 import { useCollab } from "./collab";
 import { Authorship, PageDocument, SyncPill, Writers, useWritersHere } from "./PageDocument";
 import { TitleDraft } from "./title";
@@ -126,6 +127,8 @@ function Children({ page, pages, readOnly }: { page: Page; pages: Page[]; readOn
 function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
   // The recorded demo's notebook is only for watching: no typing, renaming or deleting.
   const readOnly = useDemo((s) => s.notebook === "demo");
+  // The demo's caption bar docks along the bottom on narrow screens, and the diary ends above it.
+  useDemoBarRoom(readOnly);
   const { collab, ...sync } = useCollab(page.id);
   const editorRef = useRef<TiptapEditor | null>(null);
   const focusWhenReady = useRef(false);

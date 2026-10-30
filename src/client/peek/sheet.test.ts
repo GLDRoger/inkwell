@@ -21,3 +21,13 @@ describe("the peek's bottom sheet", () => {
     expect(settleSheet(420, -1, vh, top)).toBe("full");
   });
 });
+
+describe("diary and peek side by side", () => {
+  it("needs more room in the demo, where the map is what you watch", async () => {
+    const { panelsSideBySide } = await import("./PeekPanel");
+    expect(panelsSideBySide(1280, false)).toBe(true);
+    expect(panelsSideBySide(1280, true)).toBe(false);
+    expect(panelsSideBySide(1440, true)).toBe(true);
+    expect(panelsSideBySide(1000, false)).toBe(false);
+  });
+});

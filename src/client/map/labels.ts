@@ -56,13 +56,28 @@ function area(a: Box, b: Box): number {
   return w > 0 && h > 0 ? w * h : 0;
 }
 
+/** How wide one character of an area name is, in ems (Newsreader italic, light). */
+export const AREA_CHAR_EM = 0.45;
+
+/**
+ * An area name's font size, px, at zoom `s`: the same as `.area` in
+ * map.module.css. clamp(17px, s*92px, 116px) (64px on a phone), shrunk so the
+ * whole name fits over its area (max(120px, (w + 110) * s) wide) rather than
+ * being cut off. `w` is the area's width in world units.
+ */
+export function areaFontPx(title: string, s: number, w = Infinity, compact = false): number {
+  const font = Math.min(compact ? 64 : 116, Math.max(17, s * 92));
+  const room = Math.max(120, (w + 110) * s);
+  return Math.min(font, Math.max(14, room / (Math.max(1, title.length) * AREA_CHAR_EM)));
+}
+
 /**
  * Where an area's name is drawn, in world units, at zoom `s`: the same sizes
- * as `.area` in map.module.css (font clamp(17px, s*92px, 116px), sitting
- * 14-18px above the point (x, y), clear of a name on a card's top edge).
+ * as `.area` in map.module.css (font from areaFontPx, sitting 14-18px above
+ * the point (x, y), clear of a name on a card's top edge).
  */
-export function areaNameBox(x: number, y: number, title: string, s: number): Box {
-  const font = Math.min(116, Math.max(17, s * 92));
+export function areaNameBox(x: number, y: number, title: string, s: number, areaW = Infinity): Box {
+  const font = areaFontPx(title, s, areaW);
   const gap = Math.min(18, Math.max(14, s * 16));
   const h = font * 1.2;
   const w = Math.max(1, title.length) * font * 0.42;

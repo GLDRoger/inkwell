@@ -247,13 +247,24 @@
 .demo-bar {
   /* Centred in the map that's still showing: beside the diary and the peek panel (which publishes --peek-cover-*). */
   --cover-right: max(var(--diary-inset, 0px), var(--peek-cover-right, 0px));
-  position: fixed; z-index: 35;
+  /* In front of the panels: Stop and Try it yourself are never covered (see watchDemoBar in lib/demo-flow.ts). */
+  position: fixed; z-index: 46;
   left: calc(50% - var(--cover-right) / 2); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   translate: -50% 0; width: min(560px, max(300px, calc(100vw - var(--cover-right) - 24px)));
   display: grid; gap: 8px; padding: 14px 16px 12px 18px;
   border-radius: var(--radius-lg); background: var(--paper-raised); box-shadow: var(--shadow-pop);
   animation: demo-in 360ms var(--ease-ink) both;
 }
+/*
+ * No room for it in the free map (a phone, a bottom sheet, a map squeezed beside
+ * the diary): it docks along the bottom, and the panels end above it.
+ */
+:root[data-demo-dock] .demo-bar {
+  left: 10px; right: 10px; width: auto; max-width: 720px; margin: 0 auto; translate: none;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+:root[data-demo-dock] .peek,
+:root[data-demo-dock] .diary { bottom: var(--demo-bar-space, 12px); }
 @keyframes demo-in { from { opacity: 0; transform: translateY(8px); } }
 .demo-meta { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: var(--ink-faint); }
 .demo-label { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; white-space: nowrap; }
@@ -290,17 +301,12 @@
 .demo-try-quiet { background: var(--paper-raised); color: var(--ink); box-shadow: inset 0 0 0 1px var(--rule-strong); }
 .demo-try-quiet:hover { background: var(--paper-sunken); }
 /* Notices sit above the caption bar while the demo is on screen. */
-.app[data-notebook="demo"] .notices { bottom: calc(196px + env(safe-area-inset-bottom, 0px)); }
+.app[data-notebook="demo"] .notices { bottom: calc(var(--demo-bar-space, 188px) + 8px); }
 @media (max-width: 640px) {
-  /* Above the map's photo button and dock. */
-  .demo-bar {
-    left: 10px; right: 10px; translate: none; width: auto;
-    bottom: max(calc(68px + env(safe-area-inset-bottom, 0px)), calc(var(--peek-cover-bottom, 0px) + 10px)); padding: 12px 14px 10px;
-  }
+  .demo-bar { padding: 12px 14px 10px; }
   .demo-caption { font-size: 17px; }
   .demo-bar[data-ended] .demo-caption { font-size: 18px; }
   .demo-ghost, .demo-try { height: 44px; }
-  .app[data-notebook="demo"][data-route="map"] .notices { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .demo-bar { animation: fade-in-demo 200ms ease both; }

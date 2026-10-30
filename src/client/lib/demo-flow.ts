@@ -1,3 +1,4 @@
+import { useEffect, useSyncExternalStore } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import type { NotebookKind } from "@shared/types";
 import { api } from "./api";
@@ -109,4 +110,135 @@ export async function syncDemo(client: QueryClient) {
 export function tryItYourself(client: QueryClient) {
   leaveDemo(client);
   if (!hasBeenGuided()) setUi({ guideOpen: true, diaryOpen: false });
+}
+
+// ------------------------------------------------------------ room for the caption bar
+/**
+ * The demo's caption bar (shell/DemoBar.tsx) is never covered: it carries Stop and
+ * Try it yourself. Where there's room it floats centred in the free part of the
+ * map; where there isn't (a phone, a bottom sheet, a map squeezed beside the
+ * diary), it docks along the bottom in front of everything and the panels
+ * (peek, diary) end above it. Either way the map keeps its controls and the
+ * camera's framing clear of it.
+ *
+ * Published on <html>: `data-demo-dock` while docked, and `--demo-bar-space`,
+ * the px from the bottom of the screen the bar takes (with a small gap).
+ */
+export interface DemoBarRoom {
+  /** Px from the bottom of the viewport the bar covers, gap included; 0 with no bar. */
+  space: number;
+  docked: boolean;
+}
+
+/** The narrowest free map the floating bar fits into (its 300px minimum plus margins). */
+export const DEMO_BAR_MIN_FREE = 340;
+/** At or below this width the bar always docks (phones). */
+export const DEMO_BAR_DOCK_MAX_W = 640;
+const DEMO_BAR_GAP = 8;
+
+/** Dock the bar along the bottom? `free` is the map's width left of the side panels. */
+export function demoBarDocked(o: { vw: number; diary: number; peek: number; sheet: boolean }): boolean {
+  if (o.vw <= DEMO_BAR_DOCK_MAX_W || o.sheet) return true;
+  return o.vw - Math.max(o.diary, o.peek) < DEMO_BAR_MIN_FREE;
+}
+
+let barRoom: DemoBarRoom = { space: 0, docked: false };
+const barSubs = new Set<() => void>();
+let watchers = 0;
+let stopWatching: (() => void) | null = null;
+
+function setBarRoom(next: DemoBarRoom) {
+  if (next.space === barRoom.space && next.docked === barRoom.docked) return;
+  barRoom = next;
+  barSubs.forEach((l) => l());
+}
+
+/** Measure the bar and what's beside it, then publish where it sits. */
+export function measureDemoBar(doc: Document = document) {
+  const root = doc.documentElement;
+  const bar = doc.querySelector<HTMLElement>(".demo-bar");
+  if (!bar) {
+    root.removeAttribute("data-demo-dock");
+    root.style.removeProperty("--demo-bar-space");
+    return setBarRoom({ space: 0, docked: false });
+  }
+  const win = doc.defaultView ?? window;
+  const vw = win.innerWidth;
+  const diaryEl = doc.querySelector<HTMLElement>('.app[data-diary="open"] .diary');
+  // The diary sits 12px in from the right, with 12px between it and the map.
+  const diary = diaryEl && vw > DEMO_BAR_DOCK_MAX_W ? diaryEl.offsetWidth + 24 : 0;
+  const peek = parseFloat(root.style.getPropertyValue("--peek-cover-right")) || 0;
+  const sheet = !!doc.querySelector('.peek[data-mode="sheet"]');
+  const docked = demoBarDocked({ vw, diary, peek, sheet });
+  // Docking moves and resizes the bar: settle that before measuring it.
+  if (root.hasAttribute("data-demo-dock") !== docked) root.toggleAttribute("data-demo-dock", docked);
+  const bottom = parseFloat(win.getComputedStyle(bar).bottom) || 0;
+  const space = Math.round(bar.offsetHeight + bottom + DEMO_BAR_GAP);
+  const value = `${space}px`;
+  if (root.style.getPropertyValue("--demo-bar-space") !== value) root.style.setProperty("--demo-bar-space", value);
+  setBarRoom({ space, docked });
+}
+
+/** Keep the bar's room up to date while anything that shows it is mounted. Ref-counted. */
+export function watchDemoBar(): () => void {
+  if (typeof document === "undefined") return () => {};
+  watchers++;
+  if (!stopWatching) {
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measureDemoBar();
+      });
+    };
+    let observed: HTMLElement | null = null;
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    const follow = () => {
+      const bar = document.querySelector<HTMLElement>(".demo-bar");
+      if (bar !== observed) {
+        if (observed) ro?.unobserve(observed);
+        if (bar) ro?.observe(bar);
+        observed = bar;
+      }
+      schedule();
+    };
+    // The bar coming and going, the diary opening, the peek turning into a sheet or moving.
+    const mo = new MutationObserver(follow);
+    mo.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-diary", "data-mode"] });
+    const rootMo = new MutationObserver(schedule);
+    rootMo.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+    window.addEventListener("resize", schedule);
+    follow();
+    measureDemoBar();
+    stopWatching = () => {
+      cancelAnimationFrame(raf);
+      mo.disconnect();
+      rootMo.disconnect();
+      ro?.disconnect();
+      window.removeEventListener("resize", schedule);
+    };
+  }
+  return () => {
+    watchers--;
+    if (watchers > 0 || !stopWatching) return;
+    stopWatching();
+    stopWatching = null;
+    // Nobody is showing the demo any more: nothing stays docked or lifted.
+    document.documentElement.removeAttribute("data-demo-dock");
+    document.documentElement.style.removeProperty("--demo-bar-space");
+    setBarRoom({ space: 0, docked: false });
+  };
+}
+
+export const getDemoBarRoom = () => barRoom;
+
+/** Where the demo's caption bar is, for panels and the map camera to keep clear of it. */
+export function useDemoBarRoom(active = true): DemoBarRoom {
+  useEffect(() => (active ? watchDemoBar() : undefined), [active]);
+  return useSyncExternalStore(
+    (l) => (barSubs.add(l), () => barSubs.delete(l)),
+    () => barRoom,
+    () => barRoom,
+  );
 }

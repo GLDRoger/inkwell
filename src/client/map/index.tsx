@@ -6,15 +6,15 @@ import type { Id, MapGraph, Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { emit, subscribe } from "../lib/events";
 import { keys } from "../lib/queries";
-import { useDemo } from "../lib/demo";
-import { useUi } from "../lib/ui";
+import { getDemo, useDemo } from "../lib/demo";
+import { getUi, setUi, useUi } from "../lib/ui";
 import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
 import { layoutMap, REGION_PAD, unionBox, type Box, type CardBox } from "./layout";
 import { detailFor, scaleFor, type Detail, type Lod } from "./lod";
 import { ClickIntent } from "./click";
 import { Greeting, hello } from "./greeting";
-import { MapCard } from "./map-card";
+import { CARD_KEYS_ID, CARD_KEYS_TEXT, MapCard } from "./map-card";
 import { Minimap } from "./minimap";
 import { agentStatuses, applyEvent, fromGraph, writingPages, type MapState } from "./model";
 import { Roster, workingLine } from "./roster";
@@ -24,10 +24,12 @@ import { aspectBucket, overviewCamera } from "./overview";
 import { isUntouchedSeed } from "../page/title";
 import { Names, Prints, useWalks } from "./walkers";
 import { INK_SPAN_MS, inkDelay, WorldBack, worldFrame } from "./world";
-import { BOTH_PANELS_MIN_W, PeekPanel, type PeekCover } from "../peek/PeekPanel";
+import { PeekPanel, panelsSideBySide, type PeekCover } from "../peek/PeekPanel";
 import { peekFrom, peekHistory, withPeek } from "../peek/url";
 import { FollowGate, peekCamera } from "../peek/follow";
 import { useDemoFollow } from "../peek/useDemoFollow";
+import { MAP_CAMERA_KEY, useDemoBarRoom } from "../lib/demo-flow";
+import { decodeCamera, encodeCamera } from "./saved-camera";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -35,7 +37,7 @@ export interface MapViewProps {
   focusPageId?: string;
 }
 
-const CAMERA_KEY = "inkwell:map-camera";
+const CAMERA_KEY = MAP_CAMERA_KEY;
 const INKED_KEY = "inkwell:map-inked";
 const HINT_KEY = "inkwell:map-peek-hint";
 /** The hint waits this long after the map first shows its cards. */
@@ -57,10 +59,10 @@ function fixtureParams() {
   return { pages: Math.max(1, Math.min(2000, Number(q.get("pages")) || 72)), script: q.get("script") !== "0" };
 }
 
-function savedCamera(): Cam | null {
+/** Where the camera was in this notebook, this tab (see saved-camera.ts). */
+function savedCamera(notebook: string): Cam | null {
   try {
-    const c = JSON.parse(sessionStorage.getItem(CAMERA_KEY) ?? "null");
-    return c && [c.x, c.y, c.s].every((n) => typeof n === "number" && Number.isFinite(n)) ? c : null;
+    return decodeCamera(sessionStorage.getItem(CAMERA_KEY), notebook);
   } catch {
     return null;
   }
@@ -113,6 +115,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const me = useQuery({ queryKey: keys.me, queryFn: api.me, staleTime: Infinity, enabled: !fixture, retry: 1 });
   const meId = me.data?.person.id ?? null;
   // The recorded demo's notebook is for watching: no moving cards, no editing, no menus.
+  // The notebook this map shows. The shell remounts the map when it changes (App.tsx useNotebookHome).
+  const [notebook] = useState(() => getDemo().notebook);
   const demo = useDemo((s) => s.notebook === "demo");
   const playing = useDemo((s) => s.playing);
   const demoFocus = useDemo((s) => s.focus);
@@ -133,6 +137,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     },
     [setParams],
   );
+  /** The demo's caption bar: the map's controls and the camera keep clear of it (lib/demo-flow.ts). */
+  const barSpace = useDemoBarRoom(demo).space;
   /** How much of the screen the open peek covers (right edge on wide screens, bottom on phones). */
   const [cover, setCover] = useState<PeekCover>({ right: 0, bottom: 0 });
   const coverRef = useRef(cover);
@@ -281,7 +287,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   useEffect(() => {
     camera.onSettle = (c) => {
       try {
-        sessionStorage.setItem(CAMERA_KEY, JSON.stringify(c));
+        sessionStorage.setItem(CAMERA_KEY, encodeCamera(c, notebook));
       } catch {
         /* private mode: the map just starts fitted next time */
       }
@@ -289,7 +295,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     return () => {
       camera.onSettle = null;
     };
-  }, [camera]);
+  }, [camera, notebook]);
 
   // The free part of the screen: below the shell's bar and the roster, above the
   // zoom buttons, left of an open diary.
@@ -301,8 +307,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const top = p?.offsetHeight ?? 0;
     const right = Math.max(p?.offsetWidth ?? 0, cover.right);
     const bottom = compact ? 72 : 64;
-    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: bottom + cover.bottom, left: 12 };
-  }, [compact, cover]);
+    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: bottom + cover.bottom + barSpace, left: 12 };
+  }, [compact, cover, barSpace]);
   // Phones on their side, or a map squeezed beside the diary, have no room for the greeting.
   const greets = size.h >= 560 && freeW >= Math.min(GREETING_MIN_W, size.w);
   // The overview: everything, with room above it for the greeting, as long as
@@ -395,9 +401,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       return;
     }
     if (focusIds.length) pendingFocus.current = focusIds;
-    camera.set(savedCamera() ?? fitAll());
-    camera.touched = !!savedCamera();
-  }, [size, layout, focusIds, showFocus, fitAll, camera, reduced]);
+    const saved = savedCamera(notebook);
+    camera.set(saved ?? fitAll());
+    camera.touched = !!saved;
+  }, [size, layout, focusIds, showFocus, fitAll, camera, reduced, notebook]);
   // Until someone moves the map, keep it fitted as the window changes, and as
   // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
@@ -751,16 +758,42 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const onPeekOpenFull = useCallback((id: Id) => handlers.current.onOpen(id), []);
   const onPeekSwap = useCallback((id: Id) => handlers.current.onPeek(id), []);
   // Opening the diary where it and the peek can't sit side by side: the diary comes to the front.
+  // The demo wants more of the map in view, so there one panel at a time below DEMO_BOTH_PANELS_MIN_W.
   const diaryOpen = useUi((u) => u.diaryOpen);
   const diaryWas = useRef(diaryOpen);
   useEffect(() => {
     const was = diaryWas.current;
     diaryWas.current = diaryOpen;
-    if (!was && diaryOpen && peekRef.current && window.innerWidth < BOTH_PANELS_MIN_W) setPeek(null);
-  }, [diaryOpen, setPeek]);
+    if (!was && diaryOpen && peekRef.current && !panelsSideBySide(window.innerWidth, demo)) setPeek(null);
+  }, [diaryOpen, setPeek, demo]);
+  // The demo opening a page: the diary makes way where both would squeeze the map.
+  const demoPeek = useCallback(
+    (id: Id | null, by: "person" | "demo") => {
+      if (id && by === "demo" && getUi().diaryOpen && !panelsSideBySide(window.innerWidth, true)) setUi({ diaryOpen: false });
+      setPeek(id, by);
+    },
+    [setPeek],
+  );
+
+  // "Watch again" plays a fresh demo notebook: the old peek's page is gone, and the camera starts from the top.
+  const starting = useDemo((s) => s.starting);
+  const wasStarting = useRef(starting);
+  useEffect(() => {
+    const was = wasStarting.current;
+    wasStarting.current = starting;
+    if (!starting || was) return;
+    setPeek(null);
+    gate.current.reset();
+    if (!placed.current) return;
+    camera.hush();
+    camera.touched = false;
+    if (reducedRef.current) camera.set(fitAll());
+    else camera.flyTo(fitAll());
+    camera.touched = false;
+  }, [starting, setPeek, camera, fitAll]);
 
   // ------------------------------------------------------------ demo camera
-  useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek, insets, midScale });
+  useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek: demoPeek, insets, midScale });
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [] }, 0), []);
@@ -896,7 +929,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       style={
         {
           ...(cover.right ? { "--map-inset": `${size.w - freeW}px` } : null),
-          ...(cover.bottom ? { "--map-bottom": `${cover.bottom}px` } : null),
+          ...(cover.bottom + barSpace ? { "--map-bottom": `${cover.bottom + barSpace}px` } : null),
         } as CSSProperties
       }
       tabIndex={0}
@@ -926,6 +959,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         Drag or scroll to move, pinch or Control and scroll to zoom. Arrow keys move, plus and minus zoom, 0 shows
         everything. Click a page, or press Space on it, to peek at it beside the map; double-click it, or press Enter, to
         open it. Escape closes the peek.
+      </p>
+      <p id={CARD_KEYS_ID} className={css.srOnly}>
+        {CARD_KEYS_TEXT}
       </p>
       <p className={css.srOnly} aria-live="polite">
         {announce}
@@ -1002,7 +1038,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             <div
               key={r.id}
               className={css.area}
-              style={{ "--x": r.x + REGION_PAD, "--y": r.y + r.head, "--w": r.w - REGION_PAD * 2, "--d": `${inkAt(r)}ms` } as CSSProperties}
+              style={{ "--x": r.x + REGION_PAD, "--y": r.y + r.head, "--w": r.w - REGION_PAD * 2, "--chars": Math.max(1, r.title.length), "--d": `${inkAt(r)}ms` } as CSSProperties}
               data-busy={writingIn(r.pageIds) || undefined}
             >
               {r.title}

@@ -224,3 +224,6 @@
   .page-title { font-size: 34px; }
   .page-icon { font-size: 38px; }
 }
+
+/* The recorded demo's caption bar sits over the bottom of the page: let the end scroll clear of it. */
+.app[data-notebook="demo"] .page { padding-bottom: calc(var(--demo-bar-space, 200px) + 40px); }

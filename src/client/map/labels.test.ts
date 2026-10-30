@@ -103,3 +103,20 @@ describe("far-out card titles", () => {
   });
 });
 
+
+describe("area names", () => {
+  it("shrink to fit over a narrow area instead of being cut off", async () => {
+    const { areaFontPx, AREA_CHAR_EM } = await import("./labels");
+    const s = 0.7;
+    const wide = areaFontPx("Other pages", s);
+    expect(wide).toBeCloseTo(64.4);
+    // A 140-unit area at this zoom has 175px for the name: 11 characters fit at about 35px.
+    const narrow = areaFontPx("Other pages", s, 140);
+    expect(narrow * 11 * AREA_CHAR_EM).toBeLessThanOrEqual(Math.max(120, (140 + 110) * s) + 0.01);
+    expect(narrow).toBeLessThan(wide);
+    // Short names keep their full size; nothing goes below 14px.
+    expect(areaFontPx("Ideas", s, 140)).toBeCloseTo(64.4);
+    expect(areaFontPx("A very long area name indeed", 0.1, 10)).toBe(14);
+    expect(areaFontPx("Trip to Lisbon", 2, Infinity, true)).toBe(64);
+  });
+});
