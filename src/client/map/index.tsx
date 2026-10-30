@@ -9,14 +9,16 @@ import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
 import { layoutMap, REGION_PAD, unionBox, type Box, type CardBox } from "./layout";
 import { detailFor, scaleFor, type Detail, type Lod } from "./lod";
-import { ClickIntent } from "./click";
-import { hello, whatsNew } from "./greeting";
+import { ClickIntent, opensOnClick } from "./click";
+import { Greeting, hello } from "./greeting";
 import { MapCard } from "./map-card";
 import { Minimap } from "./minimap";
 import { agentStatuses, applyEvent, fromGraph, writingPages, type MapState } from "./model";
 import { Roster, workingLine } from "./roster";
 import { SpellBook, type Spell } from "./spells";
 import { isTypingTarget, titleOf, useNow, useReducedMotion } from "./util";
+import { aspectBucket, overviewCamera } from "./overview";
+import { isUntouchedSeed } from "../page/title";
 import { Names, Prints, useWalks } from "./walkers";
 import { INK_SPAN_MS, inkDelay, WorldBack, worldFrame } from "./world";
 import css from "./map.module.css";
@@ -34,8 +36,10 @@ const REVEAL_MS = 2600;
 /** A page made this recently, while we watched, settles onto the map. */
 const BORN_MS = 20_000;
 /** Room kept above the map for the greeting when everything's in view, screen px. */
-const GREETING_PX = 132;
-const GREETING_PX_COMPACT = 96;
+const GREETING_PX = 112;
+const GREETING_PX_COMPACT = 88;
+/** The greeting needs this much free width beside an open diary. */
+const GREETING_MIN_W = 520;
 
 function fixtureParams() {
   if (typeof location === "undefined") return null;
@@ -96,6 +100,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     };
   }, [fixture]);
   const graph = fixture ? fixtureGraph : query.data;
+  // Who "you" are, so a card says "Last edited by you".
+  const me = useQuery({ queryKey: keys.me, queryFn: api.me, staleTime: Infinity, enabled: !fixture, retry: 1 });
+  const meId = me.data?.person.id ?? null;
 
   // ------------------------------------------------------------ live state
   const [state, setState] = useState<MapState | null>(null);
@@ -106,9 +113,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
 
   const pages = state?.pages;
   const pageList = useMemo(() => (pages ? [...pages.values()] : []), [pages]);
-  // Portrait screens get a taller territory. Only the orientation matters, so resizing doesn't reshuffle.
-  const [portrait, setPortrait] = useState(false);
-  const layout = useMemo(() => layoutMap(pageList, "Other pages", portrait ? 1.05 : 2.1), [pageList, portrait]);
+  // The areas pack to the screen's shape. A phone held upright lays every area
+  // out afresh in a column it can read; wider screens keep the arrangement.
+  const [shape, setShape] = useState({ aspect: 2, flow: false });
+  const layout = useMemo(() => layoutMap(pageList, "Other pages", shape), [pageList, shape]);
   const writing = useMemo(() => (state ? writingPages(state) : new Map<string, string>()), [state]);
   const reduced = useReducedMotion();
   const now = useNow(15_000);
@@ -132,6 +140,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const narrow = size.w > 0 && size.w < 640;
+  /** Width left for the map beside an open diary. */
+  const [freeW, setFreeW] = useState(0);
   // Phones either way up: smaller chrome, no overview.
   const compact = narrow || (size.h > 0 && size.h < 500);
   const [detail, setDetail] = useState<Detail>("rooms");
@@ -146,12 +156,21 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   useLayoutEffect(() => {
     const el = rootRef.current!;
     const measure = () => {
-      camera.resize(el.clientWidth, el.clientHeight);
-      if (el.clientWidth && el.clientHeight) setPortrait(el.clientWidth / el.clientHeight < 0.8);
-      setSize((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight }));
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      camera.resize(w, h);
+      if (w && h) {
+        const aspect = aspectBucket(w, h);
+        const flow = w < 640 && aspect < 0.8;
+        setShape((s) => (s.aspect === aspect && s.flow === flow ? s : { aspect, flow }));
+      }
+      setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
+      const right = insetProbe.current?.offsetWidth ?? 0;
+      setFreeW((f) => (f === w - right ? f : w - right));
     };
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    if (insetProbe.current) ro.observe(insetProbe.current);
     measure();
     return () => ro.disconnect();
   }, [camera]);
@@ -244,14 +263,34 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const right = p?.offsetWidth ?? 0;
     return { top: top + (compact ? 60 : 58), right: right + 12, bottom: compact ? 72 : 64, left: 12 };
   }, [compact]);
-  // Phones on their side have no room for the greeting.
-  const greets = size.h >= 560;
-  // Everything, with room above it for the greeting.
+  // Phones on their side, or a map squeezed beside the diary, have no room for the greeting.
+  const greets = size.h >= 560 && freeW >= Math.min(GREETING_MIN_W, size.w);
+  // The overview: everything, with room above it for the greeting, as long as
+  // titles stay readable; past that, a readable part of it.
   const fitAll = useCallback(() => {
     const i = insets();
     const room = greets ? (compact ? GREETING_PX_COMPACT : GREETING_PX) : 0;
-    return fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, { ...i, top: i.top + room }, compact ? 8 : 32, 0.9);
+    const l = layoutRef.current;
+    return overviewCamera(l.bounds, l.cards.values(), camera.vw, camera.vh, { ...i, top: i.top + room }, compact ? 8 : 32, 0.9);
   }, [camera, insets, compact, greets]);
+  /** All of it, however small. */
+  const fitEverything = useCallback(
+    () => fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, insets(), compact ? 8 : 32, 0.9),
+    [camera, insets, compact],
+  );
+  /** "Show the whole map": the overview, and pressed again there, everything. */
+  const showWhole = useCallback(() => {
+    const o = fitAll();
+    const c = camera.cam;
+    const atOverview = Math.abs(Math.log(c.s / o.s)) < 0.05 && Math.hypot(c.x - o.x, c.y - o.y) * c.s < 24;
+    const all = fitEverything();
+    if (atOverview && all.s < o.s * 0.97) camera.flyTo(all);
+    else {
+      camera.flyTo(o);
+      // Back at the overview: keep it fitted again as the window changes, and greet.
+      camera.touched = false;
+    }
+  }, [camera, fitAll, fitEverything]);
 
   const cameraFor = useCallback(
     (box: CardBox, level: Lod): Cam => {
@@ -451,7 +490,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           camera.flyTo({ ...camera.cam, s: camera.cam.s / 1.35 }, 200);
           break;
         case "0":
-          camera.flyTo(fitAll());
+          showWhole();
           break;
         default:
           return;
@@ -460,7 +499,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [book, camera, cast, endReveal, fitAll]);
+  }, [book, camera, cast, endReveal, showWhole]);
 
   // ------------------------------------------------------------ gestures
   useEffect(() => {
@@ -523,9 +562,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         /* no storage: it may show again, harmless */
       }
   }, []);
-  useEffect(() => {
-    // Only once someone has moved the map there (not the camera's first frame).
-    if (detail !== "mid" || hint || !placed.current || !camera.touched) return;
+  /** Said once, the first time a page is brought close: how to open it. */
+  const offerHint = useCallback(() => {
     try {
       if (localStorage.getItem(HINT_KEY)) return;
       localStorage.setItem(HINT_KEY, "1");
@@ -533,8 +571,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       return;
     }
     setHint(true);
+    clearTimeout(hintTimer.current);
     hintTimer.current = setTimeout(() => setHint(false), 6000);
-  }, [detail, hint, camera]);
+  }, []);
   useEffect(() => () => clearTimeout(hintTimer.current), []);
 
   // ------------------------------------------------------------ actions
@@ -543,12 +582,22 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     onOpen: (_id: Id) => {},
     onMove: (_id: Id, _x: number, _y: number) => {},
   });
+  // The page last brought close, and the zoom it was brought to: clicking (or
+  // tapping) it again there opens it. Two clicks, or two taps, from anywhere.
+  const chosen = useRef<{ id: Id; s: number } | null>(null);
   handlers.current.onActivate = (id) => {
+    if (opensOnClick(chosen.current, id, camera.cam.s)) {
+      handlers.current.onOpen(id);
+      return;
+    }
     const d = detailRef.current;
-    if (d === "near") return;
-    focusOn(id, d === "mid" ? "near" : "mid");
+    const level: Lod = d === "near" ? "near" : d === "mid" ? "near" : "mid";
+    focusOn(id, level);
+    chosen.current = { id, s: scaleFor(level, camera.vw, camera.vh) };
+    offerHint();
   };
   handlers.current.onOpen = (id) => {
+    chosen.current = null;
     camera.onSettle?.(camera.cam);
     dismissHint(true);
     onOpenPage(id);
@@ -580,7 +629,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     for (const [pid, pos] of updates)
       api.updatePage(pid, pos).catch((err) => console.error("[map] couldn't save the card's place", err));
   };
-  // One click brings a card closer; two quick clicks (or taps) open it.
+  // One click brings a card closer; a second click on it, or a double-click, opens it.
   const clicks = useMemo(
     () => new ClickIntent((id) => handlers.current.onActivate(id), (id) => handlers.current.onOpen(id)),
     [],
@@ -644,14 +693,33 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       save();
     };
   }, []);
+  // Worked out once from what was here when you arrived, then only added to: it never recounts under you.
+  const greeter = useMemo(() => new Greeting(since), [since]);
   const greetingLine = useMemo(() => {
     if (!state) return "";
     const busy = agentStatuses(state).find((a) => a.working && a.walker?.pageId);
     const where = busy?.walker?.pageId ? state.pages.get(busy.walker.pageId) : undefined;
     const doingNow = busy && where ? workingLine(busy.walker!.action, where) : "";
     const split = doingNow.match(/^(reading|writing in|working in) (.*)$/);
-    return whatsNew(pageList, since, busy && split ? { name: busy.agent.name, doing: split[1], where: split[2] } : null);
-  }, [state, pageList, since]);
+    return greeter.line(pageList, now, busy && split ? { name: busy.agent.name, doing: split[1], where: split[2] } : null);
+  }, [state, pageList, greeter, now]);
+  // The greeting belongs to the overview: it fades once you move the map, and comes back with "Show the whole map".
+  const greetingRef = useRef<HTMLDivElement>(null);
+  useEffect(
+    () =>
+      camera.listen((c, _vw, vh) => {
+        const el = greetingRef.current;
+        if (!el) return;
+        const away = camera.touched;
+        if (el.hasAttribute("data-away") !== away) el.toggleAttribute("data-away", away);
+        if (away) return;
+        // When the map is shorter than the screen, the greeting sits just above it, not up by the bar.
+        const top = (layoutRef.current.bounds.y - c.y) * c.s + vh / 2;
+        const dy = Math.max(0, Math.round(top - 28 - el.offsetHeight - el.offsetTop));
+        el.style.translate = dy ? `0 ${dy}px` : "";
+      }),
+    [camera, greets, layout],
+  );
 
   // ------------------------------------------------------------ render
   const regionTitle = useMemo(() => new Map(layout.regions.map((r) => [r.id, r.title])), [layout]);
@@ -665,6 +733,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     }
     return parent && parent.id !== box.regionId ? `${region} / ${titleOf(parent)}` : region;
   };
+  // The demo pages were all written the moment the notebook was made: say so, as the page does.
+  const firstMade = useMemo(() => {
+    let t = Infinity;
+    let iso = "";
+    for (const p of pageList) {
+      const v = Date.parse(p.createdAt);
+      if (v < t) [t, iso] = [v, p.createdAt];
+    }
+    return iso ? [{ createdAt: iso }] : [];
+  }, [pageList]);
   const agentInk = (p: Page) => (p.updatedBy.kind === "agent" ? (state?.agents.get(p.updatedBy.id)?.color ?? null) : null);
   const frame = worldFrame(layout.bounds);
   const lb = layout.bounds;
@@ -696,6 +774,15 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       aria-roledescription="map"
       aria-label="Map of your notebook"
       aria-describedby="inkwell-map-help"
+      // The map's focus ring shows only when Tab brought you here, not while you type on it.
+      onKeyUp={(e) => {
+        if (e.key === "Tab" && e.target === e.currentTarget) e.currentTarget.setAttribute("data-tabbed", "");
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== "Tab") e.currentTarget.removeAttribute("data-tabbed");
+      }}
+      onBlur={(e) => e.currentTarget.removeAttribute("data-tabbed")}
+      onPointerDown={(e) => e.currentTarget.removeAttribute("data-tabbed")}
       onClickCapture={(e) => {
         if (!blank) return;
         e.stopPropagation();
@@ -707,7 +794,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       <div ref={insetProbe} className={css.insetProbe} aria-hidden />
       <p id="inkwell-map-help" className={css.srOnly}>
         Drag or scroll to move, pinch or Control and scroll to zoom. Arrow keys move, plus and minus zoom, 0 shows
-        everything. Click a page to bring it closer; double-click it, or press Enter on it, to open it.
+        everything. Click a page to bring it closer and click it again, or press Enter on it, to open it.
       </p>
       <p className={css.srOnly} aria-live="polite">
         {announce}
@@ -717,18 +804,20 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       {state && (
         <div className={css.chrome}>
           <div className={css.topRow}>
-            <Roster state={state} narrow={narrow} onFollow={follow} />
+            <Roster state={state} narrow={narrow} room={freeW - 24 - (fixture ? 0 : compact || freeW >= 560 ? 170 : 50)} onFollow={follow} />
             {!fixture && (
               <button
                 type="button"
                 className={`${css.pill} ${css.photo}`}
+                data-short={(!compact && freeW < 560) || undefined}
                 data-map-control
                 onClick={() => importPhoto()}
                 aria-label="Photo to cards: turn a photo of notes into pages"
                 title="Turn a photo of notes into pages"
               >
                 <ScanText size={16} strokeWidth={1.75} aria-hidden />
-                <span>Photo to cards</span>
+                {/* Beside an open diary on a tablet there's room for the agents' names or this label, not both. */}
+                {(compact || freeW >= 560) && <span>Photo to cards</span>}
               </button>
             )}
           </div>
@@ -743,13 +832,13 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
               width={168}
               height={108}
               compact={compact}
-              onFit={() => camera.flyTo(fitAll())}
+              onFit={showWhole}
             />
           )}
 
           {hint && (
             <p className={css.hint} role="status" onClick={() => dismissHint()}>
-              {coarse ? "Double-tap a page to open it" : "Double-click a page to open it"}
+              {coarse ? "Tap the page again to open it" : "Click the page again to open it"}
             </p>
           )}
         </div>
@@ -778,12 +867,6 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         </div>
 
         <div ref={labelsRef} className={css.layer} aria-hidden>
-          {state && layout.cards.size > 0 && greets && (
-            <div className={css.greeting} style={{ "--x": lb.x + lb.w / 2, "--y": lb.y } as CSSProperties}>
-              <span className={css.hello}>{hello(hour)}</span>
-              <span className={css.whatsNew}>{greetingLine}</span>
-            </div>
-          )}
           {layout.regions.map((r) => (
             <div
               key={r.id}
@@ -815,6 +898,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   touchedInk={agentInk(page)}
                   crumb={crumb(box, page)}
                   now={now}
+                  you={meId !== null && page.updatedBy.kind === "person" && page.updatedBy.id === meId}
+                  seeded={isUntouchedSeed(page, firstMade)}
+                  movable={!shape.flow}
                   camera={camera}
                   onClick={onCardClick}
                   onOpen={onOpen}
@@ -829,6 +915,13 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           <Names state={live} spots={spots} scale={nameScale} register={register} onFollow={follow} />
         </div>
       </div>
+
+      {state && layout.cards.size > 0 && greets && (
+        <div ref={greetingRef} className={css.greeting} data-away={camera.touched || undefined}>
+          <span className={css.hello}>{hello(hour)}</span>
+          <span className={css.whatsNew}>{greetingLine}</span>
+        </div>
+      )}
 
       {menu && menuPage && (
         <div

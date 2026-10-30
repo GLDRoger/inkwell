@@ -21,9 +21,9 @@ import type { Id, Page } from "@shared/types";
 export const CARD_W = 300;
 export const CARD_H = 250;
 export const GAP = 48;
-export const REGION_PAD = 56;
+export const REGION_PAD = 40;
 export const REGION_HEADER = 120;
-export const REGION_GAP = 220;
+export const REGION_GAP = 150;
 export const MAX_SECTION_COLS = 4;
 export const MAX_LOOSE_COLS = 6;
 export const LOOSE_REGION_ID = "__loose__";
@@ -63,7 +63,7 @@ export interface MapLayout {
 
 type LayoutPage = Pick<Page, "id" | "parentId" | "title" | "position" | "x" | "y">;
 
-const hasPos = (p: LayoutPage) =>
+const hasSavedPos = (p: LayoutPage) =>
   typeof p.x === "number" && typeof p.y === "number" && Number.isFinite(p.x) && Number.isFinite(p.y);
 
 function bySiblingOrder(a: LayoutPage, b: LayoutPage): number {
@@ -98,6 +98,88 @@ export function unionBox(boxes: Iterable<Box>): Box | null {
   return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/** An area's frame around its cards: room for its name above, a margin around. */
+function regionAround(cards: Box[]): Box {
+  const u = unionBox(cards)!;
+  return { x: u.x - REGION_PAD, y: u.y - REGION_HEADER, w: u.w + REGION_PAD * 2, h: u.h + REGION_HEADER + REGION_PAD };
+}
+
+interface Draft {
+  g: { id: string };
+  w: number;
+  h: number;
+  cells: CardBox[];
+}
+
+/** Rows of areas, in reading order, about as wide as `aspect` asks. */
+function shelfPack(drafts: Draft[], aspect: number): Map<string, Box> {
+  const out = new Map<string, Box>();
+  const area = drafts.reduce((s, d) => s + (d.w + REGION_GAP) * (d.h + REGION_GAP), 0);
+  const widest = drafts.reduce((m, d) => Math.max(m, d.w), 0);
+  // Shelves leave gaps, so aim a little wider than the shape asks.
+  const rowWidth = Math.max(widest, Math.sqrt(area * aspect) * 1.2);
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  for (const d of drafts) {
+    if (x > 0 && x + d.w > rowWidth) {
+      x = 0;
+      y += rowH + REGION_GAP;
+      rowH = 0;
+    }
+    out.set(d.g.id, { x, y, w: d.w, h: d.h });
+    x += d.w + REGION_GAP;
+    rowH = Math.max(rowH, d.h);
+  }
+  return out;
+}
+
+/**
+ * New areas beside the hand-arranged ones: each goes in whichever free spot
+ * next to an area keeps the whole map closest to the screen's shape (so it
+ * still fits at a readable zoom), nearest the middle when that ties. Pages an
+ * agent makes at the top level land in view instead of below everything.
+ */
+export function packAround(drafts: Draft[], fixed: Box[], aspect: number): Map<string, Box> {
+  const out = new Map<string, Box>();
+  const taken = [...fixed];
+  const G = REGION_GAP;
+  for (const d of drafts) {
+    const all = unionBox(taken)!;
+    const mid = { x: all.x + all.w / 2, y: all.y + all.h / 2 };
+    let best: Box | null = null;
+    let bestScore = Infinity;
+    let bestDist = Infinity;
+    for (const o of taken) {
+      const spots = [
+        { x: o.x + o.w + G, y: o.y },
+        { x: o.x + o.w + G, y: o.y + o.h - d.h },
+        { x: o.x, y: o.y + o.h + G },
+        { x: o.x + o.w - d.w, y: o.y + o.h + G },
+        { x: o.x - G - d.w, y: o.y },
+        { x: o.x, y: o.y - G - d.h },
+      ];
+      for (const p of spots) {
+        const box = { x: Math.round(p.x), y: Math.round(p.y), w: d.w, h: d.h };
+        if (taken.some((t) => overlaps(t, box, G - 1))) continue;
+        const u = unionBox([all, box])!;
+        // The zoom that fits the whole map goes as the larger of these: smaller is better.
+        const score = Math.round(Math.max(u.w / aspect, u.h));
+        const dist = Math.hypot(box.x + box.w / 2 - mid.x, box.y + box.h / 2 - mid.y);
+        if (score < bestScore || (score === bestScore && dist < bestDist)) {
+          best = box;
+          bestScore = score;
+          bestDist = dist;
+        }
+      }
+    }
+    const box = best ?? { x: all.x, y: all.y + all.h + G, w: d.w, h: d.h };
+    out.set(d.g.id, box);
+    taken.push(box);
+  }
+  return out;
+}
+
 interface Group {
   id: string;
   title: string;
@@ -106,11 +188,19 @@ interface Group {
   maxCols: number;
 }
 
-/**
- * `shape` is how much wider than tall the rows of auto regions should run:
- * about 2 on a landscape screen, about 1 on a phone held upright.
- */
-export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shape = 2.1): MapLayout {
+export interface LayoutOptions {
+  /** How much wider than tall the map should come out: the screen's shape, about 2 on a laptop, 0.6 on a phone. */
+  aspect?: number;
+  /**
+   * Ignore saved positions and lay every area out in a grid. For phones: an
+   * arrangement made on a wide screen can't be read on a narrow one.
+   */
+  flow?: boolean;
+}
+
+export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", opts: LayoutOptions = {}): MapLayout {
+  const aspect = opts.aspect ?? 2;
+  const hasPos = (p: LayoutPage) => !opts.flow && hasSavedPos(p);
   const ids = new Set(pages.map((p) => p.id));
   const children = new Map<Id, LayoutPage[]>();
   const roots: LayoutPage[] = [];
@@ -129,7 +219,7 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
   // root, so pages stuck in one are picked up as loose pages below.
   const groups: Group[] = [];
   const seen = new Set<Id>();
-  const loose: Group = { id: LOOSE_REGION_ID, title: looseTitle, pageId: null, entries: [], maxCols: MAX_LOOSE_COLS };
+  const loose: Group = { id: LOOSE_REGION_ID, title: looseTitle, pageId: null, entries: [], maxCols: opts.flow ? 2 : MAX_LOOSE_COLS };
   const walk = (page: LayoutPage, depth: number, out: Group["entries"]) => {
     if (seen.has(page.id)) return;
     seen.add(page.id);
@@ -143,7 +233,7 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
         title: root.title?.trim() || "Untitled",
         pageId: root.id,
         entries: [],
-        maxCols: MAX_SECTION_COLS,
+        maxCols: opts.flow ? 2 : MAX_SECTION_COLS,
       };
       walk(root, 0, g.entries);
       groups.push(g);
@@ -199,8 +289,7 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
     }
   }
 
-  // 3. Auto regions: a grid each, shelf-packed below whatever was arranged by hand.
-  type Draft = { g: Group; w: number; h: number; cells: CardBox[] };
+  // 3. Auto regions: a grid each, packed beside whatever was arranged by hand, or shelf-packed when nothing was.
   const drafts: Draft[] = [];
   for (const g of groups) {
     if (pinnedGroups.has(g.id)) continue;
@@ -223,37 +312,19 @@ export function layoutMap(pages: LayoutPage[], looseTitle = "Loose leaves", shap
       })),
     });
   }
-  const handBounds = unionBox(placed);
-  const startX = handBounds ? handBounds.x - REGION_PAD : 0;
-  let y = handBounds ? handBounds.y + handBounds.h + REGION_PAD + REGION_GAP : 0;
-  const area = drafts.reduce((s, d) => s + d.w * d.h, 0);
-  const widest = drafts.reduce((m, d) => Math.max(m, d.w), 0);
-  // Rows a bit wider than tall read like a map on a landscape screen.
-  const rowWidth = Math.max(widest, Math.sqrt(area) * shape, handBounds ? handBounds.w : 0);
-  const autoBoxes = new Map<string, Box>();
-  let x = 0;
-  let rowH = 0;
+  const autoBoxes = placed.length
+    ? packAround(drafts, groups.filter((g) => pinnedGroups.has(g.id)).map((g) => regionAround(g.entries.map((e) => cards.get(e.page.id)!))), aspect)
+    : shelfPack(drafts, aspect);
   for (const d of drafts) {
-    if (x > 0 && x + d.w > rowWidth) {
-      x = 0;
-      y += rowH + REGION_GAP;
-      rowH = 0;
-    }
-    autoBoxes.set(d.g.id, { x: startX + x, y, w: d.w, h: d.h });
-    for (const c of d.cells) cards.set(c.id, { ...c, x: c.x + startX + x, y: c.y + y });
-    x += d.w + REGION_GAP;
-    rowH = Math.max(rowH, d.h);
+    const at = autoBoxes.get(d.g.id)!;
+    for (const c of d.cells) cards.set(c.id, { ...c, x: c.x + at.x, y: c.y + at.y });
   }
 
   // Regions, in tree order.
   const regions: RegionBox[] = [];
   for (const g of groups) {
     const pageIds = g.entries.map((e) => e.page.id);
-    let box = autoBoxes.get(g.id);
-    if (!box) {
-      const u = unionBox(pageIds.map((id) => cards.get(id)!))!;
-      box = { x: u.x - REGION_PAD, y: u.y - REGION_HEADER, w: u.w + REGION_PAD * 2, h: u.h + REGION_HEADER + REGION_PAD };
-    }
+    const box = autoBoxes.get(g.id) ?? regionAround(pageIds.map((id) => cards.get(id)!));
     regions.push({ id: g.id, title: g.title, pageId: g.pageId, pageIds, pinned: pinnedGroups.has(g.id), head: REGION_HEADER, ...box });
   }
   trimOverlaps(regions, cards);

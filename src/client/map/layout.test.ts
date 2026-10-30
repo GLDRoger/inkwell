@@ -85,12 +85,50 @@ describe("layoutMap", () => {
     expect(Math.hypot(a2.x, a2.y)).toBeLessThan(800);
   });
 
-  it("packs auto regions below hand-arranged ones", () => {
-    const l = layoutMap([page("a", null, { x: 0, y: 0 }), page("a1", "a", { x: 400, y: 0 }), page("b"), page("b1", "b")]);
-    const a = l.regions.find((r) => r.id === "a")!;
-    const b = l.regions.find((r) => r.id === "b")!;
-    expect(b.y).toBeGreaterThan(a.y + a.h);
-    noOverlaps(l.regions);
+  it("packs auto regions beside hand-arranged ones, to the screen's shape", () => {
+    const pages = [page("a", null, { x: 0, y: 0 }), page("a1", "a", { x: 400, y: 0 }), page("b"), page("b1", "b")];
+    const wide = layoutMap(pages, "Other pages", { aspect: 2.2 });
+    const wa = wide.regions.find((r) => r.id === "a")!;
+    const wb = wide.regions.find((r) => r.id === "b")!;
+    // On a landscape screen the new area goes alongside, not below everything.
+    expect(wb.x).toBeGreaterThan(wa.x + wa.w);
+    expect(wb.y).toBeLessThan(wa.y + wa.h);
+    noOverlaps(wide.regions);
+    const tall = layoutMap(pages, "Other pages", { aspect: 0.6 });
+    const ta = tall.regions.find((r) => r.id === "a")!;
+    const tb = tall.regions.find((r) => r.id === "b")!;
+    expect(tb.y).toBeGreaterThan(ta.y + ta.h);
+    noOverlaps(tall.regions);
+  });
+
+  it("keeps a growing notebook compact: a new loose page and a new group land next to the arranged map", () => {
+    const pages = [
+      page("trip", null, { x: -950, y: -380 }),
+      page("t1", "trip", { x: -720, y: -520 }),
+      page("t2", "trip", { x: -700, y: -220 }),
+      page("startup", null, { x: 120, y: -480 }),
+      page("s1", "startup", { x: 380, y: -620 }),
+      page("s2", "startup", { x: 400, y: -360 }),
+      page("agent-made"),
+      page("group"),
+      page("g1", "group"),
+      page("g2", "group"),
+    ];
+    const before = layoutMap(pages.slice(0, 6), "Other pages", { aspect: 2.2 });
+    const after = layoutMap(pages, "Other pages", { aspect: 2.2 });
+    noOverlaps(after.regions);
+    noOverlaps([...after.cards.values()]);
+    // Two new areas grow the map by less than they would stacked underneath it.
+    const stacked = before.bounds.h + 2 * (120 + 250 + 40 + 150);
+    expect(Math.max(after.bounds.w / 2.2, after.bounds.h)).toBeLessThan(Math.max(before.bounds.w / 2.2, stacked));
+  });
+
+  it("lays everything out afresh, ignoring saved places, when asked to flow (phones)", () => {
+    const pages = [page("a", null, { x: 5000, y: 5000 }), page("a1", "a", { x: -5000, y: 0 }), page("b"), page("b1", "b")];
+    const l = layoutMap(pages, "Other pages", { aspect: 0.6, flow: true });
+    expect(l.cards.get("a")!.pinned).toBe(false);
+    expect(l.bounds.w).toBeLessThan(1600);
+    noOverlaps([...l.cards.values()]);
   });
 
   it("survives parent cycles and missing parents", () => {

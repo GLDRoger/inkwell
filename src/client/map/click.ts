@@ -38,3 +38,12 @@ export class ClickIntent {
     this.pending = null;
   }
 }
+
+/**
+ * Whether a click on card `id` at zoom `s` opens it: it does when that card
+ * was the last one brought close and the map is still at (about) the zoom it
+ * was brought to. So from anywhere, a page opens on the second click or tap.
+ */
+export function opensOnClick(chosen: { id: string; s: number } | null, id: string, s: number): boolean {
+  return !!chosen && chosen.id === id && Math.abs(Math.log(s / chosen.s)) < 0.25;
+}

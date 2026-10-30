@@ -20,6 +20,9 @@ export const LABEL_INSET = 10;
 export const DOT_X = 13;
 /** Far out, a name shrinks to its dot: a small round pill this wide and tall, screen px. */
 export const DOT_ONLY = 14;
+/** At the overview, a smaller pill: this tall, its dot this far in, screen px. */
+export const SMALL_H = 18;
+export const SMALL_DOT_X = 10;
 
 export type Side = "below" | "right" | "above" | "left";
 
@@ -36,7 +39,8 @@ export interface LabelSpot {
 }
 
 /** A pill's width for a name and what it's doing: close enough to place it, screen px. */
-export function labelWidth(name: string, action = ""): number {
+export function labelWidth(name: string, action = "", small = false): number {
+  if (small) return Math.round(17 + name.length * 6.8 + (action ? 5 + action.length * 5.7 : 0));
   return Math.round(22 + name.length * 7.4 + (action ? 8 + action.length * 6.2 : 0));
 }
 
@@ -54,12 +58,12 @@ function area(a: Box, b: Box): number {
 
 /**
  * Where an area's name is drawn, in world units, at zoom `s`: the same sizes
- * as `.area` in map.module.css (font clamp(17px, s*92px, 116px), sitting a
- * small gap above the point (x, y)).
+ * as `.area` in map.module.css (font clamp(17px, s*92px, 116px), sitting
+ * 14-18px above the point (x, y), clear of a name on a card's top edge).
  */
 export function areaNameBox(x: number, y: number, title: string, s: number): Box {
   const font = Math.min(116, Math.max(17, s * 92));
-  const gap = Math.min(18, Math.max(4, s * 16));
+  const gap = Math.min(18, Math.max(14, s * 16));
   const h = font * 1.2;
   const w = Math.max(1, title.length) * font * 0.42;
   return { x, y: y - (gap + h) / s, w: w / s, h: h / s };
@@ -74,6 +78,8 @@ export interface PlaceOptions {
   taken?: Box[];
   /** True at the territory view, where titles sit mid-card. */
   far?: boolean;
+  /** Keep the name inside this box (the map's edges) if it can: past them, the overview would cut it off. */
+  within?: Box;
 }
 
 /**
@@ -96,6 +102,21 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
   // Along the bottom and top edges, a name's width at a time.
   const step = pw + 6 * k;
   const runs = Math.max(1, Math.floor((card.w - inset) / step) + 1);
+  // Far out, where cards sit closer than a name is tall, a name first tries
+  // sitting on its own card's top edge, like a tab: it covers only that card's
+  // empty top margin (the title is in the middle) and the gap above. From the
+  // right, since area names start on the left.
+  if (opts.far)
+    for (let i = 0; i < runs; i++) {
+      let x = card.x + card.w - inset - pw - i * step;
+      // Wider than the card: one tab, centred on it.
+      if (x < card.x + inset) {
+        if (i > 0) break;
+        x = card.x + (card.w - pw) / 2;
+      }
+      // Mostly in the gap above, just touching its own card's top margin.
+      candidates.push({ side: "above", ax: card.x, ay: card.y, x, y: card.y - ph + Math.min(ph / 2, 4 * k) });
+    }
   for (let i = 0; i < runs; i++) {
     const x = card.x + inset + i * step;
     candidates.push({ side: "below", ax: card.x, ay: card.y + card.h, x, y: card.y + card.h + gap });
@@ -122,6 +143,7 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     let score = 0;
     for (const t of taken) if (overlaps(t, box)) score += area(t, box) * 5;
     for (const a of opts.areas ?? []) if (overlaps(a, box)) score += area(a, box) * 10;
+    if (opts.within) score += (box.w * box.h - area(opts.within, box)) * 20;
     for (let i = 0; i < opts.cards.length; i++) {
       const o = opts.cards[i];
       if (!overlaps(o, box)) continue;

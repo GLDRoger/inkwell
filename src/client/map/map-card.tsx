@@ -6,7 +6,7 @@ import type { Page } from "@shared/types";
 import type { CameraController } from "./camera";
 import type { CardBox } from "./layout";
 import type { Detail } from "./lod";
-import { ago, titleOf } from "./util";
+import { ago, farTitle, initial, titleOf } from "./util";
 import css from "./map.module.css";
 
 interface Props {
@@ -25,6 +25,12 @@ interface Props {
   touchedInk: string | null;
   crumb: string;
   now: number;
+  /** Last edited by the person looking. */
+  you: boolean;
+  /** A demo page nobody has touched since the notebook was made. */
+  seeded: boolean;
+  /** Cards can be picked up and moved (not on a phone's laid-out map). */
+  movable: boolean;
   camera: CameraController;
   /** A click: the map decides whether it's one (focus) or the second of two (open). */
   onClick(id: string): void;
@@ -55,7 +61,7 @@ export const MapCard = memo(function MapCard(p: Props) {
   const justDragged = useRef(false);
   const title = titleOf(page);
   const near = detail === "near";
-  const movable = detail === "mid" || detail === "near";
+  const movable = p.movable && (detail === "mid" || detail === "near");
   useArrivals();
   const arrival = arrivalOf(page, p.freshAt);
   const painting = usePainting(page.id);
@@ -69,6 +75,8 @@ export const MapCard = memo(function MapCard(p: Props) {
     "--h": box.h,
     "--d": `${p.inkAt}ms`,
   } as CSSProperties & Record<string, string | number>;
+  const far = detail === "rooms" ? farTitle(title) : null;
+  if (far && far.fit !== 1) style["--fit"] = far.fit;
   if (p.writing) style["--who"] = p.writing;
   if (p.touchedInk) style["--touched"] = p.touchedInk;
   // Fresh ink dries on its own clock, even if the card remounts mid-way.
@@ -78,8 +86,10 @@ export const MapCard = memo(function MapCard(p: Props) {
   // New cards from a photo come in one after another, on their own clock too.
   if (arrival?.kind === "arriving") style["--arrive-delay"] = `${Math.round(arrival.delayMs)}ms`;
 
-  const label = `${title}${p.writing ? ", being written now" : ""}. Last edited by ${page.updatedBy.name} ${ago(page.updatedAt, p.now)}.`;
   const by = page.updatedBy;
+  const who = p.you ? "you" : by.name;
+  const when = p.seeded ? "when your notebook was made" : ago(page.updatedAt, p.now);
+  const label = `${title}${p.writing ? ", being written now" : ""}. Last edited by ${who} ${when}.`;
 
   return (
     <div
@@ -162,12 +172,12 @@ export const MapCard = memo(function MapCard(p: Props) {
         ref.current?.style.setProperty("--y", String(box.y));
       }}
     >
-      {detail === "dots" && page.icon && <span className={css.dotIcon}>{page.icon}</span>}
+      {detail === "dots" && (page.icon ? <span className={css.dotIcon}>{page.icon}</span> : <span className={css.dotLetter} aria-hidden>{initial(title)}</span>)}
 
       {detail === "rooms" && (
         <span className={css.chipTitle}>
           {page.icon && <span className={css.icon}>{page.icon}</span>}
-          {title}
+          {far?.text ?? title}
         </span>
       )}
 
@@ -184,7 +194,7 @@ export const MapCard = memo(function MapCard(p: Props) {
           ) : (
             <p className={css.empty}>Nothing written here yet</p>
           )}
-          <Touched by={by} at={page.updatedAt} now={p.now} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
+          <Touched by={by} who={who} when={when} short={p.seeded} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
         </div>
       )}
 
@@ -223,7 +233,7 @@ export const MapCard = memo(function MapCard(p: Props) {
             {page.icon && <span className={css.icon}>{page.icon}</span>}
             {title}
           </h2>
-          <Touched by={by} at={page.updatedAt} now={p.now} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
+          <Touched by={by} who={who} when={when} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
           <div className={css.body} data-scrolls>
             {page.excerpt.trim() ? (
               paragraphs(page.excerpt).map((para, i) => <p key={i}>{para}</p>)
@@ -251,15 +261,18 @@ export const MapCard = memo(function MapCard(p: Props) {
 
 function Touched({
   by,
-  at,
-  now,
+  who,
+  when,
+  short,
   writing,
   fresh,
   agentInk,
 }: {
   by: Page["updatedBy"];
-  at: string;
-  now: number;
+  who: string;
+  when: string;
+  /** Leave out "Last edited by". */
+  short?: boolean;
   writing: boolean;
   fresh: boolean;
   agentInk: string | null;
@@ -271,11 +284,12 @@ function Touched({
         <span className={css.writingNow}>Being written now</span>
       ) : (
         <>
-          {"Last edited by "}
+          {/* "when your notebook was made" is long for a card: the name says enough. */}
+          {short ? null : "Last edited by "}
           <span className={css.byName} style={agentInk ? ({ "--touched": agentInk } as CSSProperties) : undefined}>
-            {by.name}
+            {who}
           </span>
-          <span className={css.when}> · {ago(at, now)}</span>
+          <span className={css.when}> · {when}</span>
         </>
       )}
     </span>

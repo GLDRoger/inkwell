@@ -33,7 +33,8 @@
   cursor: grabbing;
 }
 
-.root:focus-visible {
+/* Only when Tab brought focus here: typing on the map (its shortcuts, its easter egg) draws no ring. */
+.root[data-tabbed]:focus-visible {
   box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--wax) 55%, transparent);
 }
 
@@ -111,8 +112,8 @@
       round(calc(var(--x) * var(--s) * 1px), 1px),
       round(calc(var(--y) * var(--s) * 1px), 1px)
     )
-    translateY(calc(-100% - clamp(4px, calc(var(--s) * 16px), 18px)));
-  max-width: max(180px, calc((var(--w) + 220) * var(--s) * 1px));
+    translateY(calc(-100% - clamp(14px, calc(var(--s) * 16px), 18px)));
+  max-width: max(120px, calc((var(--w) + 110) * var(--s) * 1px));
   padding: 0.08em 0.12em 0.12em 0;
   font-family: var(--font-display);
   font-style: italic;
@@ -141,22 +142,20 @@
   color: color-mix(in oklab, var(--ink-faint) 85%, transparent);
 }
 
-/* The greeting, above the whole map, while you're looking at all of it. */
+/* The greeting, pinned above the overview. It fades once you move the map. */
 .greeting {
   position: absolute;
-  left: 0;
-  top: 0;
-  transform: translate(
-      round(calc(var(--x) * var(--s) * 1px), 1px),
-      round(calc(var(--y) * var(--s) * 1px), 1px)
-    )
-    translate(-50%, calc(-100% - 36px));
-  width: max-content;
-  max-width: min(520px, 86vw);
+  z-index: 2;
+  top: calc(var(--shell-top, 0px) + 72px);
+  left: 12px;
+  right: calc(var(--diary-inset, 0px) + 12px);
+  margin: 0 auto;
+  width: fit-content;
+  max-width: min(560px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   text-align: center;
   pointer-events: none;
   transition:
@@ -164,10 +163,15 @@
     visibility var(--dur);
 }
 
+.greeting[data-away] {
+  opacity: 0;
+  visibility: hidden;
+}
+
 .hello {
   font-family: var(--font-display);
   font-weight: 360;
-  font-size: 44px;
+  font-size: 40px;
   line-height: 1.05;
   letter-spacing: -0.03em;
   color: var(--ink);
@@ -181,12 +185,12 @@
 }
 
 .root[data-compact] .greeting {
-  gap: 6px;
-  translate: 0 12px;
+  top: calc(var(--shell-top, 0px) + 66px);
+  gap: 4px;
 }
 
 .root[data-compact] .hello {
-  font-size: 32px;
+  font-size: 30px;
 }
 
 .root[data-compact] .whatsNew {
@@ -194,7 +198,8 @@
 }
 
 .root[data-detail="mid"] .greeting,
-.root[data-detail="near"] .greeting {
+.root[data-detail="near"] .greeting,
+.root[data-detail="dots"] .greeting {
   opacity: 0;
   visibility: hidden;
 }
@@ -232,7 +237,7 @@
 .card[data-detail="dots"] {
   display: grid;
   place-items: center;
-  padding: clamp(4px, calc(var(--s) * 30px), 14px);
+  padding: clamp(3px, calc(var(--s) * 18px), 14px);
   border-radius: clamp(3px, calc(var(--s) * 30px), 12px);
   box-shadow:
     0 0 0 1px light-dark(rgb(22 21 19 / 0.035), rgb(255 255 255 / 0.05)),
@@ -248,17 +253,27 @@
   line-height: 1;
 }
 
+.dotLetter {
+  font-family: var(--font-display);
+  font-size: clamp(7px, calc(var(--s) * 90px), 16px);
+  line-height: 1;
+  color: var(--ink-faint);
+}
+
+/* Sized with the card (so the same words fit a line at any zoom), shrunk a little for a long word; never broken mid-word. */
 .chipTitle {
   --rest-ink: var(--ink);
+  max-width: 100%;
   font-weight: 550;
-  font-size: clamp(9px, calc(var(--s) * 46px), 15px);
-  line-height: 1.22;
-  letter-spacing: -0.01em;
+  font-size: clamp(7.5px, calc(var(--s) * 48px * var(--fit, 1)), 15px);
+  line-height: 1.2;
+  letter-spacing: -0.012em;
   text-align: center;
   text-wrap: balance;
   color: var(--rest-ink);
-  overflow-wrap: break-word;
-  hyphens: auto;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -399,12 +414,7 @@
 
   .card[data-fresh] .midTitle,
   .card[data-fresh] .nearTitle,
-  .card[data-fresh] .dotIcon {
-  font-size: clamp(8px, calc(var(--s) * 110px), 18px);
-  line-height: 1;
-}
-
-.chipTitle {
+  .card[data-fresh] .chipTitle {
     animation: freshInk 12s var(--fresh-delay, 0s) ease-out both;
   }
 }
@@ -620,6 +630,21 @@
   z-index: 1;
 }
 
+/* The overview: a size smaller, to fit between cards (see SMALL_H in labels.ts). */
+.name[data-small] {
+  --ox: 10px;
+  --oy: 9px;
+  height: 18px;
+  gap: 4px;
+  padding: 0 8px 0 7px;
+  font-size: 11px;
+}
+
+.name[data-small] .nameDot {
+  width: 6px;
+  height: 6px;
+}
+
 /* Far out, just the dot (its name is in the roster, and on hover). */
 .name[data-tiny] {
   --ox: 7px;
@@ -807,6 +832,12 @@
   margin-left: auto;
   gap: 7px;
   padding: 0 15px 0 13px;
+}
+
+.photo[data-short] {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
 }
 
 .photo svg {

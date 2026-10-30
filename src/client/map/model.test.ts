@@ -149,3 +149,43 @@ describe("applyEvent", () => {
     expect(s.walkers.has("person:p1")).toBe(false);
   });
 });
+
+describe("fromGraph keeps what didn't change", () => {
+  it("reuses the pages and links maps when only the graph's runs changed (an agent's step)", () => {
+    const g = graph();
+    const s1 = fromGraph(g, T0);
+    // What lib/events does for a run step: a new graph object, same pages and links arrays.
+    const g2 = { ...g, runs: [run("r9", "ar", { pageId: "a" })] };
+    const s2 = fromGraph(g2, T0 + 1000, s1);
+    expect(s2.pages).toBe(s1.pages);
+    expect(s2.links).toBe(s1.links);
+    expect(s2.agents).toBe(s1.agents);
+    expect(s2.fresh).toBe(s1.fresh);
+    expect(s2.runs.has("r9")).toBe(true);
+  });
+
+  it("rebuilds the pages when the graph's pages change", () => {
+    const g = graph();
+    const s1 = fromGraph(g, T0);
+    const g2 = { ...g, pages: [...g.pages, page("d")] };
+    const s2 = fromGraph(g2, T0 + 1000, s1);
+    expect(s2.pages).not.toBe(s1.pages);
+    expect(s2.pages.has("d")).toBe(true);
+    expect(s2.links).toEqual(s1.links);
+  });
+
+  it("keeps pages patched by events when only runs are refetched", () => {
+    const g = graph();
+    const s1 = applyEvent(fromGraph(g, T0), { type: "page.created", page: page("live") }, T0 + 10);
+    const s2 = fromGraph({ ...g, runs: [] }, T0 + 20, s1);
+    expect(s2.pages.has("live")).toBe(true);
+  });
+});
+
+describe("an agent leaving for nowhere", () => {
+  it("stays beside the page it left when the map hadn't seen it yet", () => {
+    const s = fromGraph(graph({ runs: [] }), T0);
+    const next = applyEvent(s, { type: "agent.moved", agentId: "sc", runId: "r1", fromPageId: "b", toPageId: null, action: "leaving" } as never, T0);
+    expect(next.walkers.get("agent:sc")?.pageId).toBe("b");
+  });
+});

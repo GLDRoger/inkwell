@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ClickIntent, DOUBLE_MS } from "./click";
+import { ClickIntent, DOUBLE_MS, opensOnClick } from "./click";
 
 describe("ClickIntent", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -50,5 +50,15 @@ describe("ClickIntent", () => {
     vi.runAllTimers();
     expect(single).toHaveBeenCalledTimes(2);
     expect(double).not.toHaveBeenCalled();
+  });
+});
+
+describe("opening with a second click or tap", () => {
+  it("opens the card that was brought close, at the zoom it was brought to", () => {
+    expect(opensOnClick(null, "a", 0.85)).toBe(false);
+    expect(opensOnClick({ id: "a", s: 0.85 }, "a", 0.85)).toBe(true);
+    expect(opensOnClick({ id: "a", s: 0.85 }, "b", 0.85)).toBe(false);
+    // Zoomed well away since: bring it close again first.
+    expect(opensOnClick({ id: "a", s: 0.85 }, "a", 0.3)).toBe(false);
   });
 });

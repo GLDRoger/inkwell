@@ -49,3 +49,25 @@ describe("placeLabel", () => {
     expect(overlaps(spot.box, card)).toBe(false);
   });
 });
+
+describe("far-out card titles", () => {
+  it("never breaks a word: a long later word ends the title with an ellipsis", async () => {
+    const { farTitle } = await import("./util");
+    expect(farTitle("Lisbon food & neighbourhoods")).toEqual({ text: "Lisbon food &…", fit: 1 });
+    expect(farTitle("Product roadmap")).toEqual({ text: "Product roadmap", fit: 1 });
+  });
+
+  it("shrinks the type a little for a long first word", async () => {
+    const { farTitle } = await import("./util");
+    const f = farTitle("Fundraising notes");
+    expect(f.text).toBe("Fundraising notes");
+    expect(f.fit).toBeCloseTo(10 / 11);
+  });
+
+  it("marks a page with no icon by its first letter", async () => {
+    const { initial } = await import("./util");
+    expect(initial("“Bread” notes")).toBe("B");
+    expect(initial("")).toBe("·");
+  });
+});
+

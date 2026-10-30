@@ -3,8 +3,11 @@ import type { CameraController } from "./camera";
 import { REGION_PAD, type Box, type MapLayout } from "./layout";
 import type { MapState, Walker } from "./model";
 import { FOOT_PATH, footprintTrail, pointAlong, printScale, stepMs, strideFor, type Print, type Pt } from "./footprints";
-import { areaNameBox, DOT_ONLY, dotOf, labelWidth, placeLabel, type LabelSpot } from "./labels";
+import { areaNameBox, DOT_ONLY, dotOf, labelWidth, placeLabel, SMALL_DOT_X, SMALL_H, type LabelSpot } from "./labels";
 import { DOTS_AT, MID_AT } from "./lod";
+
+/** Below this zoom (the overview), names are set a size smaller so they fit between the cards. */
+export const SMALL_NAMES_AT = 0.34;
 import css from "./map.module.css";
 
 /** How long a print stays on the map before it fades out entirely. */
@@ -95,8 +98,10 @@ export function standingSpots(state: MapState, layout: MapLayout, s: number): Ma
       // Too far out for names to fit between the cards: just the dot.
       const spot =
         s < DOTS_AT
-          ? placeLabel(card, DOT_ONLY, s, { cards: near, areas, taken, far }, DOT_ONLY, DOT_ONLY / 2)
-          : placeLabel(card, labelWidth(w.name, actionText(w)), s, { cards: near, areas, taken, far });
+          ? placeLabel(card, DOT_ONLY, s, { cards: near, areas, taken, far, within: layout.bounds }, DOT_ONLY, DOT_ONLY / 2)
+          : s < SMALL_NAMES_AT
+            ? placeLabel(card, labelWidth(w.name, actionText(w), true), s, { cards: near, areas, taken, far, within: layout.bounds }, SMALL_H, SMALL_DOT_X)
+            : placeLabel(card, labelWidth(w.name, actionText(w)), s, { cards: near, areas, taken, far, within: layout.bounds });
       taken.push(spot.box);
       out.set(w.key, { spot, pt: dotOf(spot, s), slot, pageId });
     });
@@ -345,6 +350,7 @@ export function Names({
 }) {
   const list = [...state.walkers.values()].filter((w) => spots.has(w.key));
   const tiny = scale < DOTS_AT;
+  const small = !tiny && scale < SMALL_NAMES_AT;
   return (
     <>
       {list.map((w) => {
@@ -360,6 +366,7 @@ export function Names({
             data-kind={w.kind}
             data-action={w.action}
             data-tiny={tiny || undefined}
+            data-small={small || undefined}
             data-map-control
             title={tiny ? w.name : undefined}
             aria-label={w.name}

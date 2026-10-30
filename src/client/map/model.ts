@@ -39,6 +39,12 @@ export interface MapState {
   /** Page id -> when it last changed while we watched (ms). */
   fresh: Map<Id, number>;
   seq: number;
+  /**
+   * The graph arrays `pages`, `links` and `agents` were built from. A run's step
+   * replaces only the graph's runs, so when these are the same arrays the
+   * maps are kept as they are and no card re-renders.
+   */
+  source?: { pages: Page[]; links: Link[]; agents: Agent[] };
 }
 
 /** Pages changed this recently show fresh ink. */
@@ -62,8 +68,9 @@ function actionFromRun(run: Run): WalkerAction {
  * patched elsewhere), who stands where and what's fresh carry over.
  */
 export function fromGraph(graph: MapGraph, now: number, prev?: MapState | null): MapState {
-  const pages = new Map(graph.pages.map((p) => [p.id, p]));
-  const agents = new Map(graph.agents.map((a) => [a.id, a]));
+  const src = prev?.source;
+  const pages = src?.pages === graph.pages ? prev!.pages : new Map(graph.pages.map((p) => [p.id, p]));
+  const agents = src?.agents === graph.agents ? prev!.agents : new Map(graph.agents.map((a) => [a.id, a]));
   const runs = new Map(graph.runs.map((r) => [r.id, r]));
   const walkers = new Map<string, Walker>();
   const fresh = new Map<Id, number>();
@@ -75,7 +82,8 @@ export function fromGraph(graph: MapGraph, now: number, prev?: MapState | null):
         if (a) walkers.set(k, { ...w, name: a.name, color: a.color });
       } else walkers.set(k, w);
     }
-    for (const [id, at] of prev.fresh) if (pages.has(id)) fresh.set(id, at);
+    if (pages === prev.pages) for (const [id, at] of prev.fresh) fresh.set(id, at);
+    else for (const [id, at] of prev.fresh) if (pages.has(id)) fresh.set(id, at);
   }
 
   // Each agent stands where its newest run left it. Runs come newest first.
@@ -115,13 +123,21 @@ export function fromGraph(graph: MapGraph, now: number, prev?: MapState | null):
 
   return {
     pages,
-    links: graph.links.filter((l) => pages.has(l.from) && pages.has(l.to)),
+    links:
+      src?.links === graph.links && pages === prev!.pages ? prev!.links : graph.links.filter((l) => pages.has(l.from) && pages.has(l.to)),
     agents,
     runs,
     walkers,
-    fresh,
+    fresh: prev && pages === prev.pages && sameEntries(fresh, prev.fresh) ? prev.fresh : fresh,
     seq: prev?.seq ?? 0,
+    source: { pages: graph.pages, links: graph.links, agents: graph.agents },
   };
+}
+
+function sameEntries<K, V>(a: Map<K, V>, b: Map<K, V>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
 }
 
 function withWalker(state: MapState, w: Walker): MapState {
@@ -133,7 +149,8 @@ function withWalker(state: MapState, w: Walker): MapState {
 /** Move a walker, recording a walk when it actually changes page. */
 function moveWalker(state: MapState, w: Walker, to: Id | null, now: number, from?: Id | null): MapState {
   const start = w.pageId ?? from ?? null;
-  if (!to || to === start) return withWalker(state, { ...w, pageId: to ?? w.pageId });
+  // Leaving for nowhere: stay beside the page we were last seen at (or were leaving).
+  if (!to || to === start) return withWalker(state, { ...w, pageId: to ?? start });
   const seq = state.seq + 1;
   return { ...withWalker(state, { ...w, pageId: to, move: { seq, from: start, to, at: now } }), seq };
 }
