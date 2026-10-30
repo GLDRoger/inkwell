@@ -114,3 +114,8 @@ Goal: ready to hand to the client for internal testing. Every screen, flow and l
 - Diary round: "page" ambiguity → "conversations"; label/move tool icons; focus after attach; consistent error copy; own messages not placeholder-grey; provenance lines ("Painted by Muse Image", "Read by SAM 3.1 + Muse Spark").
 - Shell/page round: palette filters actions as you type (theme toggle findable); first-run guidance (open diary on first visit with Atlas's note); private-notebook explanation on foreign links; delete with in-app confirm + undo toast; child-excerpt overflow; one "Last edited by"; "You" not "Visitor 2152"; unknown URL 404.
 - Rehearsal (6c06888, `npm run rehearse`): found `editor-schema.ts:61` double-escapes &,<,> in markdown read back to agents; "Any agent" always routes to the first agent (`routes/diary.ts:25`) — route by request. Photo-import group title hidden under roster chips (map round).
+
+### Round 1 landed and deployed (36d1631, 307/307 tests)
+Design system + welcome (13b9ccc), server review fixes (4278c74..7730373), Enter-key P0 (6895129), & escaping (acab29b), Any-agent routing + agent colours (c688ee8), diary (8b42283, 825636e), page (5e6036d), shell (ec9d28f), map (36d1631).
+Known for round 2: roster vs "Photo to cards" collide with diary open; streaming reply shows half-written link markdown; seeded "just now" on map cards vs "when your notebook was made" on pages; agent label can sit past the viewport edge; presence 400 on foreign page links (App.tsx); DESIGN.md "Next rounds" stale; README/SUBMISSION copy must follow the renamed features ("Photo to cards", "Make a cover", conversations).
+Round 2 in flight: fresh hands-on audit (/tmp/inkwell-audit2/) + client code review.
