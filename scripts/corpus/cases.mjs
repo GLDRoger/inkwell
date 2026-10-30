@@ -7,6 +7,20 @@ const sameNotebook = (state) => state.pages.length === state.before.length && st
   const after = state.pages.find((p) => p.id === before.id);
   return after && after.title === before.title && after.parentId === before.parentId && norm(after.markdown) === norm(before.markdown);
 });
+/** Every line of the original survives in the page (it may gain a heading, links or notes around it). */
+const contains = (after = '', before = '') => before.split(/\n+/).map(norm).filter(Boolean).every((line) => norm(after).includes(line));
+const label = (text) => norm(text.replace(/\\([[\]])/g, '$1').replace(/[*_`]/g, '')).toLowerCase();
+/** Every page link in the diary leads to a live page, and a label that names a page leads to that page. */
+export const diaryLinks = (s) => {
+  const bad = [];
+  for (const [, text, id] of (s.answer ?? '').matchAll(/\[((?:\\.|[^\]\\\n])*)\]\(\/p\/([^)\s]*)\)/g)) {
+    const target = s.pages.find((p) => p.id === id);
+    const named = s.pages.find((p) => label(p.title) === label(text));
+    if (!target) bad.push(`[${text}] -> missing ${id}`);
+    else if (named && named.id !== target.id) bad.push(`[${text}] -> "${target.title}"`);
+  }
+  return check(!bad.length, `Diary links lead to the pages they name${bad.length ? `: ${bad.join(', ')}` : ''}`);
+};
 const create = (state, title, markdown, parentId) => state.api.post('/api/pages', { title, markdown, ...(parentId ? { parentId } : {}) });
 const defaults = { timeoutMs: 120_000 };
 
@@ -95,7 +109,7 @@ export const cases = [
     prompt: 'This loose dinner note is cluttering my map. Give it a useful title and put it somewhere sensible in my notebook. Use your judgment; keep the recipe.',
     checks: [
       (s) => { const p = s.pages.find((p) => p.id === s.fixture.pageId); return check(p && p.title !== 'Untitled dinner note' && /chickpea|lemon|skillet/i.test(p.title) && [named(s, 'Recipes')?.id, named(s, 'Weeknight dinners')?.id].includes(p.parentId), 'Agent chose a descriptive title and a sensible recipe parent'); },
-      (s) => check(norm(body(s, s.fixture.pageId)) === norm(s.before.find((p) => p.id === s.fixture.pageId).markdown), 'Recipe preserved instead of asking a needless clarification'),
+      (s) => check(contains(body(s, s.fixture.pageId), s.before.find((p) => p.id === s.fixture.pageId).markdown), 'Recipe preserved (every original line still there) instead of asking a needless clarification'),
     ],
   },
   {
@@ -119,7 +133,7 @@ export const cases = [
     name: 'long_diary_stream', agent: 'Scout', timeoutMs: 180_000,
     prompt: 'Read Trip to Lisbon, Lisbon itinerary, Lisbon food & neighbourhoods and Packing & logistics. Write a detailed 700–900 word trip briefing in the diary only, covering all five days, food, neighbourhoods, packing and bookings. Link your sources. Do not edit pages.',
     checks: [
-      (s) => check(s.answer.trim().split(/\s+/).length >= 600, `Substantial diary response (${s.answer.trim().split(/\s+/).length} words; 600-word tolerance)`),
+      (s) => { const words = s.answer.trim().split(/\s+/).length; return check(words >= 600 && words <= 1000, `Diary response within the requested length (${words} words; 600–1000 tolerance for 700–900)`); },
       (s) => {
         const entries = s.entries.filter((e) => e.runId === s.rootId && e.role === 'agent' && e.text);
         return check(entries.length > 0 && entries.every((entry) => {

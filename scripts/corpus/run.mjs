@@ -2,7 +2,7 @@
 import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { cases } from './cases.mjs';
+import { cases, diaryLinks } from './cases.mjs';
 
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
 
@@ -164,7 +164,7 @@ export async function runCase(testCase, { base = 'http://localhost:8787', pollMs
     state.answer = state.entries.filter((e) => e.role === 'agent' && e.runId === state.rootId).map((e) => e.text).join('\n');
     if (streamError) throw streamError;
     checks.push({ ok: state.runs.every((r) => r.status === 'succeeded'), why: state.runs.map((r) => `${r.id}: ${r.status}${r.error ? ` (${r.error})` : ''}`).join('; ') });
-    for (const check of testCase.checks) {
+    for (const check of [...testCase.checks, diaryLinks]) {
       try {
         const result = await check(state);
         if (typeof result?.ok !== 'boolean' || typeof result?.why !== 'string') throw new Error('Invalid check result');

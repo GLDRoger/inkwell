@@ -8,12 +8,12 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readSSE, runCase, parseArgs, runFamily } from './run.mjs';
-import { cases } from './cases.mjs';
+import { cases, diaryLinks } from './cases.mjs';
 
 const exec = promisify(execFile);
 const actor = { kind: 'person', id: 'visitor', name: 'Visitor' };
 const agents = ['Scout', 'Wren', 'Atlas'].map((name) => ({ id: name.toLowerCase(), name }));
-const output = 'Lisbon café 🪶 '.repeat(360);
+const output = 'Lisbon café 🪶 '.repeat(300); // 900 words: inside the 700–900 the case asks for
 
 async function fakeServer(t, mode = 'success') {
   const sessions = new Map(), cancellations = [], timers = new Set();
@@ -68,7 +68,7 @@ async function fakeServer(t, mode = 'success') {
         const entry = { id: 'answer', threadId: 'thread', role: 'agent', agentId: root.agentId, text: output, runId: root.id };
         emit(s, { type: 'diary.entry', entry: { ...entry, text: '' } });
         // Deliberately repeated chunks; never deduplicate identical delta events.
-        for (let i = 0; i < 360; i++) emit(s, { type: 'diary.delta', entryId: entry.id, threadId: 'thread', text: 'Lisbon café 🪶 ' });
+        for (let i = 0; i < 300; i++) emit(s, { type: 'diary.delta', entryId: entry.id, threadId: 'thread', text: 'Lisbon café 🪶 ' });
         s.entries.push(entry);
         emit(s, { type: 'diary.entry', entry });
         emit(s, { type: 'agent.moved', runId: root.id, agentId: root.agentId, toPageId: input.pageId ?? 'seed', fromPageId: null, action: 'reading' });
@@ -124,7 +124,7 @@ test('fresh cookies, setup, early SSE events, persisted checks and friction metr
   assert.equal(fake.sessions.size, 2);
   assert.equal(a.metrics.steps, 2); assert.equal(a.metrics.failedToolSteps, 1);
   assert.equal(a.metrics.tokens, null); assert.equal(a.metrics.footprints, true);
-  assert.equal(a.metrics.deltaBeforeFinal, true); assert.equal(a.metrics.deltaCount, 360);
+  assert.equal(a.metrics.deltaBeforeFinal, true); assert.equal(a.metrics.deltaCount, 300);
   assert.equal(a.runs.length, 1, 'Unrelated running tasks do not block completion');
 });
 
@@ -170,7 +170,30 @@ test('failed or throwing checks cannot produce a pass', async (t) => {
   const fake = await fakeServer(t);
   const result = await runCase({ ...probe, checks: [() => ({ ok: false, why: 'missing edit' }), () => { throw new Error('broken oracle'); }] }, { ...fake, ...fast });
   assert.equal(result.pass, false);
-  assert.deepEqual(result.checks.slice(1), [{ ok: false, why: 'missing edit' }, { ok: false, why: 'Check error: broken oracle' }]);
+  assert.deepEqual(result.checks.slice(1, 3), [{ ok: false, why: 'missing edit' }, { ok: false, why: 'Check error: broken oracle' }]);
+});
+
+test('diary links must lead to the pages they name', () => {
+  const pages = [{ id: 'trip', title: 'Trip to Lisbon' }, { id: 'plan', title: 'Startup: launch plan' }];
+  const ok = (answer) => diaryLinks({ answer, pages }).ok;
+  assert.equal(ok('See [Trip to Lisbon](/p/trip) and [the launch plan](/p/plan).'), true);
+  assert.equal(ok('See [**Trip to Lisbon**](/p/trip).'), true);
+  assert.equal(ok('See [Trip to Lisbon](/p/trlp).'), false, 'a mis-copied id');
+  assert.equal(ok('See [Trip to Lisbon](/p/plan).'), false, 'another page\'s id');
+});
+
+test('ambiguous_tidy accepts a kept recipe with additions, rejects a lost line', () => {
+  const c = cases.find((c) => c.name === 'ambiguous_tidy');
+  const original = 'Recipe: Lemon chickpea skillet\n\nChickpeas, lemon, garlic. Cook in one pan for 20 minutes.';
+  const state = (markdown) => ({ fixture: { pageId: 'note' }, before: [{ id: 'note', markdown: original }], pages: [{ id: 'note', markdown }] });
+  assert.equal(c.checks[1](state(`${original}\n\nSee also [Weeknight dinners](/p/dinners).`)).ok, true);
+  assert.equal(c.checks[1](state('Recipe: Lemon chickpea skillet\n\nChickpeas, lemon, garlic.')).ok, false);
+});
+
+test('long_diary_stream rejects an answer far past the requested length', () => {
+  const c = cases.find((c) => c.name === 'long_diary_stream');
+  assert.equal(c.checks[0]({ answer: 'word '.repeat(800) }).ok, true);
+  assert.equal(c.checks[0]({ answer: 'word '.repeat(1400) }).ok, false);
 });
 
 test('long-page oracle rejects truncation and unrelated edits, accepts only target change', async () => {
