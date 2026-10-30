@@ -1,5 +1,3 @@
-import type { Box } from "./layout";
-
 export interface Pt {
   x: number;
   y: number;
@@ -38,17 +36,11 @@ export function hash(s: string): number {
 
 /**
  * Prints a constant size on screen: about 22px apart whatever the zoom, so
- * a walk reads the same at the territory view and up close.
+ * a walk reads the same at the territory view and up close (no big prints
+ * when zoomed right in).
  */
 export function strideFor(scale: number): number {
-  return Math.min(160, Math.max(16, 22 / Math.max(scale, 0.01)));
-}
-
-/** Where a walker stands in a room: just inside its lower-left, side by side when several share it. */
-export function standingSpot(card: Box, slot = 0): Pt {
-  const col = slot % 4;
-  const row = Math.floor(slot / 4);
-  return { x: card.x + 56 + col * Math.min(64, card.w / 4.5), y: card.y + card.h - 22 - row * 36 };
+  return Math.min(160, Math.max(4, 22 / Math.max(scale, 0.01)));
 }
 
 function bezier(p0: Pt, p1: Pt, p2: Pt, t: number): Pt {
@@ -135,5 +127,5 @@ export const FOOT_PATH =
   "M-1.2,-3.3 C2.6,-4.6 7.2,-4.4 8.9,-1.6 C10.1,0.6 8.6,3.6 4.9,3.9 C1.8,4.1 -0.8,3.2 -1.6,1.4 C-2.2,-0.2 -2.3,-2.8 -1.2,-3.3 Z M-8.9,-2.4 C-7.4,-3.6 -4.6,-3.5 -3.9,-1.7 C-3.3,0.2 -4.1,2.6 -6.3,2.7 C-8.4,2.8 -9.6,1.6 -9.6,0 C-9.6,-1 -9.5,-1.9 -8.9,-2.4 Z";
 export const FOOT_LENGTH = 18.5;
 
-/** Print scale so a print is about 60% of the stride. */
-export const printScale = (stride: number) => (stride * 0.66) / FOOT_LENGTH;
+/** Print scale so a print is about half the stride: small and calm. */
+export const printScale = (stride: number) => (stride * 0.5) / FOOT_LENGTH;

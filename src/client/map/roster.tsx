@@ -5,6 +5,14 @@ import { inkOf } from "./walkers";
 import { titleOf } from "./util";
 import css from "./map.module.css";
 
+/** What a working agent is doing, in a few words. */
+export function workingLine(action: Walker["action"], where: Page | undefined): string {
+  const t = where ? titleOf(where) : "";
+  if (action === "reading") return t ? `reading ${t}` : "reading";
+  if (action === "writing") return t ? `writing in ${t}` : "writing";
+  return t ? `working in ${t}` : "working";
+}
+
 /**
  * Who's out: every agent and person on the map, what they're doing and
  * where. Click one to fly to them.
@@ -38,7 +46,12 @@ export function Roster({
       >
         <span className={css.chipDot} aria-hidden />
         <span className={css.chipName}>{name}</span>
-        {!narrow && <span className={css.chipLine}>{line}</span>}
+        {!narrow && (
+          <span className={css.chipLine}>
+            <span aria-hidden> · </span>
+            {line}
+          </span>
+        )}
       </button>
     </li>
   );
@@ -50,12 +63,7 @@ export function Roster({
           // A walker seen reading or writing is at work, even before its run's update arrives.
           const working = running || (!!walker && walker.action !== "idle");
           const where = page(walker?.pageId);
-          const doing = walker?.action && walker.action !== "idle" ? walker.action : working ? "working" : "";
-          const line = working
-            ? `${doing || "working"}${where ? ` in ${titleOf(where)}` : ""}`
-            : where
-              ? `idle by ${titleOf(where)}`
-              : "not out yet";
+          const line = working ? workingLine(walker?.action ?? "thinking", where) : where ? `resting at ${titleOf(where)}` : "hasn't set out yet";
           return chip(agent.id, { kind: "agent", id: agent.id, color: agent.color }, agent.name, line, walker?.pageId ?? null, working);
         })}
         {people.map((w) => {

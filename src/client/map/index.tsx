@@ -1,24 +1,24 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Paintbrush, Search, ScanText, X } from "lucide-react";
+import { ArrowUpRight, ImagePlus, ScanText } from "lucide-react";
 import type { Id, MapGraph, Page } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { emit, subscribe } from "../lib/events";
 import { keys } from "../lib/queries";
 import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
-import { layoutMap, unionBox, type CardBox } from "./layout";
+import { layoutMap, REGION_PAD, unionBox, type Box, type CardBox } from "./layout";
 import { detailFor, scaleFor, type Detail, type Lod } from "./lod";
+import { ClickIntent } from "./click";
+import { hello, whatsNew } from "./greeting";
 import { MapCard } from "./map-card";
 import { Minimap } from "./minimap";
-import { applyEvent, fromGraph, writingPages, type MapState } from "./model";
-import { Roster } from "./roster";
+import { agentStatuses, applyEvent, fromGraph, writingPages, type MapState } from "./model";
+import { Roster, workingLine } from "./roster";
 import { SpellBook, type Spell } from "./spells";
 import { isTypingTarget, titleOf, useNow, useReducedMotion } from "./util";
-import { Banners, Prints, useWalks } from "./walkers";
-import { INK_SPAN_MS, WorldBack, worldFrame } from "./world";
-import { inkDelay, noteFrame } from "./ink";
-import { useMapFonts } from "./fonts";
+import { Names, Prints, useWalks } from "./walkers";
+import { INK_SPAN_MS, inkDelay, WorldBack, worldFrame } from "./world";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -28,11 +28,14 @@ export interface MapViewProps {
 
 const CAMERA_KEY = "inkwell:map-camera";
 const INKED_KEY = "inkwell:map-inked";
-const REVEAL_MS = 3400;
-/** A page made this recently, while we watched, writes itself onto the map. */
+const HINT_KEY = "inkwell:map-open-hint";
+const SEEN_KEY = "inkwell:map-last-seen";
+const REVEAL_MS = 2600;
+/** A page made this recently, while we watched, settles onto the map. */
 const BORN_MS = 20_000;
-const NOTE_FRAME = noteFrame();
-const LEVEL_NAME: Record<Lod, string> = { far: "Territory", mid: "Cards", near: "Pages" };
+/** Room kept above the map for the greeting when everything's in view, screen px. */
+const GREETING_PX = 132;
+const GREETING_PX_COMPACT = 96;
 
 function fixtureParams() {
   if (typeof location === "undefined") return null;
@@ -52,10 +55,19 @@ function savedCamera(): Cam | null {
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 
+function lastSeen(): number | null {
+  try {
+    const t = Number(localStorage.getItem(SEEN_KEY));
+    return t > 0 ? t : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The map: every page a room on a parchment map, zoomable from the whole
- * territory down to a readable page, with agents and people walking between
- * rooms in real time.
+ * The map: every page a card on an open canvas, grouped into areas, zoomable
+ * from the whole notebook down to a readable page, with agents and people
+ * walking between pages in real time.
  */
 export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const fixture = useMemo(fixtureParams, []);
@@ -96,7 +108,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const pageList = useMemo(() => (pages ? [...pages.values()] : []), [pages]);
   // Portrait screens get a taller territory. Only the orientation matters, so resizing doesn't reshuffle.
   const [portrait, setPortrait] = useState(false);
-  const layout = useMemo(() => layoutMap(pageList, undefined, portrait ? 1.05 : 2.1), [pageList, portrait]);
+  const layout = useMemo(() => layoutMap(pageList, "Other pages", portrait ? 1.05 : 2.1), [pageList, portrait]);
   const writing = useMemo(() => (state ? writingPages(state) : new Map<string, string>()), [state]);
   const reduced = useReducedMotion();
   const now = useNow(15_000);
@@ -109,9 +121,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const labelsRef = useRef<HTMLDivElement>(null);
   const bannersRef = useRef<HTMLDivElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
-  const frontRef = useRef<HTMLDivElement>(null);
   const backScaleRef = useRef<HTMLDivElement>(null);
-  const frontScaleRef = useRef<HTMLDivElement>(null);
+  const printsRef = useRef<HTMLDivElement>(null);
+  const printsScaleRef = useRef<HTMLDivElement>(null);
   const lastScale = useRef(NaN);
   /** The scale cards and labels were last laid out at. */
   const rendered = useRef(1);
@@ -120,6 +132,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const narrow = size.w > 0 && size.w < 640;
+  // Phones either way up: smaller chrome, no overview.
+  const compact = narrow || (size.h > 0 && size.h < 500);
   const [detail, setDetail] = useState<Detail>("rooms");
   const detailRef = useRef(detail);
   const [visible, setVisible] = useState<string[]>([]);
@@ -170,9 +184,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           rendered.current = camera.cam.s;
           const s = String(camera.cam.s);
           for (const el of [labelsRef.current, cardsRef.current, bannersRef.current]) el?.style.setProperty("--s", s);
-          for (const el of [backScaleRef.current, frontScaleRef.current]) if (el) el.style.transform = `scale(${s})`;
-          // Dash lengths are in world units; keep them steady on screen.
-          backScaleRef.current?.style.setProperty("--k", (1 / camera.cam.s).toPrecision(3));
+          for (const el of [backScaleRef.current, printsScaleRef.current]) if (el) el.style.transform = `scale(${s})`;
           place(camera.cam, camera.vw, camera.vh);
         };
         const place = (cam: Cam, w: number, h: number) => {
@@ -183,7 +195,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             ratio === 1
               ? `translate3d(${Math.round(tx)}px, ${Math.round(ty)}px, 0)`
               : `translate3d(${tx}px, ${ty}px, 0) scale(${ratio})`;
-          for (const el of [backRef.current, labelsRef.current, cardsRef.current, frontRef.current, bannersRef.current])
+          for (const el of [backRef.current, printsRef.current, labelsRef.current, cardsRef.current, bannersRef.current])
             if (el) el.style.transform = t;
         };
         const d = detailFor(c.s, vw);
@@ -221,16 +233,25 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     };
   }, [camera]);
 
-  // The free part of the screen: below the shell's bar and our roster, left of an open diary.
+  // The free part of the screen: below the shell's bar and the roster, above the
+  // zoom buttons, left of an open diary.
+  // The shell's variables are calc() expressions, which getComputedStyle hands
+  // back unresolved; a hidden probe sized by them reads them in pixels.
+  const insetProbe = useRef<HTMLDivElement>(null);
   const insets = useCallback((): Insets => {
-    const cs = rootRef.current ? getComputedStyle(rootRef.current) : null;
-    const px = (name: string) => parseFloat(cs?.getPropertyValue(name) ?? "") || 0;
-    return { top: px("--shell-top") + (narrow ? 56 : 64), right: px("--diary-inset") + 12, bottom: narrow ? 112 : 16, left: 12 };
-  }, [narrow]);
-  const fitAll = useCallback(
-    () => fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, insets(), narrow ? 8 : 32, 0.9),
-    [camera, insets, narrow],
-  );
+    const p = insetProbe.current;
+    const top = p?.offsetHeight ?? 0;
+    const right = p?.offsetWidth ?? 0;
+    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: compact ? 72 : 64, left: 12 };
+  }, [compact]);
+  // Phones on their side have no room for the greeting.
+  const greets = size.h >= 560;
+  // Everything, with room above it for the greeting.
+  const fitAll = useCallback(() => {
+    const i = insets();
+    const room = greets ? (compact ? GREETING_PX_COMPACT : GREETING_PX) : 0;
+    return fitCamera(layoutRef.current.bounds, camera.vw, camera.vh, { ...i, top: i.top + room }, compact ? 8 : 32, 0.9);
+  }, [camera, insets, compact, greets]);
 
   const cameraFor = useCallback(
     (box: CardBox, level: Lod): Cam => {
@@ -265,7 +286,13 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         focusOn(ids[0], "mid", animate);
         return true;
       }
-      const target = fitCamera(unionBox(boxes)!, camera.vw, camera.vh, insets(), narrow ? 16 : 48, 1);
+      // Keep an area's name in view when its first cards are what we're showing (a photo's new cards).
+      let frame: Box = unionBox(boxes)!;
+      for (const r of layoutRef.current.regions) {
+        if (!ids.some((id) => r.pageIds.includes(id))) continue;
+        if (frame.y - r.y <= r.head + 8 && r.y < frame.y) frame = { ...frame, y: r.y, h: frame.h + (frame.y - r.y) };
+      }
+      const target = fitCamera(frame, camera.vw, camera.vh, insets(), narrow ? 16 : 48, 1);
       if (animate) camera.flyTo(target);
       else camera.set(target);
       return true;
@@ -280,15 +307,39 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   useEffect(() => {
     if (placed.current || !size.w || !layout.cards.size) return;
     placed.current = true;
-    if (focusIds.length && showFocus(focusIds, false)) return;
+    if (focusIds.length && layout.cards.has(focusIds[0])) {
+      // A search result or a photo's cards: fly in from the whole map, so you see where it is.
+      camera.set(fitAll());
+      if (reduced) showFocus(focusIds, false);
+      else requestAnimationFrame(() => showFocus(focusIds, true));
+      return;
+    }
     if (focusIds.length) pendingFocus.current = focusIds;
     camera.set(savedCamera() ?? fitAll());
     camera.touched = !!savedCamera();
-  }, [size, layout, focusIds, showFocus, fitAll, camera]);
-  // Until someone moves the map, keep it fitted as the window changes.
+  }, [size, layout, focusIds, showFocus, fitAll, camera, reduced]);
+  // Until someone moves the map, keep it fitted as the window changes, and as
+  // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
     if (placed.current && !camera.touched && size.w) camera.set(fitAll());
   }, [size, camera, fitAll]);
+  useEffect(() => {
+    const refit = (animate: boolean) => {
+      if (!placed.current || camera.touched) return;
+      if (animate) {
+        camera.flyTo(fitAll());
+        camera.touched = false;
+      } else camera.set(fitAll());
+    };
+    const raf = requestAnimationFrame(() => refit(false));
+    const shell = rootRef.current?.closest("[data-route]");
+    const mo = shell ? new MutationObserver(() => refit(true)) : null;
+    if (shell) mo!.observe(shell, { attributes: true, attributeFilter: ["data-route", "data-diary"] });
+    return () => {
+      cancelAnimationFrame(raf);
+      mo?.disconnect();
+    };
+  }, [camera, fitAll, layout.cards.size]);
   // A new focus flies there; if its cards haven't reached the map yet, wait for them.
   useEffect(() => {
     if (focusPageId !== lastFocus.current) {
@@ -351,31 +402,6 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   );
   useEffect(() => () => clearTimeout(presentTimer.current), []);
 
-  // ------------------------------------------------------------ find
-  const [findOpen, setFindOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const findRef = useRef<HTMLInputElement>(null);
-  const matchIdx = useRef(0);
-  const needle = q.trim().toLocaleLowerCase();
-  const matches = useMemo(() => {
-    if (!needle) return null;
-    const ids = layout.regions.flatMap((r) => r.pageIds);
-    return ids.filter((id) => titleOf(pages?.get(id)).toLocaleLowerCase().includes(needle));
-  }, [needle, layout, pages]);
-  const matchSet = useMemo(() => (matches ? new Set(matches) : null), [matches]);
-  useEffect(() => {
-    matchIdx.current = 0;
-  }, [needle]);
-  const openFind = useCallback(() => {
-    setFindOpen(true);
-    requestAnimationFrame(() => findRef.current?.focus());
-  }, []);
-  const closeFind = useCallback(() => {
-    setFindOpen(false);
-    setQ("");
-    rootRef.current?.focus();
-  }, []);
-
   // ------------------------------------------------------------ keys
   const book = useMemo(() => new SpellBook(), []);
   useEffect(() => {
@@ -427,14 +453,6 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         case "0":
           camera.flyTo(fitAll());
           break;
-        case "f":
-        case "F":
-          openFind();
-          break;
-        case "Escape":
-          if (findOpen) closeFind();
-          else return;
-          break;
         default:
           return;
       }
@@ -442,7 +460,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [book, camera, cast, endReveal, fitAll, openFind, closeFind, findOpen]);
+  }, [book, camera, cast, endReveal, fitAll]);
 
   // ------------------------------------------------------------ gestures
   useEffect(() => {
@@ -490,6 +508,35 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const menuPage = menu ? pages?.get(menu.id) : undefined;
   const importPhoto = usePhotoImport();
 
+  // ------------------------------------------------------------ the open hint
+  // The first time someone reaches the cards, say once how to open one.
+  const [hint, setHint] = useState(false);
+  const hintTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const coarse = useMemo(() => typeof window !== "undefined" && !!window.matchMedia?.("(pointer: coarse)").matches, []);
+  const dismissHint = useCallback((forever = false) => {
+    clearTimeout(hintTimer.current);
+    setHint(false);
+    if (forever)
+      try {
+        localStorage.setItem(HINT_KEY, "1");
+      } catch {
+        /* no storage: it may show again, harmless */
+      }
+  }, []);
+  useEffect(() => {
+    // Only once someone has moved the map there (not the camera's first frame).
+    if (detail !== "mid" || hint || !placed.current || !camera.touched) return;
+    try {
+      if (localStorage.getItem(HINT_KEY)) return;
+      localStorage.setItem(HINT_KEY, "1");
+    } catch {
+      return;
+    }
+    setHint(true);
+    hintTimer.current = setTimeout(() => setHint(false), 6000);
+  }, [detail, hint, camera]);
+  useEffect(() => () => clearTimeout(hintTimer.current), []);
+
   // ------------------------------------------------------------ actions
   const handlers = useRef({
     onActivate: (_id: Id) => {},
@@ -503,6 +550,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   };
   handlers.current.onOpen = (id) => {
     camera.onSettle?.(camera.cam);
+    dismissHint(true);
     onOpenPage(id);
   };
   handlers.current.onMove = (id, x, y) => {
@@ -532,15 +580,24 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     for (const [pid, pos] of updates)
       api.updatePage(pid, pos).catch((err) => console.error("[map] couldn't save the card's place", err));
   };
-  const onActivate = useCallback((id: Id) => handlers.current.onActivate(id), []);
-  const onOpen = useCallback((id: Id) => handlers.current.onOpen(id), []);
+  // One click brings a card closer; two quick clicks (or taps) open it.
+  const clicks = useMemo(
+    () => new ClickIntent((id) => handlers.current.onActivate(id), (id) => handlers.current.onOpen(id)),
+    [],
+  );
+  useEffect(() => () => clicks.cancel(), [clicks]);
+  const onCardClick = useCallback((id: Id) => clicks.click(id), [clicks]);
+  const onOpen = useCallback((id: Id) => {
+    clicks.cancel();
+    handlers.current.onOpen(id);
+  }, [clicks]);
   const onMove = useCallback((id: Id, x: number, y: number) => handlers.current.onMove(id, x, y), []);
   const follow = useCallback((pageId: Id) => focusOn(pageId, "mid"), [focusOn]);
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [] }, 0), []);
   const live = state ?? emptyState;
-  const { store: walkStore, spots, register } = useWalks(live, layout, camera, reduced);
+  const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, layout, camera, reduced);
 
   // Say what moved, for screen readers.
   const [announce, setAnnounce] = useState("");
@@ -569,18 +626,46 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     return ids.sort().join(",");
   }, [state, now]);
   const born = useMemo(() => new Set(bornKey ? bornKey.split(",") : []), [bornKey]);
-  useMapFonts();
+
+  // ------------------------------------------------------------ the greeting
+  // What's new since you were last on the map: read once, remembered when you leave.
+  const since = useMemo(lastSeen, []);
+  useEffect(() => {
+    const save = () => {
+      try {
+        localStorage.setItem(SEEN_KEY, String(Date.now()));
+      } catch {
+        /* no storage: the greeting just gives the hint */
+      }
+    };
+    window.addEventListener("pagehide", save);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      save();
+    };
+  }, []);
+  const greetingLine = useMemo(() => {
+    if (!state) return "";
+    const busy = agentStatuses(state).find((a) => a.working && a.walker?.pageId);
+    const where = busy?.walker?.pageId ? state.pages.get(busy.walker.pageId) : undefined;
+    const doingNow = busy && where ? workingLine(busy.walker!.action, where) : "";
+    const split = doingNow.match(/^(reading|writing in|working in) (.*)$/);
+    return whatsNew(pageList, since, busy && split ? { name: busy.agent.name, doing: split[1], where: split[2] } : null);
+  }, [state, pageList, since]);
 
   // ------------------------------------------------------------ render
   const regionTitle = useMemo(() => new Map(layout.regions.map((r) => [r.id, r.title])), [layout]);
   const crumb = (box: CardBox, page: Page) => {
     const parent = page.parentId ? pages?.get(page.parentId) : null;
     const region = regionTitle.get(box.regionId) ?? "";
-    if (box.depth === 0) return box.regionId === "__loose__" ? "Loose leaves" : `${titleOf(page)} · ${layout.regions.find((r) => r.id === box.regionId)?.pageIds.length ?? 1} pages`;
+    if (box.depth === 0) {
+      if (box.regionId === "__loose__") return region;
+      const n = layout.regions.find((r) => r.id === box.regionId)?.pageIds.length ?? 1;
+      return `${titleOf(page)} · ${n} ${n === 1 ? "page" : "pages"}`;
+    }
     return parent && parent.id !== box.regionId ? `${region} / ${titleOf(parent)}` : region;
   };
   const agentInk = (p: Page) => (p.updatedBy.kind === "agent" ? (state?.agents.get(p.updatedBy.id)?.color ?? null) : null);
-  const levelLabel = LEVEL_NAME[detail === "dots" || detail === "rooms" ? "far" : detail];
   const frame = worldFrame(layout.bounds);
   const lb = layout.bounds;
   const centre = { x: lb.x + lb.w / 2, y: lb.y + lb.h / 2 };
@@ -596,16 +681,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       ? `${agentNames.slice(0, -1).join(", ")} & ${agentNames.at(-1)}`
       : agentNames[0] ?? "the Muses of Inkwell";
   const error = !fixture && query.isError ? query.error : null;
+  const hour = new Date(now).getHours();
 
   return (
     <div
       ref={rootRef}
       className={css.root}
-      style={{ "--note-frame": NOTE_FRAME } as CSSProperties}
       lang="en"
       data-detail={detail}
+      data-compact={compact || undefined}
       data-blank={blank || undefined}
-      data-finding={matchSet ? "" : undefined}
       tabIndex={0}
       role="application"
       aria-roledescription="map"
@@ -619,39 +704,94 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         playReveal();
       }}
     >
+      <div ref={insetProbe} className={css.insetProbe} aria-hidden />
       <p id="inkwell-map-help" className={css.srOnly}>
         Drag or scroll to move, pinch or Control and scroll to zoom. Arrow keys move, plus and minus zoom, 0 shows
-        everything, F finds a page. Enter on a page opens it.
+        everything. Click a page to bring it closer; double-click it, or press Enter on it, to open it.
       </p>
       <p className={css.srOnly} aria-live="polite">
         {announce}
       </p>
-      <div className={css.paper} aria-hidden>
-        <div className={css.mottle} />
-        <div className={css.creases} />
-      </div>
+
+      {/* The controls come first, so Tab reaches them before the cards. */}
+      {state && (
+        <div className={css.chrome}>
+          <div className={css.topRow}>
+            <Roster state={state} narrow={narrow} onFollow={follow} />
+            {!fixture && (
+              <button
+                type="button"
+                className={`${css.pill} ${css.photo}`}
+                data-map-control
+                onClick={() => importPhoto()}
+                aria-label="Photo to cards: turn a photo of notes into pages"
+                title="Turn a photo of notes into pages"
+              >
+                <ScanText size={16} strokeWidth={1.75} aria-hidden />
+                <span>Photo to cards</span>
+              </button>
+            )}
+          </div>
+
+          {layout.cards.size > 0 && (
+            <Minimap
+              layout={layout}
+              state={state}
+              spots={spots}
+              writing={writing}
+              camera={camera}
+              width={168}
+              height={108}
+              compact={compact}
+              onFit={() => camera.flyTo(fitAll())}
+            />
+          )}
+
+          {hint && (
+            <p className={css.hint} role="status" onClick={() => dismissHint()}>
+              {coarse ? "Double-tap a page to open it" : "Double-click a page to open it"}
+            </p>
+          )}
+        </div>
+      )}
 
       <div ref={inkRef} className={css.ink}>
         <div ref={backRef} className={css.world}>
           <div ref={backScaleRef} className={css.scale}>
-            {state && <WorldBack layout={layout} links={state.links} born={born} />}
+            {state && <WorldBack layout={layout} links={state.links} />}
+          </div>
+        </div>
+
+        {/* Footprints walk under the cards (you see them between pages, never over words), on a
+            layer of their own so a fading print never repaints the links. */}
+        <div ref={printsRef} className={css.world}>
+          <div ref={printsScaleRef} className={css.scale}>
+            <svg
+              className={css.worldSvg}
+              style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
+              viewBox={frame.viewBox}
+              aria-hidden
+            >
+              <Prints store={walkStore} />
+            </svg>
           </div>
         </div>
 
         <div ref={labelsRef} className={css.layer} aria-hidden>
+          {state && layout.cards.size > 0 && greets && (
+            <div className={css.greeting} style={{ "--x": lb.x + lb.w / 2, "--y": lb.y } as CSSProperties}>
+              <span className={css.hello}>{hello(hour)}</span>
+              <span className={css.whatsNew}>{greetingLine}</span>
+            </div>
+          )}
           {layout.regions.map((r) => (
             <div
               key={r.id}
-              className={css.regionLabel}
-              style={{ "--x": r.x, "--y": r.y, "--w": r.w, "--head": r.head, "--d": `${inkAt(r) + 250}ms` } as CSSProperties}
+              className={css.area}
+              style={{ "--x": r.x + REGION_PAD, "--y": r.y + r.head, "--w": r.w - REGION_PAD * 2, "--d": `${inkAt(r)}ms` } as CSSProperties}
               data-busy={writingIn(r.pageIds) || undefined}
             >
-              <span className={css.regionName}>
-                <span className={css.regionText}>{r.title}</span>
-              </span>
-              <span className={css.regionMeta}>
-                {r.pageIds.length} {r.pageIds.length === 1 ? "page" : "pages"}
-              </span>
+              {r.title}
             </div>
           ))}
         </div>
@@ -673,12 +813,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   born={born.has(id)}
                   inkAt={inkAt(box)}
                   touchedInk={agentInk(page)}
-                  dim={!!matchSet && !matchSet.has(id)}
-                  match={!!matchSet && matchSet.has(id)}
                   crumb={crumb(box, page)}
                   now={now}
                   camera={camera}
-                  onActivate={onActivate}
+                  onClick={onCardClick}
                   onOpen={onOpen}
                   onMove={onMove}
                   onMenu={fixture ? undefined : onMenu}
@@ -687,96 +825,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             })}
         </div>
 
-        <div ref={frontRef} className={css.world}>
-          <div ref={frontScaleRef} className={css.scale}>
-          <svg
-            className={css.worldSvg}
-            style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }}
-            viewBox={frame.viewBox}
-            aria-hidden
-          >
-            <Prints store={walkStore} />
-          </svg>
-          </div>
-        </div>
-
-        <div ref={bannersRef} className={`${css.layer} ${css.banners}`} aria-hidden>
-          <Banners state={live} spots={spots} register={register} onFollow={follow} />
+        <div ref={bannersRef} className={`${css.layer} ${css.names}`} aria-hidden>
+          <Names state={live} spots={spots} scale={nameScale} register={register} onFollow={follow} />
         </div>
       </div>
-      <div className={css.wash} aria-hidden />
-
-      {state && (
-        <div className={css.chrome}>
-          <Roster state={state} narrow={narrow} onFollow={follow} />
-
-          <div className={css.find} data-map-control data-open={findOpen || undefined}>
-            {!fixture && !(findOpen && narrow) && (
-              <button
-                type="button"
-                className={`${css.findButton} ${css.photo}`}
-                onClick={() => importPhoto()}
-                aria-label="Turn a photo of notes into cards"
-                title="Turn a photo of notes into cards"
-              >
-                <ScanText size={16} aria-hidden />
-                <span>From a photo</span>
-              </button>
-            )}
-            {findOpen ? (
-              <label className={css.findField}>
-                <Search size={15} aria-hidden />
-                <input
-                  ref={findRef}
-                  value={q}
-                  placeholder="Find a page"
-                  aria-label="Find a page"
-                  onChange={(e) => setQ(e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      closeFind();
-                    } else if (e.key === "Enter" && matches?.length) {
-                      e.preventDefault();
-                      const id = matches[matchIdx.current % matches.length];
-                      matchIdx.current++;
-                      focusOn(id, "mid");
-                    }
-                  }}
-                />
-                {matches && (
-                  <span className={css.findCount}>
-                    {matches.length ? `${Math.min(matchIdx.current, matches.length) || 1}/${matches.length}` : "none"}
-                  </span>
-                )}
-                <button type="button" className={css.tool} onClick={closeFind} aria-label="Close find">
-                  <X size={15} aria-hidden />
-                </button>
-              </label>
-            ) : (
-              <button type="button" className={css.findButton} onClick={openFind} aria-label="Find a page" title="Find a page (F)">
-                <Search size={16} aria-hidden />
-                {!narrow && <kbd>F</kbd>}
-              </button>
-            )}
-          </div>
-
-          {layout.cards.size > 0 && (
-            <Minimap
-              layout={layout}
-              state={state}
-              spots={spots}
-              writing={writing}
-              camera={camera}
-              width={narrow ? 128 : 196}
-              height={narrow ? 88 : 132}
-              levelLabel={levelLabel}
-              onFit={() => camera.flyTo(fitAll())}
-            />
-          )}
-
-        </div>
-      )}
 
       {menu && menuPage && (
         <div
@@ -802,7 +854,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
               onOpen(menuPage.id);
             }}
           >
-            <ArrowUpRight size={15} aria-hidden /> Open page
+            <ArrowUpRight size={15} strokeWidth={1.75} aria-hidden /> Open page
           </button>
           <button
             type="button"
@@ -812,30 +864,34 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
               void paintCover(menuPage);
             }}
           >
-            <Paintbrush size={15} aria-hidden /> {menuPage.coverUrl ? "Paint a new cover" : "Paint a cover"}
+            <ImagePlus size={15} strokeWidth={1.75} aria-hidden /> {menuPage.coverUrl ? "Make a new cover" : "Make a cover"}
           </button>
         </div>
       )}
 
       {presenting && (
-        <p className={css.presents} role="status">
-          <span>Messrs {presenters}</span>
-          <span>are proud to present</span>
+        <div className={css.presents} role="status">
+          <span className={css.presentsBy}>Messrs {presenters}</span>
+          <span className={css.presentsBy}>are proud to present</span>
           <b>The Map</b>
-        </p>
+        </div>
       )}
-      {!state && !error && <p className={css.status}>Unrolling the map…</p>}
+      {blank && (
+        <div className={css.managed} role="status">
+          <p>Mischief managed.</p>
+          <span>Click anywhere to bring the map back.</span>
+        </div>
+      )}
+      {!state && !error && <p className={css.status}>Loading your map…</p>}
       {error && (
         <div className={css.status}>
-          <p>{isNotFound(error) ? "The map isn't drawn yet." : "The map couldn't be read."}</p>
+          <p>{isNotFound(error) ? "There's no map here yet." : "The map couldn't load."}</p>
           <button type="button" className={css.retry} onClick={() => void query.refetch()}>
             Try again
           </button>
         </div>
       )}
-      {state && layout.cards.size === 0 && (
-        <p className={css.status}>Blank parchment. Write a page and it appears here.</p>
-      )}
+      {state && layout.cards.size === 0 && <p className={css.status}>No pages yet. Write one and it appears here.</p>}
     </div>
   );
 }

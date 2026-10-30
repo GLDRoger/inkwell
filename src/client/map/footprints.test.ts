@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { footprintTrail, pointAlong, standingSpot, strideFor } from "./footprints";
+import { footprintTrail, pointAlong, strideFor } from "./footprints";
 
 describe("footprintTrail", () => {
   const from = { x: 0, y: 0 };
@@ -62,13 +62,7 @@ describe("footprintTrail", () => {
   it("keeps prints a constant size on screen", () => {
     expect(strideFor(1) * 1).toBeCloseTo(22);
     expect(strideFor(0.25) * 0.25).toBeCloseTo(22);
-  });
-
-  it("stands walkers side by side inside the room", () => {
-    const card = { x: 100, y: 100, w: 300, h: 250 };
-    const a = standingSpot(card, 0);
-    const b = standingSpot(card, 1);
-    expect(b.x).toBeGreaterThan(a.x);
-    for (const s of [a, b]) expect(s.x > 100 && s.x < 400 && s.y > 100 && s.y < 350).toBe(true);
+    // Zoomed right in, prints stay small rather than growing into blobs.
+    expect(strideFor(3) * 3).toBeCloseTo(22);
   });
 });

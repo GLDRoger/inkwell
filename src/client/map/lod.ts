@@ -8,8 +8,8 @@ export type Lod = "far" | "mid" | "near";
 
 export const MID_AT = 0.5;
 export const NEAR_AT = 1.25;
-/** Below this, rooms are too small to name: they become dots. */
-export const DOTS_AT = 0.13;
+/** Below this (a card under 60px wide), cards are too small to name: they show their icon. */
+export const DOTS_AT = 0.2;
 
 /**
  * The level for a zoom. On a narrow screen a card can't get 1.25x wide

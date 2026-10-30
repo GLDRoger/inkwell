@@ -3,20 +3,24 @@ import { Maximize, Minus, Plus } from "lucide-react";
 import { visibleWorld, type CameraController } from "./camera";
 import type { MapLayout } from "./layout";
 import type { MapState } from "./model";
-import { inkOf, type standingSpots } from "./walkers";
+import { inkOf, type Standing } from "./walkers";
 import css from "./map.module.css";
 
 interface Props {
   layout: MapLayout;
   state: MapState;
-  spots: ReturnType<typeof standingSpots>;
+  spots: Map<string, Standing>;
   writing: Map<string, string>;
   camera: CameraController;
   width: number;
   height: number;
-  levelLabel: string;
+  /** Small screens: zoom buttons only, no overview. */
+  compact: boolean;
   onFit(): void;
 }
+
+/** After the map stops moving, the overview waits this long before it fades away. */
+const AWAKE_MS = 1600;
 
 /** Read a colour as the canvas would paint it, resolving CSS variables and light-dark(). */
 function resolveColor(probe: HTMLElement, value: string): string {
@@ -25,11 +29,17 @@ function resolveColor(probe: HTMLElement, value: string): string {
 }
 
 /**
- * The whole territory at a glance, bottom right: rooms, everyone's pin in
- * their ink, and the part you're looking at. Click or drag to go there.
+ * Zoom buttons, bottom right, and above them the whole map at a glance:
+ * every page, everyone's dot in their colour, and the part you're looking
+ * at. The overview shows itself while the map moves (or while you point at
+ * it) and otherwise stays out of the way. Click or drag it to go there.
  */
-export function Minimap({ layout, state, spots, writing, camera, width, height, levelLabel, onFit }: Props) {
+export function Minimap({ layout, state, spots, writing, camera, width, height, compact, onFit }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const dock = useRef<HTMLDivElement>(null);
+  // Outlives the drawing effect (which restarts with every change on the map), so the overview always goes back to sleep.
+  const sleep = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(sleep.current), []);
   const probe = useRef<HTMLSpanElement>(null);
   const data = useRef({ layout, state, spots, writing });
   data.current = { layout, state, spots, writing };
@@ -51,11 +61,10 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
     const inks = new Map<string, string>();
     const readPalette = () => {
       palette = {
-        region: resolveColor(pr, "color-mix(in oklab, var(--ink) 7%, transparent)"),
-        wall: resolveColor(pr, "color-mix(in oklab, var(--ink) 45%, transparent)"),
-        room: resolveColor(pr, "color-mix(in oklab, var(--ink-soft) 38%, transparent)"),
-        fresh: resolveColor(pr, "var(--ink-soft)"),
-        view: resolveColor(pr, "var(--wax)"),
+        room: resolveColor(pr, "var(--rule-strong)"),
+        fresh: resolveColor(pr, "color-mix(in oklab, var(--ink-faint) 70%, var(--rule-strong))"),
+        view: resolveColor(pr, "color-mix(in oklab, var(--ink) 55%, transparent)"),
+        viewFill: resolveColor(pr, "color-mix(in oklab, var(--ink) 4%, transparent)"),
       };
       inks.clear();
     };
@@ -71,6 +80,9 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
       draw(camera.cam, camera.vw, camera.vh);
     };
     mq?.addEventListener("change", onScheme);
+    // The app's own light/dark switch sets an attribute on <html>.
+    const mo = new MutationObserver(onScheme);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style", "class"] });
 
     const draw = (cam: typeof camera.cam, vw: number, vh: number) => {
       const { layout, state, spots, writing } = data.current;
@@ -82,15 +94,7 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
       }
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, width, height);
-      // The territory in miniature: inked walls round each wing, the rooms shaded in.
-      g.fillStyle = palette.region;
-      g.strokeStyle = palette.wall;
-      g.lineWidth = 0.75;
-      for (const r of layout.regions) {
-        g.fillRect(ox + r.x * k, oy + r.y * k, Math.max(1, r.w * k), Math.max(1, r.h * k));
-        g.strokeRect(ox + r.x * k + 0.5, oy + r.y * k + 0.5, Math.max(1, r.w * k - 1), Math.max(1, r.h * k - 1));
-      }
-      g.fillStyle = palette.room;
+      // Every page a small block; the ones being written in their agent's colour.
       for (const c of layout.cards.values()) {
         g.fillStyle = writing.has(c.id) ? ink(writing.get(c.id)!) : state.fresh.has(c.id) ? palette.fresh : palette.room;
         g.fillRect(ox + c.x * k, oy + c.y * k, Math.max(1.5, c.w * k), Math.max(1.5, c.h * k));
@@ -99,7 +103,7 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
         const s = spots.get(w.key);
         if (!s) continue;
         g.beginPath();
-        g.arc(ox + s.pt.x * k, oy + s.pt.y * k, w.kind === "agent" ? 3.5 : 3, 0, Math.PI * 2);
+        g.arc(ox + s.pt.x * k, oy + s.pt.y * k, w.kind === "agent" ? 3 : 2.5, 0, Math.PI * 2);
         g.fillStyle = ink(inkOf(w));
         g.fill();
         if (w.kind === "person") {
@@ -109,14 +113,27 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
         }
       }
       const v = visibleWorld(cam, vw, vh);
+      g.fillStyle = palette.viewFill;
+      g.fillRect(ox + v.x * k, oy + v.y * k, v.w * k, v.h * k);
       g.strokeStyle = palette.view;
-      g.lineWidth = 1.25;
-      g.strokeRect(ox + v.x * k, oy + v.y * k, v.w * k, v.h * k);
+      g.lineWidth = 1;
+      g.strokeRect(Math.round(ox + v.x * k) + 0.5, Math.round(oy + v.y * k) + 0.5, Math.round(v.w * k), Math.round(v.h * k));
     };
-    const off = camera.listen(draw);
+    // Wake the overview while the map moves; let it fade once it's still.
+    let last: { x: number; y: number; s: number } | null = null;
+    const off = camera.listen((cam, vw, vh) => {
+      draw(cam, vw, vh);
+      const moved = last && (cam.x !== last.x || cam.y !== last.y || cam.s !== last.s);
+      last = { ...cam };
+      if (!moved) return;
+      dock.current?.setAttribute("data-awake", "");
+      clearTimeout(sleep.current);
+      sleep.current = setTimeout(() => dock.current?.removeAttribute("data-awake"), AWAKE_MS);
+    });
     draw(camera.cam, camera.vw, camera.vh);
     return () => {
       off();
+      mo.disconnect();
       mq?.removeEventListener("change", onScheme);
     };
   }, [camera, width, height, layout, state, spots, writing]);
@@ -131,36 +148,36 @@ export function Minimap({ layout, state, spots, writing, camera, width, height, 
     else camera.set(target);
   };
 
+  const zoomBy = (f: number) => camera.flyTo({ ...camera.cam, s: camera.cam.s * f }, 220);
   return (
-    <div className={css.dock} data-map-control>
+    <div ref={dock} className={css.dock} data-map-control>
       <span ref={probe} className={css.probe} aria-hidden />
-      <canvas
-        ref={ref}
-        className={css.minimap}
-        style={{ width, height }}
-        role="img"
-        aria-label="Overview of the whole map. Click to go there."
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          jump(e, true);
-        }}
-        onPointerMove={(e) => {
-          if (e.buttons) jump(e, false);
-        }}
-      />
-      <div className={css.zoom}>
-        <button type="button" className={css.tool} onClick={() => camera.flyTo({ ...camera.cam, s: camera.cam.s * 1.4 }, 220)} aria-label="Zoom in" title="Zoom in (+)">
-          <Plus size={16} aria-hidden />
+      {!compact && (
+        <canvas
+          ref={ref}
+          className={css.minimap}
+          style={{ width, height }}
+          role="img"
+          aria-label="Overview of the whole map. Click to go there."
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            jump(e, true);
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons) jump(e, false);
+          }}
+        />
+      )}
+      <div className={css.zoom} role="group" aria-label="Zoom">
+        <button type="button" className={css.tool} onClick={() => zoomBy(1 / 1.4)} aria-label="Zoom out" title="Zoom out (−)">
+          <Minus size={16} strokeWidth={1.75} aria-hidden />
         </button>
-        <button type="button" className={css.tool} onClick={() => camera.flyTo({ ...camera.cam, s: camera.cam.s / 1.4 }, 220)} aria-label="Zoom out" title="Zoom out (−)">
-          <Minus size={16} aria-hidden />
+        <button type="button" className={css.tool} onClick={onFit} aria-label="Show the whole map" title="Show everything (0)">
+          <Maximize size={15} strokeWidth={1.75} aria-hidden />
         </button>
-        <button type="button" className={css.tool} onClick={onFit} aria-label="Fit the whole map" title="Fit (0)">
-          <Maximize size={15} aria-hidden />
+        <button type="button" className={css.tool} onClick={() => zoomBy(1.4)} aria-label="Zoom in" title="Zoom in (+)">
+          <Plus size={16} strokeWidth={1.75} aria-hidden />
         </button>
-        <span className={css.level} aria-live="polite">
-          {levelLabel}
-        </span>
       </div>
     </div>
   );

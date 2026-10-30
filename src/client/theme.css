@@ -73,23 +73,6 @@
 }
 
 /*
- * The map's surface. Same paper and ink as the rest of the app: no parchment,
- * stains, glow or vignette. The map re-points --paper/--ink at these inside
- * itself. Stain and glow are transparent on purpose; the next map round should
- * delete the layers that use them.
+ * Map: the map uses the app's own tokens (--paper, --paper-raised, --ink…);
+ * it has no surface of its own. Kept as a marker for map-only tokens.
  */
-:root {
-  --map-paper: light-dark(#f8f7f4, #121211);
-  --map-paper-deep: light-dark(#f8f7f4, #121211);
-  --map-stain: transparent;
-  --map-glow: transparent;
-  --map-sheet: light-dark(#ffffff, #1b1b19);
-  --map-page: light-dark(#ffffff, #1b1b19);
-  --map-ink: light-dark(#161513, #edece8);
-  --map-ink-soft: light-dark(#5d5b56, #b3b1ab);
-  --map-ink-faint: light-dark(#8e8b84, #7e7c77);
-  --map-rule: light-dark(#e8e5df, #292825);
-  /* Area names: the display serif, italic, set very large and faint by the map. */
-  --font-map: var(--font-serif);
-  --font-map-caps: var(--font-serif);
-}

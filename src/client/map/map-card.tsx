@@ -1,5 +1,5 @@
 import { memo, useRef, type CSSProperties } from "react";
-import { ArrowUpRight, Paintbrush } from "lucide-react";
+import { ArrowUpRight, ImagePlus } from "lucide-react";
 import { arrivalOf, useArrivals } from "../lib/arrivals";
 import { paintCover, usePainting } from "../lib/media";
 import type { Page } from "@shared/types";
@@ -23,12 +23,11 @@ interface Props {
   inkAt: number;
   /** Ink of whoever touched it last, when that was an agent. */
   touchedInk: string | null;
-  dim: boolean;
-  match: boolean;
   crumb: string;
   now: number;
   camera: CameraController;
-  onActivate(id: string): void;
+  /** A click: the map decides whether it's one (focus) or the second of two (open). */
+  onClick(id: string): void;
   onOpen(id: string): void;
   onMove(id: string, x: number, y: number): void;
   /** Right-click (or the context-menu key): actions for this card at a screen point. */
@@ -79,7 +78,7 @@ export const MapCard = memo(function MapCard(p: Props) {
   // New cards from a photo come in one after another, on their own clock too.
   if (arrival?.kind === "arriving") style["--arrive-delay"] = `${Math.round(arrival.delayMs)}ms`;
 
-  const label = `${title}${p.writing ? ", being written now" : ""}. Last touched by ${page.updatedBy.name} ${ago(page.updatedAt, p.now)}.`;
+  const label = `${title}${p.writing ? ", being written now" : ""}. Last edited by ${page.updatedBy.name} ${ago(page.updatedAt, p.now)}.`;
   const by = page.updatedBy;
 
   return (
@@ -92,8 +91,6 @@ export const MapCard = memo(function MapCard(p: Props) {
       data-writing={p.writing ? "" : undefined}
       data-fresh={fresh ? "" : undefined}
       data-born={p.born || undefined}
-      data-dim={p.dim || undefined}
-      data-match={p.match || undefined}
       data-root={box.depth === 0 ? "" : undefined}
       data-arrive={arrival?.kind === "held" ? "held" : arrival ? "in" : undefined}
       data-painting={painting || undefined}
@@ -108,7 +105,7 @@ export const MapCard = memo(function MapCard(p: Props) {
           return;
         }
         if ((e.target as HTMLElement).closest("button, a, [data-scrolls]")) return;
-        p.onActivate(page.id);
+        p.onClick(page.id);
       }}
       onContextMenu={(e) => {
         if (!p.onMenu) return;
@@ -118,10 +115,6 @@ export const MapCard = memo(function MapCard(p: Props) {
         const keyboard = e.clientX === 0 && e.clientY === 0;
         p.onMenu(page.id, keyboard ? r.left + 12 : e.clientX, keyboard ? r.top + 12 : e.clientY);
       }}
-      onDoubleClick={(e) => {
-        if ((e.target as HTMLElement).closest("button, a, [data-scrolls]")) return;
-        p.onOpen(page.id);
-      }}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter") {
@@ -129,7 +122,7 @@ export const MapCard = memo(function MapCard(p: Props) {
           p.onOpen(page.id);
         } else if (e.key === " ") {
           e.preventDefault();
-          p.onActivate(page.id);
+          p.onClick(page.id);
         }
       }}
       onPointerDown={(e) => {
@@ -169,10 +162,10 @@ export const MapCard = memo(function MapCard(p: Props) {
         ref.current?.style.setProperty("--y", String(box.y));
       }}
     >
-      {detail === "dots" && <span className={css.dot} />}
+      {detail === "dots" && page.icon && <span className={css.dotIcon}>{page.icon}</span>}
 
       {detail === "rooms" && (
-        <span className={css.roomTitle}>
+        <span className={css.chipTitle}>
           {page.icon && <span className={css.icon}>{page.icon}</span>}
           {title}
         </span>
@@ -207,10 +200,10 @@ export const MapCard = memo(function MapCard(p: Props) {
                 e.stopPropagation();
                 void paintCover(page);
               }}
-              aria-label={painting ? `Painting a cover for ${title}` : `Paint a cover for ${title}`}
-              title={page.coverUrl ? "Paint a new cover" : "Paint a cover"}
+              aria-label={painting ? `Making a cover for ${title}` : `Make a cover for ${title}`}
+              title={page.coverUrl ? "Make a new cover" : "Make a cover"}
             >
-              <Paintbrush size={14} strokeWidth={2} aria-hidden />
+              <ImagePlus size={15} strokeWidth={1.75} aria-hidden />
             </button>
             <button
               type="button"
@@ -221,7 +214,7 @@ export const MapCard = memo(function MapCard(p: Props) {
               }}
               aria-label={`Open ${title}`}
             >
-              Open <ArrowUpRight size={14} strokeWidth={2} aria-hidden />
+              Open <ArrowUpRight size={14} strokeWidth={1.75} aria-hidden />
             </button>
           </div>
           {page.coverUrl && <img className={css.coverNear} src={page.coverUrl} alt="" draggable={false} />}
@@ -230,7 +223,7 @@ export const MapCard = memo(function MapCard(p: Props) {
             {page.icon && <span className={css.icon}>{page.icon}</span>}
             {title}
           </h2>
-          <Touched by={by} at={page.updatedAt} now={p.now} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} long />
+          <Touched by={by} at={page.updatedAt} now={p.now} writing={!!p.writing} fresh={fresh} agentInk={p.touchedInk} />
           <div className={css.body} data-scrolls>
             {page.excerpt.trim() ? (
               paragraphs(page.excerpt).map((para, i) => <p key={i}>{para}</p>)
@@ -263,7 +256,6 @@ function Touched({
   writing,
   fresh,
   agentInk,
-  long,
 }: {
   by: Page["updatedBy"];
   at: string;
@@ -271,16 +263,15 @@ function Touched({
   writing: boolean;
   fresh: boolean;
   agentInk: string | null;
-  long?: boolean;
 }) {
   return (
     <span className={css.touched} data-agent={by.kind === "agent" || undefined}>
       {fresh && <span className={css.wet} aria-hidden />}
       {writing ? (
-        <span className={css.writingNow}>being written</span>
+        <span className={css.writingNow}>Being written now</span>
       ) : (
         <>
-          {long ? "Last touched by " : ""}
+          {"Last edited by "}
           <span className={css.byName} style={agentInk ? ({ "--touched": agentInk } as CSSProperties) : undefined}>
             {by.name}
           </span>

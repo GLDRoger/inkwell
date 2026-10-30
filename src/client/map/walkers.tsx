@@ -1,21 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { CameraController } from "./camera";
-import type { MapLayout } from "./layout";
+import { REGION_PAD, type Box, type MapLayout } from "./layout";
 import type { MapState, Walker } from "./model";
-import {
-  FOOT_PATH,
-  footprintTrail,
-  pointAlong,
-  printScale,
-  standingSpot,
-  stepMs,
-  strideFor,
-  type Print,
-  type Pt,
-} from "./footprints";
+import { FOOT_PATH, footprintTrail, pointAlong, printScale, stepMs, strideFor, type Print, type Pt } from "./footprints";
+import { areaNameBox, DOT_ONLY, dotOf, labelWidth, placeLabel, type LabelSpot } from "./labels";
+import { DOTS_AT, MID_AT } from "./lod";
 import css from "./map.module.css";
 
-/** How long a print stays on the parchment before it fades out entirely. */
+/** How long a print stays on the map before it fades out entirely. */
 export const PRINT_LIFE_MS = 3400;
 
 export interface Walk {
@@ -26,12 +18,10 @@ export interface Walk {
   step: number;
   scale: number;
   t0: number;
-  /** A few idle steps by their page, fainter than a real walk. */
-  pacing?: boolean;
 }
 
 /**
- * The prints on the parchment, kept outside React state so laying a trail
+ * The prints on the map, kept outside React state so laying a trail
  * re-renders only the prints, never the map around them.
  */
 export class WalkStore {
@@ -53,18 +43,33 @@ export class WalkStore {
   }
 }
 
-/** How often an idle agent might take a turn by its page, ms (each picks its own moment). */
-const PACE_MIN_MS = 5200;
-const PACE_SPREAD_MS = 6500;
-const PACE_STEP_MS = 330;
-
-/** Agents walk in their own ink; people in the map's own iron-gall ink, so no person is mistaken for an agent. */
-export const PERSON_INK = "var(--ink)";
+/** Agents walk in their own colour; people in the map's ink, so no person is mistaken for an agent. */
+export const PERSON_INK = "var(--ink-soft)";
 export const inkOf = (w: Pick<Walker, "kind" | "id" | "color">) =>
-  w.kind === "agent" ? (w.color ?? "var(--wax)") : PERSON_INK;
+  w.kind === "agent" ? (w.color ?? "var(--ink-faint)") : PERSON_INK;
 
-/** Where each placed walker stands: agents first, then people, side by side in a room. */
-export function standingSpots(state: MapState, layout: MapLayout): Map<string, { pt: Pt; slot: number; pageId: string }> {
+const ACTION_TEXT: Record<Walker["action"], string> = {
+  reading: "reading",
+  writing: "writing",
+  thinking: "thinking",
+  idle: "",
+};
+export const actionText = (w: Pick<Walker, "kind" | "action">) => (w.kind === "agent" ? ACTION_TEXT[w.action] : "");
+
+export interface Standing {
+  /** Where the name pill sits, placed beside the card for zoom `s`. */
+  spot: LabelSpot;
+  /** The walker's dot, in world units: where footprints end. */
+  pt: Pt;
+  slot: number;
+  pageId: string;
+}
+
+/**
+ * Where each placed walker stands: its name just outside its page's card,
+ * clear of the titles around it, agents first, then people.
+ */
+export function standingSpots(state: MapState, layout: MapLayout, s: number): Map<string, Standing> {
   const byPage = new Map<string, Walker[]>();
   for (const w of state.walkers.values()) {
     if (!w.pageId || !layout.cards.has(w.pageId)) continue;
@@ -72,23 +77,67 @@ export function standingSpots(state: MapState, layout: MapLayout): Map<string, {
     list.push(w);
     byPage.set(w.pageId, list);
   }
-  const out = new Map<string, { pt: Pt; slot: number; pageId: string }>();
+  const out = new Map<string, Standing>();
+  const taken: Box[] = [];
+  const far = s < MID_AT;
+  const areas = layout.regions.map((r) => areaNameBox(r.x + REGION_PAD, r.y + r.head, r.title, s));
   for (const [pageId, list] of byPage) {
     list.sort((a, b) => (a.kind === b.kind ? (a.key < b.key ? -1 : 1) : a.kind === "agent" ? -1 : 1));
     const card = layout.cards.get(pageId)!;
-    list.forEach((w, slot) => out.set(w.key, { pt: standingSpot(card, slot), slot, pageId }));
+    // Only the cards around this one can collide with its names.
+    const reach = Math.max(card.w, card.h) * 1.5 + 240 / Math.max(s, 0.05);
+    const near: Box[] = [];
+    for (const c of layout.cards.values()) {
+      if (c.id === pageId) continue;
+      if (Math.abs(c.x - card.x) < reach && Math.abs(c.y - card.y) < reach) near.push(c);
+    }
+    list.forEach((w, slot) => {
+      // Too far out for names to fit between the cards: just the dot.
+      const spot =
+        s < DOTS_AT
+          ? placeLabel(card, DOT_ONLY, s, { cards: near, areas, taken, far }, DOT_ONLY, DOT_ONLY / 2)
+          : placeLabel(card, labelWidth(w.name, actionText(w)), s, { cards: near, areas, taken, far });
+      taken.push(spot.box);
+      out.set(w.key, { spot, pt: dotOf(spot, s), slot, pageId });
+    });
   }
   return out;
 }
 
 /**
+ * The zoom names were last placed for. Names are placed again once the zoom
+ * has settled somewhere noticeably different, never during a gesture.
+ */
+function usePlacementScale(camera: CameraController): number {
+  const [s, setS] = useState(() => camera.cam.s);
+  const sRef = useRef(s);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = camera.listen((c) => {
+      if (Math.abs(Math.log(c.s / sRef.current)) < 0.12) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        sRef.current = camera.cam.s;
+        setS(camera.cam.s);
+      }, 160);
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, [camera]);
+  return s;
+}
+
+/**
  * Turns walker moves into walks: footprints laid one by one along the way,
- * and the name banner carried along with them. Positions are written to the
- * DOM directly, once a frame, only while someone is walking.
+ * with the walker's name carried along. Positions are written to the DOM
+ * directly, once a frame, only while someone is walking.
  */
 export function useWalks(state: MapState, layout: MapLayout, camera: CameraController, reduced: boolean) {
   const store = useMemo(() => new WalkStore(), []);
-  const spots = useMemo(() => standingSpots(state, layout), [state, layout]);
+  const scale = usePlacementScale(camera);
+  const spots = useMemo(() => standingSpots(state, layout, scale), [state, layout, scale]);
   const seen = useRef(new Map<string, number>());
   const pos = useRef(new Map<string, Pt>());
   const els = useRef(new Map<string, HTMLElement>());
@@ -105,13 +154,37 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
     timers.current.add(t);
   }, []);
 
-  const place = useCallback((key: string, p: Pt) => {
-    pos.current.set(key, p);
+  /** The anchor and offset last written for each walker, so a remounted name goes back where it was. */
+  const applied = useRef(new Map<string, [number, number, number, number]>());
+  const paint = useCallback((key: string) => {
     const el = els.current.get(key);
-    if (!el) return;
-    el.style.setProperty("--ax", p.x.toFixed(1));
-    el.style.setProperty("--ay", p.y.toFixed(1));
+    const a = applied.current.get(key);
+    if (!el || !a) return;
+    el.style.setProperty("--ax", a[0].toFixed(1));
+    el.style.setProperty("--ay", a[1].toFixed(1));
+    el.style.setProperty("--dx", a[2].toFixed(1));
+    el.style.setProperty("--dy", a[3].toFixed(1));
   }, []);
+
+  /** Stand a walker at its spot: anchored on the card's edge, offset in screen pixels. */
+  const stand = useCallback(
+    (key: string, st: Standing) => {
+      pos.current.set(key, st.pt);
+      applied.current.set(key, [st.spot.ax, st.spot.ay, st.spot.dx, st.spot.dy]);
+      paint(key);
+    },
+    [paint],
+  );
+
+  /** Mid-walk: the dot rides the walking line. */
+  const carry = useCallback(
+    (key: string, p: Pt) => {
+      pos.current.set(key, p);
+      applied.current.set(key, [p.x, p.y, 0, 0]);
+      paint(key);
+    },
+    [paint],
+  );
 
   const tick = useCallback(() => {
     raf.current = 0;
@@ -121,20 +194,31 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
       const el = els.current.get(key);
       if (progress >= walk.prints.length - 1) {
         driving.current.delete(key);
-        const spot = spotsRef.current.get(key);
-        place(key, spot?.pt ?? pointAlong(walk.prints, Infinity));
+        const st = spotsRef.current.get(key);
+        if (st) stand(key, st);
+        else carry(key, pointAlong(walk.prints, Infinity));
         el?.removeAttribute("data-walking");
         continue;
       }
-      place(key, pointAlong(walk.prints, Math.max(0, progress)));
+      carry(key, pointAlong(walk.prints, Math.max(0, progress)));
       el?.setAttribute("data-walking", "");
     }
     if (driving.current.size) raf.current = requestAnimationFrame(tick);
-  }, [place]);
+  }, [stand, carry]);
 
-  // New moves become walks; everyone else stands at their spot (rooms move
-  // when the layout does). One layout effect, so a walk starts from where the
-  // walker was drawn before anyone is re-placed.
+  const lay = useCallback(
+    (fresh: Walk[]) => {
+      if (!fresh.length) return;
+      store.add(fresh);
+      for (const walk of fresh) later(walk.step * walk.prints.length + PRINT_LIFE_MS + 200, () => store.remove(walk.id));
+      if (!raf.current) raf.current = requestAnimationFrame(tick);
+    },
+    [store, later, tick],
+  );
+
+  // New moves become walks; everyone else stands at their spot (spots move
+  // when the layout or the zoom does). One layout effect, so a walk starts
+  // from where the walker was drawn before anyone is re-placed.
   useLayoutEffect(() => {
     const fresh: Walk[] = [];
     for (const w of state.walkers.values()) {
@@ -143,14 +227,14 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
       const last = seen.current.get(w.key);
       if (last !== undefined && move.seq <= last) continue;
       seen.current.set(w.key, move.seq);
-      const to = spots.get(w.key)?.pt;
-      if (!to) continue;
+      const st = spots.get(w.key);
+      if (!st) continue;
       const fromCard = move.from ? layout.cards.get(move.from) : undefined;
-      const from = pos.current.get(w.key) ?? (fromCard ? standingSpot(fromCard, 0) : null);
+      const from = pos.current.get(w.key) ?? (fromCard ? { x: fromCard.x + fromCard.w / 2, y: fromCard.y + fromCard.h } : null);
       if (!from || reduced) {
         // Nowhere to walk from (or no motion wanted): just be there.
         driving.current.delete(w.key);
-        place(w.key, to);
+        stand(w.key, st);
         const el = els.current.get(w.key);
         if (el && !reduced) {
           el.removeAttribute("data-appear");
@@ -160,9 +244,9 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
         continue;
       }
       const stride = strideFor(camera.cam.s);
-      const prints = footprintTrail(from, to, { stride, seed: `${w.key}:${move.from}>${move.to}` });
+      const prints = footprintTrail(from, st.pt, { stride, seed: `${w.key}:${move.from}>${move.to}` });
       if (prints.length < 2) {
-        place(w.key, to);
+        stand(w.key, st);
         continue;
       }
       const walk: Walk = {
@@ -177,72 +261,9 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
       driving.current.set(w.key, walk);
       fresh.push(walk);
     }
-    for (const [key, s] of spots) if (!driving.current.has(key)) place(key, s.pt);
+    for (const [key, st] of spots) if (!driving.current.has(key)) stand(key, st);
     lay(fresh);
   });
-
-  const lay = useCallback(
-    (fresh: Walk[]) => {
-      if (!fresh.length) return;
-      store.add(fresh);
-      for (const walk of fresh) later(walk.step * walk.prints.length + PRINT_LIFE_MS + 200, () => store.remove(walk.id));
-      if (!raf.current) raf.current = requestAnimationFrame(tick);
-    },
-    [store, later, tick],
-  );
-
-  // Idle agents don't stand like statues: now and then one takes a few steps
-  // along its page and back, the way the names on the old map shuffle about.
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
-  useEffect(() => {
-    if (reduced) return;
-    const due = new Map<string, number>();
-    let n = 0;
-    const id = setInterval(() => {
-      if (document.hidden) return;
-      const now = performance.now();
-      for (const w of stateRef.current.walkers.values()) {
-        if (w.kind !== "agent" || driving.current.has(w.key)) continue;
-        const spot = spotsRef.current.get(w.key);
-        const card = spot && layoutRef.current.cards.get(spot.pageId);
-        if (!spot || !card) continue;
-        const at = due.get(w.key);
-        if (at === undefined) {
-          due.set(w.key, now + Math.random() * PACE_SPREAD_MS);
-          continue;
-        }
-        if (now < at) continue;
-        due.set(w.key, now + PACE_MIN_MS + Math.random() * PACE_SPREAD_MS);
-        const s = camera.cam.s;
-        const stride = strideFor(s) * 0.8;
-        // A short turn along the bottom of the room, a little up or down, then back.
-        const room = Math.max(stride * 2, card.x + card.w - 28 - spot.pt.x);
-        const out = Math.min(room, stride * (2 + Math.floor(Math.random() * 2)));
-        const to = { x: spot.pt.x + out, y: spot.pt.y + (Math.random() - 0.5) * stride * 0.8 };
-        const seed = `${w.key}:pace:${n++}`;
-        const there = footprintTrail(spot.pt, to, { stride, seed, minPrints: 3, maxPrints: 5 });
-        const back = footprintTrail(to, spot.pt, { stride, seed: `${seed}<`, minPrints: 3, maxPrints: 5 });
-        const prints = [...there, ...back.slice(1)];
-        if (prints.length < 3) continue;
-        const walk: Walk = {
-          id: `${w.key}~${seed}`,
-          key: w.key,
-          ink: inkOf(w),
-          prints,
-          step: PACE_STEP_MS,
-          scale: printScale(stride),
-          t0: now + 16,
-          pacing: true,
-        };
-        driving.current.set(w.key, walk);
-        lay([walk]);
-      }
-    }, 700);
-    return () => clearInterval(id);
-  }, [reduced, camera, lay]);
 
   useEffect(
     () => () => {
@@ -252,25 +273,38 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
     [],
   );
 
-  const register = useCallback(
+  // One stable ref callback per walker, so a re-render doesn't detach and reattach every name.
+  const refs = useRef(new Map<string, (el: HTMLElement | null) => void>());
+  const attach = useCallback(
     (key: string) => (el: HTMLElement | null) => {
-      if (el) {
-        els.current.set(key, el);
-        const p = pos.current.get(key) ?? spotsRef.current.get(key)?.pt;
-        if (p) {
-          el.style.setProperty("--ax", p.x.toFixed(1));
-          el.style.setProperty("--ay", p.y.toFixed(1));
-        }
-        if (driving.current.has(key)) el.setAttribute("data-walking", "");
-      } else els.current.delete(key);
+      if (!el) {
+        els.current.delete(key);
+        return;
+      }
+      els.current.set(key, el);
+      if (driving.current.has(key)) el.setAttribute("data-walking", "");
+      // Only redraw where it was: moving it is the layout effect's job (it may be about to walk).
+      if (applied.current.has(key)) paint(key);
+      else {
+        const st = spotsRef.current.get(key);
+        if (st) stand(key, st);
+      }
     },
-    [],
+    [stand, paint],
+  );
+  const register = useCallback(
+    (key: string) => {
+      let fn = refs.current.get(key);
+      if (!fn) refs.current.set(key, (fn = attach(key)));
+      return fn;
+    },
+    [attach],
   );
 
-  return { store, spots, register };
+  return { store, spots, register, scale };
 }
 
-/** Footprints, in world units, drawn above the rooms. Each print inks in on cue and fades behind. */
+/** Footprints, in world units, drawn above the links. Each print appears on cue and fades behind. */
 export function Prints({ store }: { store: WalkStore }) {
   const walks = useSyncExternalStore(store.subscribe, store.get);
   return (
@@ -279,7 +313,7 @@ export function Prints({ store }: { store: WalkStore }) {
         <path id="inkwell-foot" d={FOOT_PATH} />
       </defs>
       {walks.map((w) => (
-        <g key={w.id} className={css.walk} data-pacing={w.pacing || undefined} style={{ "--who": w.ink } as CSSProperties}>
+        <g key={w.id} className={css.walk} style={{ "--who": w.ink } as CSSProperties}>
           {w.prints.map((p, i) => (
             <use
               key={i}
@@ -295,55 +329,49 @@ export function Prints({ store }: { store: WalkStore }) {
   );
 }
 
-const ACTION_TEXT: Record<Walker["action"], string> = {
-  reading: "reading",
-  writing: "writing",
-  thinking: "thinking",
-  idle: "",
-};
-
-/** Name banners in each walker's ink, standing in their room or walking with their prints. */
-export function Banners({
+/** Names on the map: small pills in each walker's colour, beside their page or walking with their prints. */
+export function Names({
   state,
   spots,
+  scale,
   register,
   onFollow,
 }: {
   state: MapState;
-  spots: ReturnType<typeof standingSpots>;
+  spots: Map<string, Standing>;
+  scale: number;
   register: (key: string) => (el: HTMLElement | null) => void;
   onFollow(pageId: string): void;
 }) {
   const list = [...state.walkers.values()].filter((w) => spots.has(w.key));
+  const tiny = scale < DOTS_AT;
   return (
     <>
       {list.map((w) => {
         const spot = spots.get(w.key)!;
-        const action = w.kind === "agent" ? ACTION_TEXT[w.action] : "";
+        const action = actionText(w);
         return (
           <button
             key={w.key}
             ref={register(w.key)}
             type="button"
             tabIndex={-1}
-            className={css.banner}
+            className={css.name}
             data-kind={w.kind}
             data-action={w.action}
+            data-tiny={tiny || undefined}
             data-map-control
-            style={{ "--who": inkOf(w), "--slot": spot.slot } as CSSProperties}
+            title={tiny ? w.name : undefined}
+            aria-label={w.name}
+            style={{ "--who": inkOf(w) } as CSSProperties}
             onClick={(e) => {
               e.stopPropagation();
               onFollow(spot.pageId);
             }}
           >
-            <span className={css.ribbon}>
-              <span className={css.who}>{w.name}</span>
-              {action && <span className={css.doing}>{action}</span>}
-            </span>
-            <svg className={css.stand} viewBox="-12 -12 24 24" aria-hidden>
-              <use href="#inkwell-foot" transform="translate(-4.2 0) rotate(-88) scale(0.62 -0.62)" />
-              <use href="#inkwell-foot" transform="translate(4.2 0) rotate(-92) scale(0.62 0.62)" />
-            </svg>
+            <span className={css.nameDot} aria-hidden />
+            <span className={css.who}>{w.name}</span>
+            {action && <span className={css.doing}>{action}</span>}
           </button>
         );
       })}
