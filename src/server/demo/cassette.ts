@@ -208,6 +208,8 @@ export class IdTranslator {
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  // Already stopped (e.g. a photo import retrying after its first call was cut off): don't wait at all.
+  if (signal?.aborted) return reject(signal.reason ?? new Error("aborted"));
   if (ms <= 0) return resolve();
   const timer = setTimeout(resolve, ms);
   signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason ?? new Error("aborted")); }, { once: true });

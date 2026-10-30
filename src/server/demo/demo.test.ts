@@ -202,6 +202,19 @@ describe("recording transport", () => {
 });
 
 describe("replay transport", () => {
+  it("answers no further media call once the demo has stopped", async () => {
+    const recorded: Cassette = { ...cassette, steps: [{ id: "photo", streams: [{ kind: "media", exchanges: [
+      { path: "/chat/completions", status: 200, ms: 20_000, response: { type: "json", body: {} } },
+    ] }] }] };
+    const stop = new AbortController();
+    stop.abort(new Error("Demo stopped."));
+    const transport = replayTransport(recorded, new IdTranslator(recorded), { scale: 1 }, stop.signal);
+    transport.beginStep(0, LISBON_TOUR.steps.find((s) => s.id === "photo")!);
+    const started = Date.now();
+    await expect(transport.media()("https://api.meta.ai/v1/chat/completions", { method: "POST", body: "{}" })).rejects.toThrow("Demo stopped.");
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it("ends a media call's replay delay as soon as the demo stops", async () => {
     const recorded: Cassette = { ...cassette, steps: [{ id: "cover", streams: [{ kind: "media", exchanges: [
       { path: "/images/generations", status: 200, ms: 20_000, response: { type: "json", body: { data: [] } } },
