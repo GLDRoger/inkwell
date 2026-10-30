@@ -29,13 +29,14 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     // The visitor's key (X-Meta-Key) or the server's; held in memory for this run only.
     const meta = resolveMetaAccess(c);
     if (!meta && s.runtime.needsMetaKey && !s.runtime.isClosing) return c.json(NOT_CONNECTED, 503);
-    const agent = body.agentId ? getAgent(s.db, ws, body.agentId) : pickAgent(listAgents(s.db, ws), body.text);
-    if (!agent) return c.json({ error: "That agent isn't in this notebook any more. Pick another one.", code: "agent_not_found" }, 404);
     if (body.threadId && !getDiaryThread(s.db, ws, body.threadId)) return c.json({ error: "That conversation no longer exists. Start a new one.", code: "thread_not_found" }, 404);
     if (body.pageId && !s.pages.getPage(ws, body.pageId)) return c.json({ error: "The open page was deleted. Close it and try again.", code: "page_not_found" }, 404);
     const attachmentIds = [...new Set(body.attachmentIds)];
     const attachments = getAttachments(s.db, ws, attachmentIds);
     if (attachments.length !== attachmentIds.length) return c.json({ error: "An attachment is missing. Attach it again.", code: "attachment_not_found" }, 404);
+    const image = attachments.some((a) => a.kind === "image");
+    const agent = body.agentId ? getAgent(s.db, ws, body.agentId) : pickAgent(listAgents(s.db, ws), body.text, { image });
+    if (!agent) return c.json({ error: "That agent isn't in this notebook any more. Pick another one.", code: "agent_not_found" }, 404);
     const { entry, threadId } = s.db.transaction(() => {
       const threadId = body.threadId ?? insertDiaryThread(s.db, ws, body.text.slice(0, 80)).id;
       const entry = insertDiaryEntry(s.db, ws, { threadId, role: "person", text: body.text,

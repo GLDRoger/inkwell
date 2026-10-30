@@ -34,5 +34,16 @@ describe("Any agent picks who's best", () => {
     ["What should I pack?", "Scout"],
     ["Turn the launch plan into a checklist", "Wren"],
     ["Compare my two fundraising options", "Scout"],
+    // Real Muse Wonder eval (2026-10-30): the verb can open a later sentence.
+    ["Here is a photo of our whiteboard. Turn it into a page with action items.", "Wren"],
+    ["I just got back from the offsite. Organise the notes into the launch plan.", "Atlas"],
+    ["Big week ahead. Summarise what's left on the roadmap", "Scout"],
   ])("%s -> %s", (text, name) => expect(pick(text)).toBe(name));
+
+  it("sends an attached image to Wren unless an agent is named", () => {
+    const image = (text: string) => pickAgent(agents, text, { image: true })?.name;
+    expect(image("Here is a photo of our offsite whiteboard. Turn it into a page with action items and link it from the launch plan.")).toBe("Wren");
+    expect(image("What's on this whiteboard?")).toBe("Wren");
+    expect(image("Ask Scout what this photo says")).toBe("Scout");
+  });
 });

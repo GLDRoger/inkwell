@@ -303,7 +303,8 @@ describe("diary HTTP routes", () => {
     await f.services.runtime.wait(workspaceId, result.runId);
     const run = await (await request(`/api/runs/${result.runId}`)).json() as Run;
     expect(run.status).toBe("succeeded");
-    expect(run.agentId).toBe(listAgents(f.services.db, workspaceId)[0]!.id);
+    // No agent named and an image attached: Wren turns photos into pages (agents/route.ts).
+    expect(run.agentId).toBe(listAgents(f.services.db, workspaceId).find((a) => a.name === "Wren")!.id);
     expect(model.doStreamCalls[0]?.prompt.at(-1)?.content).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: "file", data: { type: "data", data: image }, mediaType: "image/png" }),
     ]));

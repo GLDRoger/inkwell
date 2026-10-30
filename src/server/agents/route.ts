@@ -6,10 +6,12 @@ import type { Agent } from "../../shared/types.ts";
  * reply starts.
  *
  * 1. An agent named in the request ("ask Wren to…") wins.
- * 2. Otherwise the request's main verb decides, after polite openers
- *    ("can you", "please", "I'd like you to") are stripped.
- * 3. Otherwise every agent is scored on its signals; ties go Wren, Atlas, Scout.
- * 4. A bare question with no signals is research (Scout).
+ * 2. An attached image goes to Wren: a photo is almost always "turn this into a page".
+ * 3. Otherwise the main verb decides: the first sentence that opens with one, after
+ *    polite openers ("can you", "please", "I'd like you to") are stripped. "Here is
+ *    a photo. Turn it into a page" is decided by "Turn".
+ * 4. Otherwise every agent is scored on its signals; ties go Wren, Atlas, Scout.
+ * 5. A bare question with no signals is research (Scout).
  */
 type Name = "Scout" | "Wren" | "Atlas";
 
@@ -28,16 +30,23 @@ const SIGNALS: Record<Name, RegExp[]> = {
 const TIE_ORDER: Name[] = ["Wren", "Atlas", "Scout"];
 const POLITE = /^\s*(?:(?:hey|hi|ok(?:ay)?|so)[,\s]+)?(?:(?:can|could|would|will) you(?: please)?|please|pls|i(?:'d| would) like you to|i want you to|i need you to|help me(?: to)?|go ahead and|let's)\s+/i;
 
-export function pickAgent(agents: Agent[], text: string): Agent | undefined {
+/** Sentences (and lines) of a request, in order. */
+const sentences = (text: string) => text.split(/(?<=[.!?])\s+|\n+/).map(s => s.trim()).filter(Boolean);
+
+export function pickAgent(agents: Agent[], text: string, options: { image?: boolean } = {}): Agent | undefined {
   const byName = new Map(agents.map(agent => [agent.name.toLowerCase(), agent]));
   const get = (name: Name) => byName.get(name.toLowerCase());
 
   const named = text.match(/\b(?:ask|get|have|let|tell)\s+(\w+)/i)?.[1]?.toLowerCase();
   if (named && byName.has(named)) return byName.get(named);
 
-  const core = text.replace(POLITE, "").replace(POLITE, "").trim();
-  for (const name of ["Atlas", "Wren", "Scout"] as Name[]) {
-    if (LEADING[name].test(core) && get(name)) return get(name);
+  if (options.image && get("Wren")) return get("Wren");
+
+  for (const sentence of sentences(text)) {
+    const core = sentence.replace(POLITE, "").replace(POLITE, "").trim();
+    for (const name of ["Atlas", "Wren", "Scout"] as Name[]) {
+      if (LEADING[name].test(core) && get(name)) return get(name);
+    }
   }
 
   let best: Name | undefined;
