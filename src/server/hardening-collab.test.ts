@@ -135,3 +135,28 @@ it('persists peer-delivered edits on SIGTERM before SQLite closes', async () => 
     } finally { db.close(); }
   } finally { if (child.exitCode === null) child.kill('SIGKILL'); fs.rmSync(childDir, { recursive: true, force: true }); }
 }, 15_000);
+it('keeps edits when the editor records position migrations (pressing Enter)', async () => {
+  const page = s.pages.createPage(ctx.workspaceId, ctx.person, { markdown: 'hello' });
+  const { provider, doc } = await connect(page.id);
+  let closed = false; provider.on('close', () => { closed = true; });
+  // What @tiptap/y-tiptap does when a paragraph is split.
+  doc.transact(() => {
+    doc.getMap('__tiptap_position_migrations:root:default').set('m1', new Uint8Array([1, 2, 3]));
+    const para = new Y.XmlElement('paragraph'); para.insert(0, [new Y.XmlText('second line')]);
+    doc.getXmlFragment('default').insert(1, [para]);
+  });
+  await until(() => s.collab.hocuspocus.documents.get(page.id)?.getXmlFragment('default').length === 2);
+  await pause(3500); // past maxDebounce, so the store has run
+  expect(closed).toBe(false);
+  expect(yDocToMarkdown(s.collab.hocuspocus.documents.get(page.id)!)).toContain('second line');
+  const saved = new Y.Doc(); Y.applyUpdate(saved, s.pages.getPageRow(ctx.workspaceId, page.id)!.ydoc!);
+  expect(yDocToMarkdown(saved)).toContain('second line'); saved.destroy();
+}, 10_000);
+it('still rejects other hidden maps alongside a position store', async () => {
+  const page = s.pages.createPage(ctx.workspaceId, ctx.person, { markdown: 'hello' });
+  const { provider, doc } = await connect(page.id);
+  let closed = false; provider.on('close', () => { closed = true; });
+  doc.getMap('__tiptap_position_migrations_evil').set('blob', 'x');
+  await until(() => closed);
+  provider.destroy();
+});

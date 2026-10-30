@@ -139,6 +139,9 @@ export interface CollabService {
   close: () => Promise<void>;
 }
 
+const POSITION_STORE_PREFIX = "__tiptap_position_migrations:";
+const MAX_POSITION_STORES = 4;
+
 const SYSTEM_ACTOR: Actor = { kind: "agent", id: "system", name: "Inkwell" };
 
 export function createCollab(deps: {
@@ -162,7 +165,17 @@ export function createCollab(deps: {
     return release;
   };
   const validate = (document: Y.Doc) => {
-    if ([...document.share.keys()].some(key => key !== "default")) throw new Error("only the editor fragment is allowed");
+    // The editor (@tiptap/y-tiptap) keeps cursor-position bookkeeping in maps named
+    // `__tiptap_position_migrations:<fragment>` whenever a paragraph is split. Allow
+    // only that namespace beside the fragment, and only a few of them; the size cap
+    // below still bounds what they can hold.
+    const extra = [...document.share.keys()].filter(key => key !== "default");
+    if (extra.length > MAX_POSITION_STORES || extra.some(key => !key.startsWith(POSITION_STORE_PREFIX))) {
+      throw new Error("only the editor fragment is allowed");
+    }
+    if (extra.some(key => !(document.share.get(key) instanceof Y.Map) && document.share.get(key)?.constructor !== Y.AbstractType)) {
+      throw new Error("invalid editor position store");
+    }
     const fragment = document.getXmlFragment("default");
     if (fragment._map.size || fragment.toArray().some(child => !(child instanceof Y.XmlElement) && !(child instanceof Y.XmlText))) {
       throw new Error("invalid editor fragment");
