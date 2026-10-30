@@ -132,7 +132,13 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
     ).run(pageId, workspaceId, title, markdownToPlainText(markdown));
   };
 
-  const syncLinks = (workspaceId: string, fromId: string, markdown: string) => {
+  const outgoing = (workspaceId: string, fromId: string): string[] =>
+    (db.prepare("SELECT to_id FROM links WHERE workspace_id = ? AND from_id = ? ORDER BY to_id")
+      .all(workspaceId, fromId) as { to_id: string }[]).map((r) => r.to_id);
+
+  /** Rewrite a page's outgoing links. Returns the new set if it changed, else null. */
+  const syncLinks = (workspaceId: string, fromId: string, markdown: string): Link[] | null => {
+    const before = outgoing(workspaceId, fromId);
     db.prepare("DELETE FROM links WHERE workspace_id = ? AND from_id = ?").run(
       workspaceId,
       fromId,
@@ -145,6 +151,9 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       // Only link to live pages in the same workspace (no dangling paths).
       if (getPageRow(workspaceId, toId)) insert.run(workspaceId, fromId, toId);
     }
+    const after = outgoing(workspaceId, fromId);
+    if (after.length === before.length && after.every((id, i) => id === before[i])) return null;
+    return after.map((to) => ({ from: fromId, to }));
   };
 
   // Schema v2: the search index holds plain text instead of markdown.
@@ -183,12 +192,12 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   ) => {
     if (parentId === null) return;
     if (!getPageRow(workspaceId, parentId)) {
-      throw new PageStoreError("parent page not found", 400);
+      throw new PageStoreError("The parent page doesn't exist. Pick another parent.", 400);
     }
     if (selfId) {
-      if (parentId === selfId) throw new PageStoreError("page cannot be its own parent", 400);
+      if (parentId === selfId) throw new PageStoreError("A page can't be its own parent.", 400);
       if (isDescendant(workspaceId, selfId, parentId)) {
-        throw new PageStoreError("cannot move a page inside its own subtree", 400);
+        throw new PageStoreError("A page can't move inside one of its own subpages.", 400);
       }
     }
   };
@@ -213,7 +222,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   };
 
   const createPage: PageStore["createPage"] = (workspaceId, actor, input) => {
-    if (input.position !== undefined && !isValidPosition(input.position)) throw new PageStoreError("invalid position");
+    if (input.position !== undefined && !isValidPosition(input.position)) throw new PageStoreError("That position isn't valid.");
     const parentId = input.parentId ?? null;
     assertValidParent(workspaceId, parentId);
     const id = input.id ?? newId();
@@ -237,8 +246,8 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       updated_at: now,
       deleted_at: null,
     };
-    if (row.ydoc!.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("document exceeds 4 MB limit", 413);
-    db.transaction(() => {
+    if (row.ydoc!.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("This page is over the 4 MB size limit. Split it into smaller pages.", 413);
+    const links = db.transaction(() => {
       db.prepare(
         `INSERT INTO pages (id, workspace_id, parent_id, title, icon, position, excerpt, x, y, cover_url, markdown, ydoc, updated_by, created_at, updated_at, deleted_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
@@ -260,15 +269,16 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
         row.updated_at,
       );
       syncFts(workspaceId, row.id, row.title, row.markdown);
-      syncLinks(workspaceId, row.id, row.markdown);
+      return syncLinks(workspaceId, row.id, row.markdown);
     })();
     const page = rowToPage(row);
     bus.publish(workspaceId, { type: "page.created", page });
+    if (links) bus.publish(workspaceId, { type: "page.links", pageId: page.id, links });
     return page;
   };
 
   const updatePage: PageStore["updatePage"] = (workspaceId, actor, id, patch) => {
-    if (patch.position !== undefined && !isValidPosition(patch.position)) throw new PageStoreError("invalid position");
+    if (patch.position !== undefined && !isValidPosition(patch.position)) throw new PageStoreError("That position isn't valid.");
     const existing = getPageRow(workspaceId, id);
     if (!existing) return null;
     if (patch.parentId !== undefined) {
@@ -343,7 +353,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
   };
 
   const syncPageBody: PageStore["syncPageBody"] = (workspaceId, pageId, body) => {
-    if (body.ydoc.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("document exceeds 4 MB limit", 413);
+    if (body.ydoc.byteLength > MAX_YDOC_BYTES) throw new PageStoreError("This page is over the 4 MB size limit. Split it into smaller pages.", 413);
     const existing = getPageRow(workspaceId, pageId);
     if (!existing) return null;
     const markdownChanged = existing.markdown !== body.markdown;
@@ -361,18 +371,19 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       updated_by: body.actor ? JSON.stringify(body.actor) : existing.updated_by,
       updated_at: nowIso(),
     };
-    db.transaction(() => {
+    const links = db.transaction(() => {
       db.prepare(
         `UPDATE pages SET markdown = ?, ydoc = ?, excerpt = ?, updated_by = ?, updated_at = ?
          WHERE workspace_id = ? AND id = ? AND deleted_at IS NULL`,
       ).run(next.markdown, next.ydoc, next.excerpt, next.updated_by, next.updated_at, workspaceId, pageId);
-      if (markdownChanged) {
-        syncFts(workspaceId, pageId, next.title, next.markdown);
-        syncLinks(workspaceId, pageId, next.markdown);
-      }
+      if (!markdownChanged) return null;
+      syncFts(workspaceId, pageId, next.title, next.markdown);
+      return syncLinks(workspaceId, pageId, next.markdown);
     })();
     const page = rowToPage(next);
     if (markdownChanged) bus.publish(workspaceId, { type: "page.updated", page });
+    // The map draws paths from links; tell it when this page's paths change.
+    if (links) bus.publish(workspaceId, { type: "page.links", pageId, links });
     return page;
   };
 
@@ -410,24 +421,26 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       if (!q) return [];
       // Quote each term for FTS5 and prefix-match the last one (type-ahead).
       const terms = q.split(/\s+/).filter(Boolean);
-      const match = terms
-        .map((term, i) => `"${term.replace(/"/g, '""')}"${i === terms.length - 1 ? "*" : ""}`)
-        .join(" ");
-      let rows: (PageRow & { snip: string })[] = [];
-      try {
-        rows = db
-          .prepare(
-            `SELECT p.*, snippet(pages_fts, -1, '', '', '…', 24) AS snip
-             FROM pages_fts
-             JOIN pages p ON p.id = pages_fts.page_id
-             WHERE pages_fts MATCH ? AND pages_fts.workspace_id = ?
-               AND p.workspace_id = ? AND p.deleted_at IS NULL
-             ORDER BY rank LIMIT 30`,
-          )
-          .all(match, workspaceId, workspaceId) as (PageRow & { snip: string })[];
-      } catch {
-        return [];
-      }
+      const quoted = terms.map((term, i) => `"${term.replace(/"/g, '""')}"${i === terms.length - 1 ? "*" : ""}`);
+      const run = (match: string) => {
+        try {
+          return db
+            .prepare(
+              `SELECT p.*, snippet(pages_fts, -1, '', '', '…', 24) AS snip
+               FROM pages_fts
+               JOIN pages p ON p.id = pages_fts.page_id
+               WHERE pages_fts MATCH ? AND pages_fts.workspace_id = ?
+                 AND p.workspace_id = ? AND p.deleted_at IS NULL
+               ORDER BY rank LIMIT 30`,
+            )
+            .all(match, workspaceId, workspaceId) as (PageRow & { snip: string })[];
+        } catch {
+          return [];
+        }
+      };
+      // Every word first; if nothing has them all, any of them (ranked by relevance).
+      let rows = run(quoted.join(" "));
+      if (!rows.length && terms.length > 1) rows = run(quoted.join(" OR "));
       return rows.map((row) => ({
         page: rowToPage(row),
         snippet: (row.snip || row.excerpt).replace(/\s+/g, " ").trim(),

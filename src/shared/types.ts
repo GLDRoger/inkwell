@@ -126,6 +126,13 @@ export type ServerEvent =
   | { type: "page.updated"; page: Page }
   | { type: "page.deleted"; pageId: Id }
   | { type: "run.updated"; run: Run }
+  /** A page's outgoing links changed: `links` is its complete new set (every `from` is `pageId`). */
+  | { type: "page.links"; pageId: Id; links: Link[] }
+  /**
+   * An agent's footprint. `toPageId: null` is not a move: the agent did
+   * something notebook-wide (search, list, ask) or left, and stays at
+   * `fromPageId`. The run's `pageId` keeps its last page.
+   */
   | { type: "agent.moved"; runId: Id; agentId: Id; fromPageId: Id | null; toPageId: Id | null; action: "reading" | "writing" | "thinking" | "leaving" }
   | { type: "diary.entry"; entry: DiaryEntry }
   | { type: "diary.delta"; entryId: Id; threadId: Id; text: string }
@@ -148,6 +155,8 @@ export type ServerEvent =
  * GET    /api/diary                      -> DiaryThread[]
  * GET    /api/diary/:threadId            -> DiaryEntry[]
  * POST   /api/diary {threadId?, text, agentId?, attachmentIds?, pageId?} -> { entry: DiaryEntry; runId: Id; threadId: Id }
+ *        If the agent can't start, nothing is saved: 503 { error, code: "restarting" } or
+ *        400/500 { error, code: "agent_unavailable" | "internal" }. `error` is plain English.
  * POST   /api/runs/:id/cancel            -> Run
  * POST   /api/uploads (multipart file)   -> Attachment
  * POST   /api/transcribe (multipart audio) -> { text: string }      (Muse Voice Transcribe)

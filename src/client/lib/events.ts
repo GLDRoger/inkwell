@@ -26,6 +26,7 @@ const EVENT_TYPES: ServerEventType[] = [
   "page.created",
   "page.updated",
   "page.deleted",
+  "page.links",
   "run.updated",
   "agent.moved",
   "diary.entry",
@@ -157,11 +158,18 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
       );
       void client.invalidateQueries({ queryKey: keys.page(e.pageId) });
       return;
+    case "page.links":
+      // The page's complete outgoing set replaces what the map had; paths redraw from the cache.
+      client.setQueryData<MapGraph>(keys.map, (old) =>
+        old ? { ...old, links: [...old.links.filter((l) => l.from !== e.pageId), ...e.links.filter((l) => l.from === e.pageId)] } : old,
+      );
+      return;
     case "run.updated":
       patchRun(client, e.run.id, () => e.run, e.run);
       return;
     case "agent.moved":
-      patchRun(client, e.runId, (r) => ({ ...r, pageId: e.toPageId }));
+      // toPageId null is a notebook-wide action or leaving, not a move: the run keeps its page.
+      if (e.toPageId) patchRun(client, e.runId, (r) => ({ ...r, pageId: e.toPageId }));
       return;
     case "diary.entry": {
       const { entry } = e;

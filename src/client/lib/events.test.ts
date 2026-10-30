@@ -66,6 +66,23 @@ describe("applyServerEvent", () => {
     expect(c.getQueryData<MapGraph>(keys.map)!.runs[0].pageId).toBe("p2");
   });
 
+  it("keeps a run's page when its agent does something notebook-wide (toPageId null)", () => {
+    const c = seeded();
+    applyServerEvent(c, { type: "agent.moved", runId: "r0", agentId: "a1", fromPageId: null, toPageId: "p2", action: "reading" });
+    applyServerEvent(c, { type: "agent.moved", runId: "r0", agentId: "a1", fromPageId: "p2", toPageId: null, action: "thinking" });
+    applyServerEvent(c, { type: "agent.moved", runId: "r0", agentId: "a1", fromPageId: "p2", toPageId: null, action: "leaving" });
+    expect(c.getQueryData<MapGraph>(keys.map)!.runs[0].pageId).toBe("p2");
+  });
+
+  it("replaces a page's outgoing links when they change, leaving other pages' links alone", () => {
+    const c = seeded();
+    c.setQueryData<MapGraph>(keys.map, (old) => ({ ...old!, pages: [...old!.pages, page("p3")], links: [...old!.links, { from: "p2", to: "p1" }] }));
+    applyServerEvent(c, { type: "page.links", pageId: "p1", links: [{ from: "p1", to: "p3" }] });
+    expect(c.getQueryData<MapGraph>(keys.map)!.links).toEqual([{ from: "p2", to: "p1" }, { from: "p1", to: "p3" }]);
+    applyServerEvent(c, { type: "page.links", pageId: "p1", links: [] });
+    expect(c.getQueryData<MapGraph>(keys.map)!.links).toEqual([{ from: "p2", to: "p1" }]);
+  });
+
   it("streams diary deltas into the entry, even before the entry event arrives", () => {
     const c = seeded();
     applyServerEvent(c, { type: "diary.delta", entryId: "e1", threadId: "t1", text: "Hello" });
