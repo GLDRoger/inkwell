@@ -14,7 +14,11 @@ if (!key) {
 }
 const log = (message) => console.log(String(message).split(key).join("[redacted]"));
 const base = (process.env.META_BASE_URL || "https://api.meta.ai/v1").replace(/\/+$/, "");
-const textModel = process.env.META_TEXT_MODEL || "muse-spark-1.3";
+// The agents' default (src/server/meta-access.ts); the labels name the model actually used.
+const textModel = process.env.META_TEXT_MODEL || "muse-wonder-1.0";
+const imageModel = process.env.META_IMAGE_MODEL || "muse-image-1.0";
+const voiceModel = process.env.META_TRANSCRIBE_MODEL || "muse-voice-transcribe-1.0";
+const segmentModel = process.env.META_SEGMENT_MODEL || "sam-3.1";
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
 class SmokeError extends Error {}
@@ -124,7 +128,7 @@ async function check(name, fn) {
   }
 }
 
-await check("Muse Spark tool call", async () => {
+await check(`${textModel} tool call`, async () => {
   const { data } = await request("/chat/completions", {
     model: textModel, max_completion_tokens: 256, reasoning_effort: "minimal", tool_choice: "auto",
     messages: [{ role: "user", content: "Call the smoke_ping tool now with message hello. Do not answer with text." }],
@@ -136,7 +140,7 @@ await check("Muse Spark tool call", async () => {
   return `tool_calls=${calls.length}`;
 });
 
-await check("Muse Spark streaming text", async () => {
+await check(`${textModel} streaming text`, async () => {
   const { events, done, contentType } = await request("/chat/completions", {
     model: textModel, max_completion_tokens: 256, reasoning_effort: "minimal", stream: true,
     messages: [{ role: "user", content: "Reply with exactly: Hello from Inkwell." }],
@@ -146,9 +150,9 @@ await check("Muse Spark streaming text", async () => {
   return `events=${events.length}; text_chars=${text.length}`;
 });
 
-await check("Muse Image generation", async () => {
+await check(`${imageModel} image generation`, async () => {
   const { data } = await request("/images/generations", {
-    model: process.env.META_IMAGE_MODEL || "muse-image-1.0", prompt: "A red square on white.",
+    model: imageModel, prompt: "A red square on white.",
     n: 1, response_format: "b64_json", output_format: "png", reasoning_strength: "low",
   });
   const encoded = data?.data?.[0]?.b64_json ?? data?.b64_json;
@@ -159,18 +163,18 @@ await check("Muse Image generation", async () => {
   return `image_bytes=${bytes.length}${process.argv.includes("--save") ? "; saved smoke-meta-image.png" : "; not saved"}`;
 });
 
-await check("Voice Transcribe", async () => {
+await check(`${voiceModel} transcription`, async () => {
   const form = new FormData();
-  form.set("request", new Blob([JSON.stringify({ model: process.env.META_TRANSCRIBE_MODEL || "muse-voice-transcribe-1.0",
+  form.set("request", new Blob([JSON.stringify({ model: voiceModel,
     mode: "PUSH_TO_TALK", audioEncoding: "WAV" })], { type: "application/json" }), "request.json");
   form.set("audio", new Blob([wavTone()], { type: "audio/wav" }), "tone.wav");
   await request("/asr/transcribe", form);
   return "2xx shape recorded (synthetic tone, not speech accuracy)";
 });
 
-await check("SAM 3.1 segmentation", async () => {
+await check(`${segmentModel} segmentation`, async () => {
   const { data, events } = await request("/responses", {
-    model: process.env.META_SEGMENT_MODEL || "sam-3.1", stream: true,
+    model: segmentModel, stream: true,
     input: [{ type: "message", role: "user", content: [
       { type: "input_text", text: "colored rectangles" },
       { type: "input_image", image_url: `data:image/png;base64,${rectanglesPng().toString("base64")}` },
