@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Route, Routes, useLocation, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useServerEvents } from "./lib/events";
@@ -50,9 +50,11 @@ function MapRoute() {
   const [params] = useSearchParams();
   const focusPageId = params.get("focus") ?? undefined;
   const onOpenPage = (id: string) => navigate(`/p/${id}`);
+  // A fresh map for each notebook: its camera and layout belong to the pages it was showing.
+  const notebook = useDemo((s) => s.notebook);
   if (!MapView) return <MapPlaceholder onOpenPage={onOpenPage} />;
   return (
-    <MapBoundary fallback={<MapPlaceholder onOpenPage={onOpenPage} />}>
+    <MapBoundary key={notebook} fallback={<MapPlaceholder onOpenPage={onOpenPage} />}>
       <Suspense fallback={<div className="map-loading" aria-busy="true" />}>
         <MapView onOpenPage={onOpenPage} focusPageId={focusPageId} />
       </Suspense>
@@ -175,11 +177,30 @@ function useDemoSync() {
   return (notebook: string) => notebook === "demo" && void syncDemo(client);
 }
 
+/**
+ * Moving between notebooks starts on the bare map: a page or peek from one
+ * notebook isn't in the other. Returns true for the one render in between, so
+ * the routes don't mount (and fetch) the old notebook's page in the new one.
+ */
+function useNotebookHome(notebook: string): boolean {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [homed, setHomed] = useState(notebook);
+  useLayoutEffect(() => {
+    if (homed === notebook) return;
+    const keep = new URLSearchParams(location.search).has("welcome") ? "?welcome" : "";
+    if (location.pathname !== "/" || location.search !== keep) navigate({ pathname: "/", search: keep }, { replace: true });
+    setHomed(notebook);
+  }, [notebook]);
+  return homed !== notebook;
+}
+
 function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
   const onStreamOpen = useDemoSync();
   useServerEvents(onStreamOpen);
   usePresenceReport();
   const notebook = useDemo((s) => s.notebook);
+  const homing = useNotebookHome(notebook);
   const guide = useUi((s) => s.guideOpen ?? false);
   useGlobalShortcuts(welcome != null);
   const location = useLocation();
@@ -201,6 +222,9 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
       </a>
       <TopBar />
       <main id="main" className="app-main" tabIndex={-1}>
+        {homing ? (
+          <div className="map-loading" aria-busy="true" />
+        ) : (
         <Routes>
           <Route path="/" element={<MapRoute />} />
           <Route
@@ -213,6 +237,7 @@ function Shell({ welcome }: { welcome: "open" | "leaving" | null }) {
           />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        )}
       </main>
       {/* One diary per notebook: switching starts it fresh, so conversations never mix. */}
       <DiaryPanel key={notebook} />

@@ -13,6 +13,9 @@ import { hasBeenGuided } from "../guide/seen";
  * the demo and keeps the query cache from mixing the two.
  */
 
+/** The map's saved camera (src/client/map/index.tsx CAMERA_KEY). */
+export const MAP_CAMERA_KEY = "inkwell:map-camera";
+
 /**
  * Show another notebook. Every cached query except "me" (the person and the
  * connection flag, the same in both) is dropped and refetched for the new one,
@@ -22,7 +25,20 @@ export function switchNotebook(client: QueryClient, notebook: NotebookKind) {
   if (getDemo().notebook === notebook) return;
   setDemo({ ...initialDemo(notebook) });
   setUi({ paletteOpen: false, aboutOpen: false, diaryDraft: null });
-  void client.resetQueries({ predicate: (q) => q.queryKey[0] !== keys.me[0] });
+  // The map remembers where its camera was for this tab; that spot belongs to the other notebook's pages.
+  try {
+    sessionStorage.removeItem(MAP_CAMERA_KEY);
+  } catch {
+    /* nothing saved */
+  }
+  // Stop what's in flight for the old notebook and forget it at once, so nothing
+  // from one shows in the other. Refetch a moment later, once the screens that
+  // only make sense in the old notebook (its conversation, a peeked page) have gone,
+  // so they aren't asked for in the new one.
+  const others = { predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[0] !== keys.me[0] };
+  void client.cancelQueries(others);
+  for (const q of client.getQueryCache().findAll(others)) q.setState({ data: undefined, dataUpdatedAt: 0, status: "pending", fetchStatus: "idle" });
+  setTimeout(() => void client.resetQueries(others), 60);
 }
 
 /** "Watch it work": reset the demo notebook, switch to it and play from the top. */

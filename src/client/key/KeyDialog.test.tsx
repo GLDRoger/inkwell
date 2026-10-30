@@ -44,13 +44,13 @@ describe("the key dialog", () => {
   });
 
   it("checks the key with the server and says whether it works", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: "Invalid API key" }), { status: 200, headers: { "content-type": "application/json" } }));
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: "Meta didn't accept that key. Check it and try again." }), { status: 200, headers: { "content-type": "application/json" } }));
     render(<KeyDialog />);
     act(() => openKeyDialog());
     fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-bad" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Check key" })));
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get("X-Meta-Key")).toBe("sk-bad");
-    expect(screen.getByText("Meta didn't accept that key: Invalid API key.")).toBeTruthy();
+    expect(screen.getByText("Meta didn't accept that key. Check it and try again.")).toBeTruthy();
     // Checking doesn't save.
     expect(localStorage.getItem(KEY_STORAGE)).toBeNull();
   });

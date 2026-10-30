@@ -30,7 +30,8 @@ export const KEY_COPY = {
 
 /** Why the check failed, in one sentence: Meta's answer, or that the check itself didn't happen. */
 export function checkFailedCopy(error: unknown): string {
-  if (typeof error === "string" && error.trim()) return `Meta didn't accept that key: ${error.trim().replace(/\.?$/, ".")}`;
+  // The server already says it in a sentence ("Meta didn't accept that key. Check it and try again.").
+  if (typeof error === "string" && error.trim()) return error.trim().replace(/([^.!?])$/, "$1.");
   if (error && typeof error === "object" && "status" in error) {
     return (error as { status: number }).status === 0
       ? "Couldn't reach Inkwell to check. You can still save the key."

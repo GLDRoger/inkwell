@@ -245,9 +245,11 @@
 
 /* ------------------------------------------------------------ the recorded demo's caption bar */
 .demo-bar {
+  /* Centred in the map that's still showing: beside the diary and the peek panel (which publishes --peek-cover-*). */
+  --cover-right: max(var(--diary-inset, 0px), var(--peek-cover-right, 0px));
   position: fixed; z-index: 35;
-  left: calc(50% - var(--diary-inset, 0px) / 2); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  translate: -50% 0; width: min(560px, calc(100vw - var(--diary-inset, 0px) - 24px));
+  left: calc(50% - var(--cover-right) / 2); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  translate: -50% 0; width: min(560px, max(300px, calc(100vw - var(--cover-right) - 24px)));
   display: grid; gap: 8px; padding: 14px 16px 12px 18px;
   border-radius: var(--radius-lg); background: var(--paper-raised); box-shadow: var(--shadow-pop);
   animation: demo-in 360ms var(--ease-ink) both;
@@ -293,7 +295,7 @@
   /* Above the map's photo button and dock. */
   .demo-bar {
     left: 10px; right: 10px; translate: none; width: auto;
-    bottom: calc(68px + env(safe-area-inset-bottom, 0px)); padding: 12px 14px 10px;
+    bottom: max(calc(68px + env(safe-area-inset-bottom, 0px)), calc(var(--peek-cover-bottom, 0px) + 10px)); padding: 12px 14px 10px;
   }
   .demo-caption { font-size: 17px; }
   .demo-bar[data-ended] .demo-caption { font-size: 18px; }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { DemoScenario } from "@shared/types";
 import { getDemo, initialDemo, setDemo } from "./demo";
-import { leaveDemo, startDemo, stopDemo, syncDemo, tryItYourself } from "./demo-flow";
+import { MAP_CAMERA_KEY, leaveDemo, startDemo, stopDemo, syncDemo, tryItYourself } from "./demo-flow";
 import { keys } from "./queries";
 import { getUi, setUi } from "./ui";
 import { GUIDED_KEY } from "../guide/seen";
@@ -38,10 +38,13 @@ afterEach(() => {
 describe("starting the demo", () => {
   it("resets it on the server, switches to the demo notebook and shows the first caption", async () => {
     client.setQueryData(keys.pages, [{ id: "mine" }]);
+    sessionStorage.setItem(MAP_CAMERA_KEY, JSON.stringify({ x: 1, y: 2, s: 1 }));
     fetchMock.mockImplementation(async () => json({ scenario }));
     expect(await startDemo(client)).toBe(true);
     expect(calls()).toEqual(["POST /api/demo/start own"]);
     expect(getDemo()).toMatchObject({ notebook: "demo", playing: true, index: 0, step: scenario.steps[0], starting: false });
+    // The map's saved camera belonged to the other notebook's pages.
+    expect(sessionStorage.getItem(MAP_CAMERA_KEY)).toBeNull();
     // Nothing from the visitor's own notebook stays cached; who they are does.
     expect(client.getQueryData(keys.pages)).toBeUndefined();
     expect(client.getQueryData(keys.me)).toEqual(me);
