@@ -128,3 +128,7 @@ Round 2 in flight: fresh hands-on audit (/tmp/inkwell-audit2/) + client code rev
 - Global Cmd+K/J fire during the welcome (`App.tsx:72-90`).
 - Title save lost on unmount via browser Back (`PageView.tsx:45`) — save in cleanup if edited.
 - `moveWalker` with to=null for unseen agent: use `fromPageId` (`map/model.ts:136`).
+
+### Rounds 2–3 landed (2026-10-30)
+Round 2: credit-on-open fix, icons for agent/photo pages, readable overview as the notebook grows, greeting pinned + frozen, touch 2-tap open, Try again/Continue, streaming without raw markdown, safe delete-undo, one offline message, phone tables. Round 3 audit (f3cad45): 27/29 fixed; then retry-continues-instead-of-redoing (server), failed-run note lists pages made, phone note bar on map only, kind/name split on new cards, metaConnected flag so Photo to cards refuses before the picker, welcome focus trap, conversation titles.
+Remaining before handing to the client (owner chose to do these last): META_API_KEY in /opt/inkwell/.env and local .env -> `node --env-file=.env scripts/smoke-meta.mjs` (5/5) -> `npm run corpus` on a throwaway data dir -> fix whatever real Muse Spark does differently from the rehearsal fake (pre-tool narration, handoff quote wording) -> DNS for inkwell.questili.com + TLS -> regenerate welcome objects with Muse Image (`node scripts/paint-objects.mjs`) -> record demo per docs/DEMO.md -> submission TODOs in docs/SUBMISSION.md.
