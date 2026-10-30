@@ -38,13 +38,13 @@ export function createApp(
   app.route("/", createEventsApp(services.bus, { ...options, pages: services.pages }));
 
   app.notFound((c) => {
-    if (c.req.path.startsWith("/api/")) return c.json({ error: "not found" }, 404);
+    if (c.req.path.startsWith("/api/")) return c.json({ error: "Not found.", code: "not_found" }, 404);
     return c.text("not found", 404);
   });
 
   app.onError((err, c) => {
     console.error("[inkwell] request failed", err);
-    return c.json({ error: "internal error" }, 500);
+    return c.json({ error: "Something went wrong on the server. Try again.", code: "internal" }, 500);
   });
 
   // Production: serve the built client with SPA fallback.

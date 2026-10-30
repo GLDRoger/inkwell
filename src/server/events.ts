@@ -85,7 +85,7 @@ export function createEventsApp(bus: EventBus, options: {
     const { workspaceId, person, sessionId } = c.get('ctx');
     let sessionStreams = streams.get(sessionId);
     if (sessionStreams && sessionStreams.size >= (options.maxSessionStreams ?? 6)) sessionStreams.values().next().value?.();
-    if (total >= (options.maxStreams ?? 2000)) return c.json({ error: 'too many event streams' }, 503);
+    if (total >= (options.maxStreams ?? 2000)) return c.json({ error: 'The server is busy. Live updates will reconnect shortly.' }, 503);
     sessionStreams = streams.get(sessionId) ?? new Set();
     streams.set(sessionId, sessionStreams);
     let closed = false;
@@ -143,11 +143,11 @@ export function createEventsApp(bus: EventBus, options: {
   app.post('/api/presence', jsonBodyLimit(2048), async c => {
     const { workspaceId, person, sessionId } = c.get('ctx');
     let raw: unknown;
-    try { raw = await c.req.json(); } catch { return c.json({ error: 'invalid JSON body' }, 400); }
+    try { raw = await c.req.json(); } catch { return c.json({ error: 'The request wasn\'t valid JSON.' }, 400); }
     const parsed = presenceBody.safeParse(raw);
     if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? 'invalid body' }, 400);
     const pageId = parsed.data.pageId ?? null;
-    if (pageId && !options.pages?.getPage(workspaceId, pageId)) return c.json({ error: 'page not found in workspace' }, 400);
+    if (pageId && !options.pages?.getPage(workspaceId, pageId)) return c.json({ error: 'That page doesn\'t exist.' }, 400);
     if (streams.get(sessionId)?.size) bus.setPresence(workspaceId, { id: person.id, name: person.name, pageId });
     return c.body(null, 204);
   });

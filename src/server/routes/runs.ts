@@ -7,11 +7,11 @@ export function createRunRoutes(s: Services): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   app.get("/api/runs/:id", (c) => {
     const run = getRun(s.db, c.get("ctx").workspaceId, c.req.param("id"));
-    return run ? c.json(run) : c.json({ error: "run not found" }, 404);
+    return run ? c.json(run) : c.json({ error: "That agent run doesn't exist.", code: "run_not_found" }, 404);
   });
   app.post("/api/runs/:id/cancel", async (c) => {
     const run = await s.runtime.cancel(c.get("ctx").workspaceId, c.req.param("id"));
-    return run ? c.json(run) : c.json({ error: "run not found" }, 404);
+    return run ? c.json(run) : c.json({ error: "That agent run doesn't exist.", code: "run_not_found" }, 404);
   });
   return app;
 }

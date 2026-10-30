@@ -35,7 +35,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
     // Refuse oversized bodies before buffering them (multipart overhead allowed).
     bodyLimit({
       maxSize: MAX_UPLOAD_BYTES + 1024 * 1024,
-      onError: (c) => c.json({ error: "file exceeds 20 MB limit" }, 413),
+      onError: (c) => c.json({ error: "Files can be up to 20 MB." }, 413),
     }),
     async (c) => {
       const { workspaceId } = c.get("ctx");
@@ -43,16 +43,16 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
       try {
         body = await c.req.parseBody();
       } catch {
-        return c.json({ error: "expected multipart form data" }, 400);
+        return c.json({ error: "The upload didn't include a file." }, 400);
       }
       const file =
         body["file"] instanceof File
           ? body["file"]
           : Object.values(body).find((v): v is File => v instanceof File);
-      if (!file) return c.json({ error: "missing file field" }, 400);
-      if (file.size === 0) return c.json({ error: "file is empty" }, 400);
+      if (!file) return c.json({ error: "The upload didn't include a file." }, 400);
+      if (file.size === 0) return c.json({ error: "That file is empty." }, 400);
       if (file.size > MAX_UPLOAD_BYTES) {
-        return c.json({ error: "file exceeds 20 MB limit" }, 413);
+        return c.json({ error: "Files can be up to 20 MB." }, 413);
       }
       const mime = file.type || "application/octet-stream";
       const kind = mime.startsWith("image/")
@@ -61,7 +61,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
           ? "audio"
           : null;
       if (!kind) {
-        return c.json({ error: "only image and audio uploads are supported" }, 415);
+        return c.json({ error: "Only images and audio can be uploaded." }, 415);
       }
 
       const id = newId();
@@ -72,7 +72,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
       const bytes = Buffer.from(await file.arrayBuffer());
       const disk = await fs.promises.statfs(services.dataDir);
       if (disk.bavail * disk.bsize - bytes.length < MIN_FREE_DISK_BYTES) {
-        return c.json({ error: "storage is low; uploads temporarily unavailable" }, 413);
+        return c.json({ error: "Uploads are paused because the server is low on storage. Try again later." }, 413);
       }
       // Reserve quota synchronously before the asynchronous write. Concurrent uploads
       // see reservations too, so they cannot all pass the same remaining quota.
@@ -89,7 +89,7 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
           path: filename,
         });
       })();
-      if (!attachment) return c.json({ error: "workspace upload quota exceeded" }, 413);
+      if (!attachment) return c.json({ error: "This notebook has reached its upload limit. Delete some files first." }, 413);
       try {
         await fs.promises.writeFile(path.join(uploadsDir, filename), bytes, { flag: "wx" });
       } catch (error) {
@@ -104,13 +104,13 @@ export function createUploadRoutes(services: Services): Hono<AppEnv> {
   app.get("/api/files/:id", async (c) => {
     const { workspaceId } = c.get("ctx");
     const row = getAttachmentRow(db, workspaceId, c.req.param("id"));
-    if (!row) return c.json({ error: "file not found" }, 404);
+    if (!row) return c.json({ error: "That file doesn't exist." }, 404);
     const filePath = path.join(uploadsDir, path.basename(row.path));
     let bytes: Buffer;
     try {
       bytes = await fs.promises.readFile(filePath);
     } catch {
-      return c.json({ error: "file not found" }, 404);
+      return c.json({ error: "That file doesn't exist." }, 404);
     }
     return new Response(new Uint8Array(bytes), {
       headers: {

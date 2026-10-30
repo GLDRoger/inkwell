@@ -60,7 +60,7 @@ export function createMapRoutes(services: Services): Hono<AppEnv> {
     const { workspaceId } = c.get("ctx");
     const threadId = c.req.param("threadId");
     if (!getDiaryThread(db, workspaceId, threadId)) {
-      return c.json({ error: "diary thread not found" }, 404);
+      return c.json({ error: "That conversation no longer exists.", code: "thread_not_found" }, 404);
     }
     return c.json(listDiaryEntries(db, workspaceId, threadId));
   });

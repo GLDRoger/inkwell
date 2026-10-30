@@ -31,7 +31,7 @@ export async function parseJsonBody<T>(
   try {
     raw = await c.req.json();
   } catch {
-    return { ok: false, response: c.json({ error: "invalid JSON body" }, 400) };
+    return { ok: false, response: c.json({ error: "The request wasn't valid JSON." }, 400) };
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
@@ -80,7 +80,7 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
 
   app.get("/api/pages/:id", (c) => {
     const page = pages.getPageWithBody(c.get("ctx").workspaceId, c.req.param("id"));
-    if (!page) return c.json({ error: "page not found" }, 404);
+    if (!page) return c.json({ error: "This page doesn't exist or was deleted.", code: "page_not_found" }, 404);
     return c.json(page);
   });
 
@@ -90,7 +90,7 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
     if (!body.ok) return body.response;
     try {
       const page = pages.updatePage(workspaceId, person, c.req.param("id"), body.data);
-      if (!page) return c.json({ error: "page not found" }, 404);
+      if (!page) return c.json({ error: "This page doesn't exist or was deleted.", code: "page_not_found" }, 404);
       return c.json(page);
     } catch (err) {
       return storeError(c, err);
@@ -99,7 +99,7 @@ export function createPageRoutes(services: Services): Hono<AppEnv> {
 
   app.delete("/api/pages/:id", (c) => {
     const ok = pages.deletePage(c.get("ctx").workspaceId, c.req.param("id"));
-    if (!ok) return c.json({ error: "page not found" }, 404);
+    if (!ok) return c.json({ error: "This page doesn't exist or was deleted.", code: "page_not_found" }, 404);
     return c.body(null, 204);
   });
 

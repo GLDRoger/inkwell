@@ -490,7 +490,7 @@ describe("runs", () => {
     const client = await newClient();
     const res = await client.request("/api/nope");
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: "not found" });
+    expect(await res.json()).toEqual({ error: "Not found.", code: "not_found" });
   });
 });
 

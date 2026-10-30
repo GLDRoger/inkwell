@@ -8,11 +8,11 @@ export const MAX_WS_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
 /** Count actual bytes even if a caller supplies an inaccurate Content-Length. */
 export function jsonBodyLimit(maxSize: number): MiddlewareHandler {
-  const limit = bodyLimit({ maxSize, onError: c => c.json({ error: 'request body too large' }, 413) });
+  const limit = bodyLimit({ maxSize, onError: c => c.json({ error: 'That request is too large.' }, 413) });
   return async (c, next) => {
     const length = c.req.header('content-length');
     if (length && (!/^\d+$/.test(length) || Number(length) > maxSize)) {
-      return c.json({ error: 'request body too large' }, 413);
+      return c.json({ error: 'That request is too large.' }, 413);
     }
     // Hono's Content-Length fast path trusts the header; force its byte-counted path.
     if (length && c.req.raw.body) {
