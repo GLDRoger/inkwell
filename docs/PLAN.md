@@ -100,3 +100,10 @@ Goal: ready to hand to the client for internal testing. Every screen, flow and l
 2. Hands-on browser audit (375/1280, light/dark) + independent code review -> ranked findings.
 3. Fix rounds on disjoint files, re-audit, repeat until no P0/P1 remain.
 4. Then: real key smoke + corpus hill-climb, domain, demo recording, submission.
+
+### Queued for the client round (from code review 2026-10-30)
+- Diary: links in short handwritten replies are stripped (`diary/ink.ts:12-43`, `InkWriter.tsx:74`) — keep links clickable.
+- Page: title blur can undo an agent rename (`page/PageView.tsx:54-57`) — save only if the user edited it.
+- Diary: raw server error text shown (`diary/DiaryPanel.tsx:160`) — map to plain copy.
+- Offline: "edits kept here" overstates; collab doc is memory-only — add y-indexeddb or fix the copy.
+- Visual: follow docs/DESIGN.md (restrained; HP is functionality + easter eggs only).
