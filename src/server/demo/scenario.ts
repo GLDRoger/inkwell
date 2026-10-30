@@ -68,7 +68,7 @@ export const LISBON_TOUR: ScenarioDefinition = {
       model: "muse-wonder",
       action: {
         kind: "ask", agent: "Atlas",
-        prompt: "Tidy up after today's work: link each new page from the page of the area it belongs to, and back. Leave the photo cards under their Photo notes page.",
+        prompt: "Tidy up after today's work: link each new page from the page of the area it belongs to, and back. The photo cards stay where they are under Photo notes, with their titles: link them, don't move or rename them.",
       },
     },
   ],
