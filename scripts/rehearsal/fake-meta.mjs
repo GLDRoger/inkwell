@@ -142,7 +142,7 @@ function intentOf(prompt, self, agents) {
   const other = agents.find((name) => name.toLowerCase() !== self.toLowerCase() && new RegExp(`\\b${name}\\b`, "i").test(prompt));
   if (other) return { kind: "handoff", agent: other };
   if (/\bsummar|\boverview\b|\brecap\b|\btl;?dr\b|\bdigest\b|\bkey points\b|\bgist\b/.test(p)) return { kind: "summarise" };
-  if (/\brenam|\borgani[sz]|\btidy|\bmove\b|\brestructure|\bcross-?link|\blink (?:up|them|these|the)/.test(p)) return { kind: "organise" };
+  if (/\brenam|\borgani[sz]|\btidy|\bmove\b|\brestructure|\bcross-?link|\blink (?:up|them|these|the|related)/.test(p)) return { kind: "organise" };
   if (/\b(add|append|expand|extend)\b.*\b(to|on|in)\b/.test(p) || /\b(improve|polish|edit|tighten|update|fix|rewrite)\b/.test(p)) return { kind: "edit" };
   if (/\b(plan|create|draft|write|outline|checklist|start|make|new)\b/.test(p)) return { kind: "create" };
   return { kind: "answer" };
