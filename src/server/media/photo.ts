@@ -75,7 +75,7 @@ export async function importPhoto(services: Services, ctx: SessionCtx, attachmen
   });
   const notes = readNotes(response, boxes);
   if (!notes.length) mediaError("No readable notes found in this photo", 422);
-  const offsetX = services.pages.listPages(ctx.workspaceId).reduce((max, page) => Math.max(max, page.x ?? 0), 0) + 600;
+  const offsetX = services.pages.listPages(ctx.workspaceId).reduce((max, page) => Math.max(max, page.x ?? 0), 0) + 420;
   // Buffer the canonical page store's events until every card commits. A failed
   // import must leave neither a half notebook nor phantom page.created events.
   const events: ServerEvent[] = [];
@@ -84,13 +84,14 @@ export async function importPhoto(services: Services, ctx: SessionCtx, attachmen
   } });
   const created = services.db.transaction(() => {
     const parent = pages.createPage(ctx.workspaceId, ctx.person, {
-      title: `From photo — ${new Date().toISOString().slice(0, 10)}`,
+      title: `Photo notes, ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`,
+      icon: "📷",
       x: offsetX, y: -400,
     });
     const children = notes.map((note, index) => pages.createPage(ctx.workspaceId, ctx.person, {
-      parentId: parent.id, title: note.title, markdown: note.markdown,
-      x: offsetX + (note.box ? note.box[0] * 1600 : (index % 4) * 400),
-      y: note.box ? note.box[1] * 1600 : Math.floor(index / 4) * 300,
+      parentId: parent.id, title: note.title, markdown: note.markdown, icon: "🗒️",
+      x: offsetX + (note.box ? note.box[0] * 1200 : (index % 4) * 320),
+      y: note.box ? note.box[1] * 1200 : Math.floor(index / 4) * 260,
     }));
     return [parent, ...children];
   })();

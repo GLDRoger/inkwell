@@ -124,7 +124,7 @@ test("media: transcript, PNG cover, SAM boxes and photo notes parse with the rea
   mods.insertAttachmentRow(services.db, ctx.workspaceId, { id, kind: "image", name: "board.png", mime: "image/png", size: png.length, path: `${id}.png` });
   const { pages } = await mods.importPhoto(services, ctx, id, meta);
   assert.equal(pages.length, 6);
-  assert.match(pages[0].title, /^From photo/);
+  assert.match(pages[0].title, /^Photo notes, /);
   assert.deepEqual(pages.slice(1).map((p) => p.title), ["Launch checklist", "Ask Wren", "Reading", "Bread", "Open question"]);
 });
 

@@ -6,6 +6,7 @@ import { appendJSONToYDoc, markdownToTiptapJSON } from "../editor-schema.ts";
 import { PageStoreError } from "../pages.ts";
 import type { Services } from "../services.ts";
 import { ToolFailure } from "./errors.ts";
+import { pickIcon } from "./icons.ts";
 import { applyFind, applyRewrite, pageVersion, readView } from "./page-edit.ts";
 
 export { ToolFailure } from "./errors.ts";
@@ -155,12 +156,12 @@ export function createAgentTools(ctx: ToolContext) {
       if (!results.length) return { text: "No pages matched. Try fewer or different words, or list_pages.", summary: `Searched for ${query}` };
       return { text: JSON.stringify(results.map(({ page, snippet }) => ({ id: page.id, title: page.title, snippet }))), summary: `Searched for ${query}` };
     }),
-    create_page: define("create_page", "Create a page, optionally nested under a parent. For a long page, create it with an outline, then add each section with append_to_page.",
-      z.object({ title: z.string().min(1).max(500), markdown: markdown.optional(), parentId: id.nullable().optional() }),
-      async ({ title, markdown: body, parentId }) => {
+    create_page: define("create_page", "Create a page, optionally nested under a parent. Give it one fitting emoji as its icon (it marks the page on the map). For a long page, create it with an outline, then add each section with append_to_page.",
+      z.object({ title: z.string().min(1).max(500), icon: z.string().max(16).optional(), markdown: markdown.optional(), parentId: id.nullable().optional() }),
+      async ({ title, icon, markdown: body, parentId }) => {
         check();
-        if (parentId) page(parentId);
-        const created = s.pages.createPage(ws, actor, { title, parentId });
+        const parent = parentId ? page(parentId) : null;
+        const created = s.pages.createPage(ws, actor, { title, parentId, icon: pickIcon(icon, title, parent?.icon) });
         ctx.touched.add(created.id);
         const v = await write(created.id, async () => ({
           text: body ? await edit(created.id, () => markdownToTiptapJSON(body)) : pageVersion(""),

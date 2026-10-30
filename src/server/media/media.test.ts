@@ -208,10 +208,10 @@ describe("photo import", () => {
     const { pages } = await response.json() as { pages: Page[] };
     expect(pages).toHaveLength(3);
     const [parent, first, second] = pages as [Page, Page, Page];
-    expect(parent.title).toMatch(/^From photo — \d{4}-\d{2}-\d{2}$/);
+    expect(parent.title).toMatch(/^Photo notes, \d{1,2} [A-Z][a-z]{2,3}$/); expect(parent.icon).toBe("📷");
     expect(first.parentId).toBe(parent.id); expect(second.parentId).toBe(parent.id);
-    expect(first.x).toBe(maxX + 600 + 160); expect(first.y).toBe(320);
-    expect(second.x).toBe(maxX + 600 + 960); expect(second.y).toBe(800);
+    expect(first.x).toBe(maxX + 420 + 120); expect(first.y).toBe(240); expect(first.icon).toBe("🗒️");
+    expect(second.x).toBe(maxX + 420 + 720); expect(second.y).toBe(600);
     expect(services.pages.getPageWithBody(ctx.workspaceId, first.id)?.markdown).toBe(NOTE_A.markdown);
     expect(events).toEqual(pages.map((page) => ({ type: "page.created", page })));
     expect(services.pages.listPages(ctx.workspaceId)).toHaveLength(oldPages.length + 3);
@@ -237,8 +237,8 @@ describe("photo import", () => {
     expect(response.status).toBe(200);
     const { pages } = await response.json() as { pages: Page[] };
     expect(pages).toHaveLength(3);
-    expect(pages[1]!.y).toBe(320);
-    expect(pages[2]!.y).toBe(800);
+    expect(pages[1]!.y).toBe(240);
+    expect(pages[2]!.y).toBe(600);
     expect(outgoing(1).body.messages[1].content[0].text).toContain("Segmentation boxes (normalized 0..1): []");
   });
   it("rejects malformed or empty notes before creating any pages", async () => {
