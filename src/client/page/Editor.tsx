@@ -26,7 +26,9 @@ import {
 } from "lucide-react";
 import type { Page } from "@shared/types";
 import { api } from "../lib/api";
-import { keys, pageTitle } from "../lib/queries";
+import { keys, pageTitle, usePages } from "../lib/queries";
+import { isDeletePending } from "./deleteUndo";
+import { BrokenLinks, brokenLinksKey } from "./brokenLinks";
 import { MenuStore } from "./suggestion";
 import { SuggestionMenu } from "./SuggestionMenu";
 import { SlashCommand, type SlashItem } from "./slash";
@@ -51,9 +53,9 @@ interface Props {
   onReady?(editor: TiptapEditor): void;
 }
 
-/** A caret for someone else in the document; agents sign in their handwriting. */
+/** A caret for someone else in the document; an agent's name is written in its hand while it edits. */
 function renderCaret(user: Record<string, unknown>): HTMLElement {
-  const color = typeof user.color === "string" ? user.color : "#8a2b1f";
+  const color = typeof user.color === "string" ? user.color : "var(--ink-faint)";
   const caret = document.createElement("span");
   caret.className = "caret";
   if (user.kind === "agent") caret.classList.add("caret-agent");
@@ -89,6 +91,10 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
   const syncedRef = useRef(false);
   const writerRef = useRef(writerColor);
   writerRef.current = writerColor;
+  const { data: pages } = usePages();
+  const knownRef = useRef<ReadonlySet<string> | null>(null);
+  const known = useMemo(() => (pages ? new Set(pages.filter((p) => !isDeletePending(p.id)).map((p) => p.id)) : null), [pages]);
+  knownRef.current = known;
 
   // Let ink-drying start a beat after the first sync, so the initial load isn't painted wet.
   useEffect(() => {
@@ -122,6 +128,7 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
             return page;
           },
         }),
+        BrokenLinks.configure({ knownIds: () => knownRef.current }),
         InkDrying.configure({ isEnabled: () => syncedRef.current, getColor: () => writerRef.current }),
       ],
       editorProps: {
@@ -153,6 +160,11 @@ export function PageEditor({ pageId, collab, synced, user, writerColor, onReady 
   useEffect(() => {
     if (editor) onReady?.(editor);
   }, [editor, onReady]);
+
+  // Page list changed (a page deleted or created): redraw broken links.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(brokenLinksKey, true).setMeta("addToHistory", false));
+  }, [editor, known]);
 
   return (
     <div className="editor" data-synced={synced}>

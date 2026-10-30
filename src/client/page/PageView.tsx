@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Editor as TiptapEditor } from "@tiptap/react";
-import { CloudOff, Feather, FilePlus2, FileText, Loader2, Map as MapIcon, Paintbrush, Trash2 } from "lucide-react";
+import { AlertCircle, CloudOff, FilePlus2, FileText, ImagePlus, Loader2, Map as MapIcon, NotebookPen, Trash2 } from "lucide-react";
 import type { Agent, Page, Run } from "@shared/types";
 import { isNotFound } from "../lib/api";
 import { childrenOf, pageTitle, useAgents, useMap, useMe, usePage, usePages } from "../lib/queries";
-import { useCreatePage, useDeletePage, useUpdatePage } from "../lib/mutations";
+import { useCreatePage, useUpdatePage } from "../lib/mutations";
 import { openDiaryWith, personColor } from "../lib/ui";
 import { useCollab, type CollabStatus } from "./collab";
 import { PageEditor } from "./Editor";
-import { timeAgo } from "../lib/time";
+import { timeAgo, useNow } from "../lib/time";
+import { syncView } from "./syncState";
+import { isUntouchedSeed, titleToSave } from "./title";
+import { isDeletePending, subtreeOf, useDeleteWithUndo } from "./deleteUndo";
+import { DeleteDialog } from "./DeleteDialog";
 import { paintCover, usePainting } from "../lib/media";
 import { useServerEvent } from "../lib/events";
 
@@ -17,13 +21,14 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
   const update = useUpdatePage(page.id);
   const [value, setValue] = useState(page.title);
   const ref = useRef<HTMLTextAreaElement>(null);
-  const focused = useRef(false);
+  /** The person has typed since the last save; only then is the field's value worth saving. */
+  const edited = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const location = useLocation();
 
-  // Follow remote renames (an agent retitling the page) unless you're typing.
+  // Follow remote renames (an agent retitling the page) unless you're mid-edit.
   useEffect(() => {
-    if (!focused.current) setValue(page.title);
+    if (!edited.current) setValue(page.title);
   }, [page.title]);
 
   useLayoutEffect(() => {
@@ -37,26 +42,28 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
     if ((location.state as { fresh?: boolean } | null)?.fresh) ref.current?.focus();
   }, [location.state, page.id]);
 
+  useEffect(() => () => clearTimeout(timer.current), []);
+
   const save = (title: string) => {
     clearTimeout(timer.current);
-    if (title !== page.title) update.mutate({ title });
+    const next = titleToSave({ edited: edited.current, value: title, serverTitle: page.title });
+    edited.current = false;
+    if (next != null) update.mutate({ title: next });
   };
 
   return (
     <textarea
       ref={ref}
+      id="page-title"
       className="page-title"
       rows={1}
       value={value}
       placeholder="Untitled"
       aria-label="Page title"
-      onFocus={() => (focused.current = true)}
-      onBlur={() => {
-        focused.current = false;
-        save(value);
-      }}
+      onBlur={() => save(value)}
       onChange={(e) => {
         const next = e.target.value.replace(/\n/g, "");
+        edited.current = true;
         setValue(next);
         clearTimeout(timer.current);
         timer.current = setTimeout(() => save(next), 600);
@@ -72,23 +79,20 @@ function TitleField({ page, onEnter }: { page: Page; onEnter(): void }) {
   );
 }
 
-function SyncPill({ status, synced, unsynced }: { status: CollabStatus; synced: boolean; unsynced: number }) {
-  if (status === "denied") return <span className="sync-pill sync-bad">No access</span>;
-  if (status === "disconnected")
-    return (
-      <span className="sync-pill sync-bad" role="status">
-        <CloudOff size={13} aria-hidden /> Offline, edits kept here
-      </span>
-    );
-  if (!synced)
-    return (
-      <span className="sync-pill" role="status">
-        <Loader2 size={13} className="spin" aria-hidden /> Connecting
-      </span>
-    );
+function SyncPill(props: Omit<ReturnType<typeof useCollab>, "collab">) {
+  const busy = props.unsynced > 0 || !props.everSynced || props.status !== "connected";
+  // Tick while something is pending, so "Saving…" can turn into "Not saving" and "Reconnecting…" into "Offline".
+  const now = useNow(busy ? 1_000 : 60_000);
+  const view = syncView({ ...props, now });
   return (
-    <span className="sync-pill" role="status" aria-live="polite">
-      {unsynced > 0 ? "Saving…" : "Saved"}
+    <span className="sync-pill" data-tone={view.tone} role="status" aria-live="polite" title={view.detail}>
+      {view.tone === "bad" ? (
+        props.status === "connected" || props.status === "denied" ? <AlertCircle size={13} aria-hidden /> : <CloudOff size={13} aria-hidden />
+      ) : view.tone === "busy" && !props.everSynced ? (
+        <Loader2 size={13} className="spin" aria-hidden />
+      ) : null}
+      <span>{view.label}</span>
+      {view.detail && <span className="sr-only">. {view.detail}</span>}
     </span>
   );
 }
@@ -123,22 +127,23 @@ function Children({ page, pages }: { page: Page; pages: Page[] }) {
   const kids = childrenOf(pages, page.id);
   return (
     <section className="children" aria-labelledby="children-title">
-      <h2 id="children-title" className="children-title">
-        {kids.length ? "Inside this page" : "No pages inside yet"}
-      </h2>
+      <h2 id="children-title" className="children-title">Inside this page</h2>
       <ul>
         {kids.map((k) => (
           <li key={k.id}>
             <Link to={`/p/${k.id}`} className="child-link">
               <span aria-hidden className="child-icon">{k.icon ?? <FileText size={15} />}</span>
-              <span className="child-title">{pageTitle(k)}</span>
-              {k.excerpt && <span className="child-excerpt">{k.excerpt}</span>}
+              <span className="child-text">
+                <span className="child-title">{pageTitle(k)}</span>
+                {k.excerpt && <span className="child-excerpt">{k.excerpt}</span>}
+              </span>
             </Link>
           </li>
         ))}
         <li>
           <button type="button" className="child-link child-new" onClick={() => create.mutate({ parentId: page.id })} disabled={create.isPending}>
-            <FilePlus2 size={15} aria-hidden /> Add a page inside
+            <span aria-hidden className="child-icon"><FilePlus2 size={15} /></span>
+            <span className="child-title">{kids.length ? "Add another page inside" : "Add a page inside"}</span>
           </button>
         </li>
       </ul>
@@ -146,31 +151,67 @@ function Children({ page, pages }: { page: Page; pages: Page[] }) {
   );
 }
 
+/** "Last edited by You · 5 minutes ago", with an agent's name in its colour. */
+function Authorship({ page, pages }: { page: Page; pages: Page[] }) {
+  const { data: me } = useMe();
+  const { data: agents } = useAgents();
+  const now = useNow();
+  const by = page.updatedBy;
+  const color = by.kind === "agent" ? agents?.find((a) => a.id === by.id)?.color : undefined;
+  return (
+    <p className="page-meta">
+      Last edited by{" "}
+      {by.kind === "agent" ? (
+        <span className="agent-name" style={{ ["--agent" as string]: color ?? "var(--ink-soft)" }}>{by.name}</span>
+      ) : by.id === me?.person.id ? (
+        "You"
+      ) : (
+        by.name
+      )}
+      {" · "}
+      <time dateTime={page.updatedAt} title={new Date(page.updatedAt).toLocaleString()}>
+        {isUntouchedSeed(page, pages) ? "when your notebook was made" : timeAgo(page.updatedAt, now)}
+      </time>
+    </p>
+  );
+}
+
 function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
   const { data: me } = useMe();
-  const { collab, status, synced, unsynced } = useCollab(page.id);
+  const { collab, ...sync } = useCollab(page.id);
   const editorRef = useRef<TiptapEditor | null>(null);
+  const focusWhenReady = useRef(false);
   const writers = useWritersHere(page.id);
-  const navigate = useNavigate();
-  const del = useDeletePage();
+  const deletePage = useDeleteWithUndo();
+  const [confirming, setConfirming] = useState(false);
   const painting = usePainting(page.id);
-  const onReady = useCallback((e: TiptapEditor) => (editorRef.current = e), []);
+  const onReady = useCallback((e: TiptapEditor) => {
+    editorRef.current = e;
+    if (focusWhenReady.current) {
+      focusWhenReady.current = false;
+      e.commands.focus("start");
+    }
+  }, []);
+  // Enter in the title: go to the body, or as soon as the editor has loaded.
+  const focusBody = useCallback(() => {
+    const e = editorRef.current;
+    if (e && !e.isDestroyed) e.commands.focus("start");
+    else focusWhenReady.current = true;
+  }, []);
   const user = useMemo(
     () => ({ name: me?.person.name ?? "You", color: personColor(me?.person.id ?? "me") }),
     [me?.person.name, me?.person.id],
   );
-
-  const updatedBy = page.updatedBy;
-  const { data: agents } = useAgents();
-  const agentColor = (id: string) => agents?.find((a) => a.id === id)?.color;
+  const inside = subtreeOf(pages, page.id).size - 1;
+  const coverLabel = painting ? "Making a cover…" : page.coverUrl ? "New cover" : "Make a cover";
 
   return (
     <article className="page" aria-labelledby="page-title-label">
       <div className="page-toolbar">
-        <SyncPill status={status} synced={synced} unsynced={unsynced} />
+        <SyncPill {...sync} />
         <div className="page-actions">
-          <button type="button" className="ghost-button" onClick={() => openDiaryWith("", null)} title="Ask an agent about this page">
-            <Feather size={15} aria-hidden /> <span>Ask</span>
+          <button type="button" className="ghost-button" onClick={() => openDiaryWith("", null)} aria-label="Ask an agent about this page" title="Ask an agent about this page">
+            <NotebookPen size={15} aria-hidden /> <span>Ask an agent</span>
           </button>
           <button
             type="button"
@@ -178,30 +219,29 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
             onClick={() => void paintCover(page)}
             disabled={painting}
             aria-busy={painting}
-            aria-label={painting ? "Painting a cover" : page.coverUrl ? "Repaint the cover" : "Paint a cover"}
-            title={page.coverUrl ? "Paint a new cover with Muse Image" : "Paint a cover with Muse Image"}
+            aria-label={coverLabel}
+            title={page.coverUrl ? "Make a new cover with Muse Image" : "Make a cover with Muse Image"}
           >
-            {painting ? <Loader2 size={15} className="spin" aria-hidden /> : <Paintbrush size={15} aria-hidden />}{" "}
-            <span>{painting ? "Painting…" : page.coverUrl ? "Repaint cover" : "Paint a cover"}</span>
+            {painting ? <Loader2 size={15} className="spin" aria-hidden /> : <ImagePlus size={15} aria-hidden />} <span>{coverLabel}</span>
           </button>
-          <Link to={`/?focus=${page.id}`} className="ghost-button" title="See this page on the map">
+          <Link to={`/?focus=${page.id}`} className="ghost-button" aria-label="Show on the map" title="Show this page on the map">
             <MapIcon size={15} aria-hidden /> <span>On the map</span>
           </Link>
-          <button
-            type="button"
-            className="ghost-button danger"
-            title="Delete this page"
-            aria-label="Delete this page"
-            disabled={del.isPending}
-            onClick={() => {
-              if (!confirm(`Tear out “${pageTitle(page)}”? Pages inside it go too.`)) return;
-              del.mutate(page.id, { onSuccess: () => navigate(page.parentId ? `/p/${page.parentId}` : "/") });
-            }}
-          >
+          <button type="button" className="ghost-button danger" title="Delete this page" aria-label="Delete this page" onClick={() => setConfirming(true)}>
             <Trash2 size={15} aria-hidden />
           </button>
         </div>
       </div>
+      <DeleteDialog
+        open={confirming}
+        title={pageTitle(page)}
+        inside={inside}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          deletePage(page);
+        }}
+      />
 
       <header className="page-head">
         {(page.coverUrl || painting) && (
@@ -209,43 +249,34 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
             {page.coverUrl && <img className="page-cover" src={page.coverUrl} alt="" />}
             {painting && (
               <p className="cover-painting" role="status">
-                <Paintbrush size={15} aria-hidden /> Muse Image is painting a cover…
+                <Loader2 size={14} className="spin" aria-hidden /> Making a cover with Muse Image…
               </p>
             )}
           </div>
         )}
         {page.icon && <div className="page-icon" aria-hidden>{page.icon}</div>}
         <span id="page-title-label" className="sr-only">{pageTitle(page)}</span>
-        <TitleField page={page} onEnter={() => editorRef.current?.commands.focus("start")} />
-        <p className="page-meta">
-          {updatedBy.kind === "agent" ? (
-            <>
-              Last written by <span className="hand-name agent-ink" style={{ ["--agent" as string]: agentColor(updatedBy.id) ?? "var(--wax)" }}>{updatedBy.name}</span>
-            </>
-          ) : (
-            <>Edited by {updatedBy.id === me?.person.id ? "you" : updatedBy.name}</>
-          )}{" "}
-          · <time dateTime={page.updatedAt}>{timeAgo(page.updatedAt)}</time>
-        </p>
+        <TitleField page={page} onEnter={focusBody} />
+        <Authorship page={page} pages={pages} />
         {writers.length > 0 && (
           <ul className="writers" aria-label="Agents on this page">
             {writers.map(({ agent, doing }) => (
               <li key={agent.id} className="writer" data-doing={doing} style={{ ["--agent" as string]: agent.color }}>
                 <span className="writer-nib" aria-hidden />
-                <span className="hand-name">{agent.name}</span> {DOING[doing]}
+                <span className="agent-name">{agent.name}</span> {DOING[doing]}
               </li>
             ))}
           </ul>
         )}
       </header>
 
-      {status === "denied" ? (
-        <p className="inline-error" role="alert">This page is in a notebook you can't open.</p>
+      {sync.status === "denied" ? (
+        <p className="inline-error" role="alert">This page isn't in your notebook, so it can't be edited here.</p>
       ) : collab ? (
         <PageEditor
           pageId={page.id}
           collab={collab}
-          synced={synced}
+          synced={sync.synced}
           user={user}
           writerColor={writers.find((w) => w.doing === "writing")?.agent.color ?? writers[0]?.agent.color ?? null}
           onReady={onReady}
@@ -257,25 +288,59 @@ function PageBody({ page, pages }: { page: Page; pages: Page[] }) {
   );
 }
 
+/** A page this visitor can't open: deleted, or from someone else's notebook. */
+export function PageMissing({ error, onRetry }: { error: unknown; onRetry(): void }) {
+  const notFound = error == null || isNotFound(error);
+  useEffect(() => {
+    document.title = notFound ? "Not in your notebook · Inkwell" : "Couldn't open this page · Inkwell";
+  }, [notFound]);
+  return (
+    <div className="page-scroll">
+      <div className="page missing" role="alert">
+        {notFound ? (
+          <>
+            <h1 className="missing-title">This page isn't in your notebook</h1>
+            <p className="missing-body">It was deleted, or the link came from someone else's notebook — each visitor gets their own.</p>
+          </>
+        ) : (
+          <>
+            <h1 className="missing-title">Couldn't open this page</h1>
+            <p className="missing-body">{(error as Error | null)?.message || "Something went wrong."}</p>
+          </>
+        )}
+        <div className="missing-actions">
+          <Link to="/" className="pill-button pill-primary">
+            <MapIcon size={15} aria-hidden /> Back to the map
+          </Link>
+          {!notFound && (
+            <button type="button" className="pill-button" onClick={onRetry}>Try again</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function PageView() {
   const { id = "" } = useParams();
   const { data: page, error, isLoading, refetch } = usePage(id);
   const { data: pages = [] } = usePages();
   const listed = pages.find((p) => p.id === id);
   const current = page ? { ...page, ...(listed ?? {}) } : listed;
+  const gone = isDeletePending(id);
 
   useEffect(() => {
-    document.title = current ? `${pageTitle(current)} · Inkwell` : "Inkwell";
-  }, [current?.title]);
+    if (current && !gone) document.title = `${pageTitle(current)} · Inkwell`;
+  }, [current?.title, gone]);
 
-  if (current && !error) {
+  if (current && !error && !gone) {
     return (
       <div className="page-scroll">
         <PageBody key={id} page={current} pages={pages} />
       </div>
     );
   }
-  if (isLoading) {
+  if (isLoading && !gone) {
     return (
       <div className="page-scroll">
         <div className="page page-skeleton" aria-busy="true" aria-label="Loading page">
@@ -287,25 +352,5 @@ export function PageView() {
       </div>
     );
   }
-  return (
-    <div className="page-scroll">
-      <div className="page page-missing" role="alert">
-        {isNotFound(error) ? (
-          <>
-            <h1>This page has been torn out</h1>
-            <p className="muted">It may have been deleted, or the link is from another notebook.</p>
-          </>
-        ) : (
-          <>
-            <h1>Couldn't open this page</h1>
-            <p className="muted">{(error as Error | null)?.message ?? "Something went wrong."}</p>
-            <button className="ghost-button" onClick={() => refetch()}>Try again</button>
-          </>
-        )}
-        <Link to="/" className="ghost-button">
-          <MapIcon size={15} aria-hidden /> Back to the map
-        </Link>
-      </div>
-    </div>
-  );
+  return <PageMissing error={gone ? null : error} onRetry={() => void refetch()} />;
 }
