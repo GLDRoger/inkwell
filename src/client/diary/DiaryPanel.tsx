@@ -42,7 +42,7 @@ function Starters({ prompts, onPick, label = "Try asking" }: { prompts: string[]
   );
 }
 
-function EmptyConversation({ onPick, onPage, agents }: { onPick(text: string): void; onPage: boolean; agents: Agent[] }) {
+function EmptyConversation({ onPick, onPage, agents, starters = true }: { onPick(text: string): void; onPage: boolean; agents: Agent[]; starters?: boolean }) {
   const names = new Set(agents.map((a) => a.name));
   const crew = names.has("Scout") && names.has("Wren") && names.has("Atlas");
   return (
@@ -51,7 +51,7 @@ function EmptyConversation({ onPick, onPage, agents }: { onPick(text: string): v
       <p className="diary-lede">
         {crew ? "Scout researches, Wren writes and Atlas organises. " : ""}Ask for something and watch it happen across your pages.
       </p>
-      <Starters prompts={onPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={onPick} />
+      {starters && <Starters prompts={onPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={onPick} />}
     </div>
   );
 }
@@ -192,6 +192,8 @@ export function DiaryPanel() {
   const awaitingKey = useRef(false);
   const { key: metaKey } = useMetaKey();
   const keyDialogOpen = useUi((s) => !!s.keyDialog);
+  // Pages circled with the pen ride on the next request: a starter isn't about them, so none are offered.
+  const scoped = useUi((s) => !!s.diaryScope);
   /** In the demo: the person's requests that arrived while watching, shown as if written now. */
   const [freshIds, setFreshIds] = useState<string[]>([]);
 
@@ -518,7 +520,7 @@ export function DiaryPanel() {
               </p>
             )}
             {!demo && !entries.length && !thread.isLoading && !thread.error && !state.sinking && !gathering && (
-              <EmptyConversation agents={agents} onPage={!!contextPage} onPick={(t) => send(t, [])} />
+              <EmptyConversation agents={agents} onPage={!!contextPage} starters={!scoped} onPick={(t) => send(t, [])} />
             )}
             <Entries
               entries={entries}
@@ -538,7 +540,7 @@ export function DiaryPanel() {
                 <p className="diary-lede">{COPY.demoWaiting}</p>
               </div>
             )}
-            {showStarters && !demo && <Starters prompts={contextPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={(t) => send(t, [])} />}
+            {showStarters && !demo && !scoped && <Starters prompts={contextPage ? STARTERS_PAGE : STARTERS_NOTEBOOK} onPick={(t) => send(t, [])} />}
             {gathering && <Gathering agent={replyAgent} />}
             {state.error && (
               <div className="diary-note" role="alert" data-kind={state.error.kind}>

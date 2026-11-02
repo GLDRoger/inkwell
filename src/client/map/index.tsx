@@ -987,7 +987,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   stateRef.current = state;
   const onCircle = useCallback((ids: Id[]) => {
     const titles = ids.map((id) => titleOf(stateRef.current?.pages.get(id)));
-    scopeDiary({ pageIds: ids, titles, label: `${ids.length} ${ids.length === 1 ? "page" : "pages"} circled` });
+    // One or two pages: name them ("Lisbon itinerary circled"); more: count them.
+    const label = ids.length === 1 ? `${titles[0]} circled` : ids.length === 2 ? `${titles[0]} and ${titles[1]} circled` : `${ids.length} pages circled`;
+    scopeDiary({ pageIds: ids, titles, label });
   }, []);
   const onLink = useCallback((from: Id, to: Id) => {
     const s = stateRef.current;
