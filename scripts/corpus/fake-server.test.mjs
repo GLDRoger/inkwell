@@ -273,3 +273,15 @@ test('demo twins use exact visible scenario prompts, never hidden guidance', asy
     assert.equal(c.guidance, undefined);
   }
 });
+
+test('launch checklist oracle accepts card payments but still requires every deliverable', () => {
+  const gate = cases.find(c => c.name === 'multi_step_launch').checks[0];
+  const checklist = '- [ ] Test card payments\n- [ ] Verify invoices\n- [ ] Test dunning emails\n- [ ] Check public API\nOwner: full-stack engineer';
+  const state = markdown => ({ pages: [{ id: 'hub', title: 'Startup: launch plan' }, { id: 'checklist', title: 'Billing launch checklist', parentId: 'hub', markdown }] });
+  assert.equal(gate(state(checklist)).ok, true);
+  assert.equal(gate(state(checklist.replace('card payments', 'checkout'))).ok, false);
+  assert.equal(gate(state(checklist.replace('invoices', 'receipts'))).ok, false);
+  assert.equal(gate(state(checklist.replace('dunning', 'welcome'))).ok, false);
+  assert.equal(gate(state(checklist.replace('API', 'dashboard'))).ok, false);
+  assert.equal(gate(state(checklist.replace('full-stack engineer', 'someone'))).ok, false);
+});

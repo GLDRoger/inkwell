@@ -175,7 +175,7 @@ export const cases = [
     name: 'multi_step_launch', agent: 'Atlas', timeoutMs: 180_000,
     prompt: 'Read Product roadmap and Hiring plan. Create Billing launch checklist under Startup: launch plan, with at least four actionable checklist items covering cards, invoices, dunning emails and a public API check. State that the full-stack engineer owns it. Link the checklist from Product roadmap, preserve its existing content, then report back with the new page link.',
     checks: [
-      (s) => { const p = named(s, 'Billing launch checklist'); return check(p?.parentId === named(s, 'Startup: launch plan')?.id && (p.markdown.match(/[-*] \[[ xX]\]/g) ?? []).length >= 4 && ['cards', 'invoices', 'dunning', 'API'].every((v) => p.markdown.toLowerCase().includes(v.toLowerCase())) && /full[ -]stack engineer/i.test(p.markdown), 'Nested checklist covers all four deliverables and names its owner'); },
+      (s) => { const p = named(s, 'Billing launch checklist'); return check(p?.parentId === named(s, 'Startup: launch plan')?.id && (p.markdown.match(/[-*] \[[ xX]\]/g) ?? []).length >= 4 && [/\bcards?\b/i, /\binvoices?\b/i, /\bdunning\b/i, /\bAPI\b/i].every(re => re.test(p.markdown)) && /full[ -]stack engineer/i.test(p.markdown), 'Nested checklist covers all four deliverables and names its owner'); },
       (s) => check(linked(named(s, 'Product roadmap')?.markdown, named(s, 'Billing launch checklist')?.id) && linked(s.answer, named(s, 'Billing launch checklist')?.id), 'Roadmap and diary link to the actual new page'),
       (s) => check(['Onboarding flow', 'Audit log', 'Native desktop apps'].every((t) => named(s, 'Product roadmap')?.markdown.includes(t)), 'Existing roadmap milestones survived'),
     ],
