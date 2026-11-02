@@ -26,6 +26,22 @@ const defaults = { timeoutMs: 120_000 };
 
 export const cases = [
   {
+    name: 'launch_lens', agent: 'Atlas', timeoutMs: 180_000,
+    prompt: "What's left before we launch? Show me the launch workstreams grouped on the map into Done, In progress and To do. Use the existing startup pages, don't edit them.",
+    checks: [
+      async (s) => { const { lens } = await s.api.get('/api/map'); const ids = lens?.groups.flatMap(g => g.pageIds) ?? []; return check(lens && lens.kind === 'columns' && lens.groups.length >= 2 && ids.length >= 3 && new Set(ids).size === ids.length && ['Product roadmap', 'Hiring plan'].every(title => ids.includes(named(s, title)?.id)), 'Saved lens groups the launch pages without duplicate membership'); },
+      (s) => check(sameNotebook(s), 'Lens did not mutate source pages'),
+    ],
+  },
+  {
+    name: 'launch_progress_widget', agent: 'Atlas', timeoutMs: 180_000,
+    prompt: 'Put a live progress widget titled Launch readiness on the map, counting the task lists in Product roadmap, Fundraising notes, Hiring plan and Metrics that matter. Do not edit those pages. Tell me the current count in one line.',
+    checks: [
+      async (s) => { const { widgets } = await s.api.get('/api/map'); const w = widgets.find(w => w.title === 'Launch readiness' && w.data.kind === 'progress'); const ids = ['Product roadmap', 'Fundraising notes', 'Hiring plan', 'Metrics that matter'].map(title => named(s, title)?.id); return check(w && w.pageIds.length === 4 && ids.every(id => w.pageIds.includes(id)) && w.data.done === 5 && w.data.total === 13, 'Saved live progress widget counts 5 of 13 launch tasks across the four source pages'); },
+      (s) => check(sameNotebook(s), 'Widget did not mutate source pages'),
+    ],
+  },
+  {
     name: 'summarise_page', agent: 'Scout',
     prompt: 'Read Product roadmap and summarise the Now, Next and Later work in the diary, with a link to the page. Do not edit any pages.',
     checks: [
