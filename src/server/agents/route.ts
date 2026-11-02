@@ -22,7 +22,9 @@ const LEADING: Record<Name, RegExp> = {
 };
 
 // Explicit writing/organising verbs still win; status and money questions beat generic research.
-const ATLAS_QUESTION = /\b(what['’]?s left|how far|progress|status|on track|cost|budget|spend|total|how much|countdown|how long until|days until)\b/i;
+const ATLAS_QUESTION = /\b(what['’]?s left|progress|status|on track|countdown|how long until|days until)\b|\b(what|how much)\b[^?]{0,30}\b(cost|costs|budget)\b/i;
+/** "What does the email say about cost?" is research, not a budget. */
+const REPORTED = /\b(say|says|said|mention|mentions|mentioned|email|wrote|write about)\b/i;
 
 const SIGNALS: Record<Name, RegExp[]> = {
   Wren: [/\b(write|draft|rewrite|polish|proofread|reword|expand|shorten|typos?|wording|tone|prose|paragraph|section|intro|email|letter|blog|post|essay|story|checklist|packing list|itinerary|outline)\b/i],
@@ -48,7 +50,7 @@ export function pickAgent(agents: Agent[], text: string, options: { image?: bool
   for (const sentence of sentences(text)) {
     const core = sentence.replace(POLITE, "").replace(POLITE, "").trim();
     for (const name of ["Atlas", "Wren", "Scout"] as Name[]) {
-      if (name === "Scout" && /^(what|how|is|are|status|progress|budget|cost|spend|total|countdown|on track|days until|show me|check)\b/i.test(core) && ATLAS_QUESTION.test(core) && get("Atlas")) return get("Atlas");
+      if (name === "Scout" && /^(what|how|is|are|status|progress|budget|countdown|on track|days until|show me|check)\b/i.test(core) && ATLAS_QUESTION.test(core) && !REPORTED.test(core) && get("Atlas")) return get("Atlas");
       if (LEADING[name].test(core) && get(name)) return get(name);
     }
   }

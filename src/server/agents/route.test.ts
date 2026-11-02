@@ -55,3 +55,19 @@ describe("Any agent picks who's best", () => {
     expect(image("Ask Scout what this photo says")).toBe("Scout");
   });
 });
+
+describe("status and money questions go to Atlas only when they are about the notebook's numbers", () => {
+  it.each([
+    ["What's left before we launch?", "Atlas"],
+    ["What will this trip cost?", "Atlas"],
+    ["How much will Lisbon cost us?", "Atlas"],
+    ["What's the budget for the trip?", "Atlas"],
+    ["How far is Sintra from Lisbon?", "Scout"],
+    ["How should I spend a day in Lisbon?", "Scout"],
+    ["How much detail should the intro have?", "Scout"],
+    ["What did the landlord email say about cost?", "Scout"],
+    ["What does the hiring plan say about the salary budget?", "Scout"],
+    ["What should the blog post say about our total pricing?", "Scout"],
+    ["Write a post about our pricing", "Wren"],
+  ])("%s → %s", (text, name) => expect(pick(text)).toBe(name));
+});

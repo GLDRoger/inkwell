@@ -1,5 +1,6 @@
 import { AGENT_FILES, instructionsFor } from "./load.ts";
 import { skillPrompt } from "./skills.ts";
+import { rootRequest } from "./intent.ts";
 import { readFile } from "node:fs/promises";
 import { streamText, isStepCount, type LanguageModel, type ModelMessage, type UserContent } from "ai";
 import type { Agent, DiaryEntry, Run, ServerEvent } from "../../shared/types.ts";
@@ -96,7 +97,10 @@ export class AgentRuntime {
       tokens: this.options.maxOutputTokens ?? DEFAULT_RUN_OUTPUT_TOKENS,
     };
     const { meta, ...rest } = input;
-    return this.launch(rest, { rootPrompt: rest.prompt, remaining: 72, children: 8, meta }, 0, limits);
+    const people = rest.threadId ? listDiaryEntries(this.services.db, rest.workspaceId, rest.threadId).filter((e) => e.role === "person") : [];
+    // The newest person entry is this request; the one before is what a bare "yes" confirms.
+    const previous = people.length >= 2 && people.at(-1)!.text.trim() === rest.prompt.trim() ? people.at(-2)!.text : null;
+    return this.launch(rest, { rootPrompt: rootRequest(rest.prompt, previous), remaining: 72, children: 8, meta }, 0, limits);
   }
 
   private launch(input: StartInput, family: Family, depth: number, limits: Limits) {
@@ -174,7 +178,7 @@ export class AgentRuntime {
         : `The person has ${pageLink(page.title, page.id)} open (id: ${page.id}); "this page" means it.`
       : asker ? "" : "The person isn't looking at a particular page.";
     return [
-      PRIMER, instructionsFor(agent), skillPrompt(agent),
+      PRIMER, instructionsFor(agent), skillPrompt(agent, !asker),
       `Today is ${new Date().toISOString().slice(0, 10)}.`,
       !asker && others ? `Other agents you can ask with ask_agent: ${others}.` : "",
       asker ? `${asker} asked you for help on the person's behalf. Your final reply goes back to ${asker}, so make it a short report with links.` : "",

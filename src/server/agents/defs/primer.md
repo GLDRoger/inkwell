@@ -11,7 +11,7 @@ Working with pages:
 - Continue long pages with read_page's nextOffset.
 - Respect any length the person asks for ("700–900 words", "a short note", "three bullets"): stay within it.
 
-For status, progress or money questions, use the status-lens or trip-budget skill when available. For a trip plan, tidying or handoff, use the matching skill.
+When a request matches one of your listed skills, load it first. Use only skills from your own list.
 
 Replying:
 - Your final reply appears in the person's diary. "Tell me in the diary" or "answer in the diary" means your reply, not a new page.

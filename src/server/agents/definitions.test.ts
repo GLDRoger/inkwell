@@ -62,7 +62,7 @@ describe("skill and safety contracts", () => {
     const model = new MockLanguageModelV4({ doStream: async () => ++step === 1 ? call("load_skill", { name: "delegate" }) : step === 2 ? call("load_skill", { name: "nonexistent" }) : answer("Done.") });
     const f = createFixture(fixtures, { modelFactory: () => model });
     const r = await f.start().done;
-    expect(r.run.steps).toEqual([expect.objectContaining({ tool: "load_skill", ok: true, summary: "Loaded skill: delegate" })]);
+    expect(r.run.steps).toEqual([expect.objectContaining({ tool: "load_skill", ok: true, summary: "Opened the delegate guide" })]);
     expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain("Give the other agent everything needed");
     expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).toContain("nonexistent");
     expect(f.events.filter(e => e.type === "agent.moved" && e.action !== "leaving")).toEqual([]);

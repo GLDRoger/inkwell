@@ -1,5 +1,6 @@
 import { listAgents } from "../db.ts";
 import { skillsFor } from "./load.ts";
+import { asksToDelete } from "./intent.ts";
 import { skillMode } from "./skills.ts";
 import { listWidgets, liveWidgetData, newWidget, saveWidget, deleteWidget, saveLens, widgetPosition, widgetValue } from "../widgets.ts";
 import type { WidgetData } from "../../shared/types.ts";
@@ -150,14 +151,14 @@ export function createAgentTools(ctx: ToolContext) {
     return readView(written).version;
   };
 
-  const skills = skillsFor(agent);
+  const skills = skillsFor(agent).filter(skill => ctx.canDelegate || skill.name !== "delegate");
   const skillNames = skills.map(skill => skill.name) as [string, ...string[]];
   const otherNames = listAgents(s.db, ws).filter(other => other.id !== agent.id).map(other => other.name);
   const tools = {
     ...(skillMode() === "tool" && skills.length ? {
       load_skill: define("load_skill", "Load one of your listed skills before the first tool call it applies to. Returns instructions, not new tools.",
         z.object({ name: z.enum(skillNames).describe("A skill name from your Skills list") }),
-        async ({ name }) => ({ text: skills.find(skill => skill.name === name)!.body, summary: `Loaded skill: ${name}` }), { concurrent: true }),
+        async ({ name }) => ({ text: skills.find(skill => skill.name === name)!.body, summary: `Opened the ${name.replaceAll("-", " ")} guide` }), { concurrent: true }),
     } : {}),
     list_pages: define("list_pages", "List every page: id, title, a markdown link to paste into replies, parentId and a short excerpt.", z.object({}), async () => {
       await move(null, "thinking");
@@ -284,7 +285,7 @@ export function createAgentTools(ctx: ToolContext) {
     delete_page: define("delete_page", "Soft-delete a page and its descendants, only when the person explicitly asks for deletion.",
       z.object({ pageId: id }), ({ pageId }) => ctx.withPageLock(pageId, async () => {
         check();
-        if (!/\b(delete|remove|trash|get rid of|clear out)\b/i.test(ctx.rootPrompt)) {
+        if (!asksToDelete(ctx.rootPrompt)) {
           throw new ToolFailure("Only delete when the person asked. Describe what would go and ask them to confirm in your reply.");
         }
         const target = page(pageId);

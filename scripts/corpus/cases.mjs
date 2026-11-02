@@ -25,7 +25,7 @@ const create = (state, title, markdown, parentId) => state.api.post('/api/pages'
 const defaults = { timeoutMs: 120_000 };
 
 export const calledTool = (s, name) => s.runs.some(r => r.steps.some(step => step.tool === name && step.ok));
-export const calledSkill = (s, name) => s.runs.some(r => r.steps.some(step => step.tool === 'load_skill' && step.ok && step.summary === `Loaded skill: ${name}`));
+export const calledSkill = (s, name) => s.runs.some(r => r.steps.some(step => step.tool === 'load_skill' && step.ok && step.summary === `Opened the ${name.replaceAll("-", " ")} guide`));
 const softSkill = name => s => ({ ...check(calledSkill(s, name), `Loaded ${name} skill`), soft: true });
 const softTool = (name) => (s) => ({ ...check(calledTool(s, name), `Called ${name}`), soft: true });
 
