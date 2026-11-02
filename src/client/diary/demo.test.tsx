@@ -17,7 +17,7 @@ function show() {
   client.setQueryData(keys.me, { workspaceId: "w", person: { kind: "person", id: "u", name: "You" }, metaConnected: false, demoWorkspaceId: "d" });
   client.setQueryData(keys.threads, []);
   client.setQueryData(keys.agents, [wren]);
-  client.setQueryData<MapGraph>(keys.map, { pages: [], links: [], agents: [wren], runs: [] });
+  client.setQueryData<MapGraph>(keys.map, { pages: [], links: [], agents: [wren], runs: [], widgets: [], lens: null });
   client.setQueryData(keys.pages, []);
   client.setQueryData(keys.thread("t1"), [person]);
   return render(

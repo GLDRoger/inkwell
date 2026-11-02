@@ -820,7 +820,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek: demoPeek, insets, midScale });
 
   // ------------------------------------------------------------ walkers
-  const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [] }, 0), []);
+  const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);
   const live = state ?? emptyState;
   const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, layout, camera, reduced);
 

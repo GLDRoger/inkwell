@@ -39,6 +39,8 @@ const graph = (extra: Partial<MapGraph> = {}): MapGraph => ({
   links: [{ from: "a", to: "b" }, { from: "a", to: "gone" }],
   agents: [agent("ar", "Archivist"), agent("sc", "Scribe")],
   runs: [run("r2", "ar", { pageId: "b", steps: [{ at: iso(T0), tool: "write_page", summary: "", pageId: "b", ok: true }] }), run("r1", "ar", { pageId: "a", status: "succeeded" })],
+  widgets: [],
+  lens: null,
   ...extra,
 });
 

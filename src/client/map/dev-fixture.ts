@@ -1,4 +1,4 @@
-import type { Agent, Id, Link, MapGraph, Page, Run, ServerEvent } from "@shared/types";
+import type { Agent, Id, Lens, Link, MapGraph, Page, Run, ServerEvent, Widget } from "@shared/types";
 import { CARD_W } from "./layout";
 
 /**
@@ -183,7 +183,58 @@ export function makeFixtureGraph(count = 72, seed = 7): MapGraph {
     endedAt: null,
   }));
 
-  return { pages, links, agents: AGENTS, runs };
+  return { pages, links, agents: AGENTS, runs, widgets: fixtureWidgets(pages, now), lens: null };
+}
+
+/** One widget of each kind, in a column left of the map, reading from the first few pages. */
+export function fixtureWidgets(pages: Page[], now = Date.now()): Widget[] {
+  const ids = pages.filter((p) => p.parentId).map((p) => p.id);
+  const by = { kind: "agent" as const, id: "ag-cartographer", name: "Cartographer" };
+  const at = new Date(now).toISOString();
+  const base = (id: string, title: string, x: number, y: number, pageIds: Id[]) => ({ id, title, x, y, pageIds, createdBy: by, createdAt: at, updatedAt: at });
+  return [
+    { ...base("w-launch", "Until launch", -420, 0, ids.slice(0, 1)), data: { kind: "countdown", date: new Date(now + 2 * 86_400_000 + 5 * 3_600_000 + 17 * 60_000).toISOString(), label: "Launch day" } },
+    {
+      ...base("w-tasks", "Launch checklist", -420, 230, ids.slice(0, 3)),
+      data: { kind: "progress", done: 7, total: 12, perPage: [{ pageId: ids[0], done: 3, total: 4 }, { pageId: ids[1], done: 2, total: 5 }, { pageId: ids[2], done: 2, total: 3 }] },
+    },
+    {
+      ...base("w-trip", "Lisbon trip", -420, 500, ids.slice(3, 6)),
+      data: { kind: "total", currency: "EUR", amount: 1284.5, lines: [{ pageId: ids[3], label: "Flights", amount: 412 }, { pageId: ids[4], label: "Hotel, 5 nights", amount: 690 }, { pageId: ids[5], label: "Food and trams", amount: 182.5 }] },
+    },
+    {
+      ...base("w-facts", "Hiring, at a glance", -420, 800, ids.slice(6, 8)),
+      data: { kind: "facts", items: [{ label: "Open roles", value: "2" }, { label: "Loop", value: "Take-home, pairing, chat" }, { label: "Owner", value: "Ada" }] },
+    },
+  ];
+}
+
+/** A lens over the fixture's pages: three columns, or four weeks in order. */
+export function fixtureLens(graph: Pick<MapGraph, "pages">, kind: Lens["kind"] = "columns"): Lens {
+  const ids = graph.pages.filter((p) => p.parentId).map((p) => p.id);
+  const pick = (from: number, n: number) => ids.slice(from, from + n);
+  const groups =
+    kind === "columns"
+      ? [
+          { label: "Done", pageIds: pick(0, 3), note: "Shipped and checked" },
+          { label: "Doing", pageIds: pick(9, 2), note: "Someone's on it this week" },
+          { label: "To do", pageIds: pick(20, 4) },
+        ]
+      : [
+          { label: "Week 1", pageIds: pick(2, 2), note: "Book and plan" },
+          { label: "Week 2", pageIds: pick(14, 3) },
+          { label: "Week 3", pageIds: pick(26, 1), note: "Launch" },
+          { label: "Week 4", pageIds: pick(33, 2) },
+        ];
+  return {
+    id: `lens-${kind}`,
+    title: kind === "columns" ? "What's left before launch" : "The month, in order",
+    kind,
+    groups,
+    agentId: "ag-cartographer",
+    runId: null,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /**

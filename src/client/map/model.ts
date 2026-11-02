@@ -1,4 +1,4 @@
-import type { Agent, Id, Link, MapGraph, Page, Run, ServerEvent } from "@shared/types";
+import type { Agent, Id, Lens, Link, MapGraph, Page, Run, ServerEvent, Widget } from "@shared/types";
 
 /**
  * The map's live state: the graph from GET /api/map, patched in place by
@@ -38,13 +38,17 @@ export interface MapState {
   walkers: Map<string, Walker>;
   /** Page id -> when it last changed while we watched (ms). */
   fresh: Map<Id, number>;
+  /** Live widgets on the map, by id. */
+  widgets: Map<Id, Widget>;
+  /** The lens the map is showing, or null for the ordinary map. */
+  lens: Lens | null;
   seq: number;
   /**
    * The graph arrays `pages`, `links` and `agents` were built from. A run's step
    * replaces only the graph's runs, so when these are the same arrays the
    * maps are kept as they are and no card re-renders.
    */
-  source?: { pages: Page[]; links: Link[]; agents: Agent[] };
+  source?: { pages: Page[]; links: Link[]; agents: Agent[]; widgets?: Widget[] };
 }
 
 /** Pages changed this recently show fresh ink. */
@@ -121,8 +125,14 @@ export function fromGraph(graph: MapGraph, now: number, prev?: MapState | null):
     }
   }
 
+  const widgetList = graph.widgets ?? [];
+  const widgets = src?.widgets === widgetList && prev ? prev.widgets : new Map(widgetList.map((w) => [w.id, w]));
+  const lens = graph.lens === undefined ? (prev?.lens ?? null) : graph.lens;
+
   return {
     pages,
+    widgets,
+    lens: prev?.lens && lens && prev.lens.id === lens.id && prev.lens.createdAt === lens.createdAt ? prev.lens : lens,
     links:
       src?.links === graph.links && pages === prev!.pages ? prev!.links : graph.links.filter((l) => pages.has(l.from) && pages.has(l.to)),
     agents,
@@ -130,7 +140,7 @@ export function fromGraph(graph: MapGraph, now: number, prev?: MapState | null):
     walkers,
     fresh: prev && pages === prev.pages && sameEntries(fresh, prev.fresh) ? prev.fresh : fresh,
     seq: prev?.seq ?? 0,
-    source: { pages: graph.pages, links: graph.links, agents: graph.agents },
+    source: { pages: graph.pages, links: graph.links, agents: graph.agents, widgets: widgetList },
   };
 }
 
@@ -228,6 +238,24 @@ export function applyEvent(state: MapState, e: ServerEvent, now: number): MapSta
       // Leaving for nowhere: the agent stays beside its last page, idle.
       return moveWalker(state, updated, e.toPageId ?? null, now, e.fromPageId);
     }
+    case "widget.updated": {
+      const old = state.widgets.get(e.widget.id);
+      if (old && old.updatedAt === e.widget.updatedAt && old.x === e.widget.x && old.y === e.widget.y && JSON.stringify(old.data) === JSON.stringify(e.widget.data) && old.title === e.widget.title)
+        return state;
+      const widgets = new Map(state.widgets);
+      widgets.set(e.widget.id, e.widget);
+      return { ...state, widgets };
+    }
+    case "widget.deleted": {
+      if (!state.widgets.has(e.widgetId)) return state;
+      const widgets = new Map(state.widgets);
+      widgets.delete(e.widgetId);
+      return { ...state, widgets };
+    }
+    case "lens.shown":
+      return state.lens?.id === e.lens.id && state.lens.createdAt === e.lens.createdAt ? state : { ...state, lens: e.lens };
+    case "lens.cleared":
+      return state.lens ? { ...state, lens: null } : state;
     case "presence": {
       let next = state;
       const here = new Set<string>();

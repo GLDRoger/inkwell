@@ -19,7 +19,7 @@ const reply = (text: string): DiaryEntry => ({ ...asked, id: "e2", role: "agent"
 function show(entry: DiaryEntry, r: Run, opts: { runs?: Run[]; pages?: Partial<Page>[]; recoverable?: boolean; readOnly?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } });
   client.setQueryData(keys.run(r.id), r);
-  client.setQueryData<MapGraph>(keys.map, { pages: [], links: [], agents: [scout, wren], runs: opts.runs ?? [] });
+  client.setQueryData<MapGraph>(keys.map, { pages: [], links: [], agents: [scout, wren], runs: opts.runs ?? [], widgets: [], lens: null });
   client.setQueryData(keys.pages, opts.pages ?? []);
   const onRecover = vi.fn();
   render(

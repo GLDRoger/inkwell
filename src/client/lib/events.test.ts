@@ -20,7 +20,7 @@ const entry = (id: string, extra: Partial<DiaryEntry> = {}): DiaryEntry => ({
 
 function seeded() {
   const client = new QueryClient();
-  const graph: MapGraph = { pages: [page("p1"), page("p2")], links: [{ from: "p1", to: "p2" }], agents: [], runs: [run("r0")] };
+  const graph: MapGraph = { pages: [page("p1"), page("p2")], links: [{ from: "p1", to: "p2" }], agents: [], runs: [run("r0")], widgets: [], lens: null };
   client.setQueryData(keys.map, graph);
   client.setQueryData(keys.pages, [page("p1"), page("p2")]);
   client.setQueryData(keys.page("p1"), { ...page("p1"), markdown: "# Hi" });
