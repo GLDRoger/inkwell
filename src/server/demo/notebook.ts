@@ -9,6 +9,7 @@ import type { PageStore } from "../pages.ts";
 import { seedWorkspace } from "../seed.ts";
 import type { Services } from "../services.ts";
 import type { SessionCtx } from "../session.ts";
+import { listWidgets } from "../widgets.ts";
 
 /** The session's demo notebook id, creating and seeding it on first use. */
 export function ensureDemoWorkspace(deps: { db: Db; pages: PageStore }, ctx: SessionCtx): string {
@@ -34,7 +35,11 @@ export function ensureDemoWorkspace(deps: { db: Db; pages: PageStore }, ctx: Ses
 export async function resetDemoWorkspace(services: Services, ctx: SessionCtx, demoWorkspaceId: string): Promise<void> {
   const { db, pages, bus } = services;
   const old = pages.listPages(demoWorkspaceId).map((p) => p.id);
+  const oldWidgets = listWidgets(db, demoWorkspaceId).map((w) => w.id);
   db.transaction(() => purgeWorkspaceContent(db, demoWorkspaceId))();
+  // An open map in the demo notebook isn't refetched on "Watch again": clear what it shows.
+  for (const widgetId of oldWidgets) bus.publish(demoWorkspaceId, { type: "widget.deleted", widgetId });
+  bus.publish(demoWorkspaceId, { type: "lens.cleared" });
   for (const pageId of old) bus.publish(demoWorkspaceId, { type: "page.deleted", pageId });
   seedWorkspace({ db, pages }, demoWorkspaceId, ctx.person);
   await flushFileDeletions(services);

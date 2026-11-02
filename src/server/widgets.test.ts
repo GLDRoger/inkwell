@@ -14,8 +14,17 @@ describe("widget computation", () => {
   it("counts task markers and preserves source order", () => {
     expect(computeWidgetData(progress, [{ id: "b", markdown: "- [x] done\n* [X] DONE\n  - [ ] open\nnot - [x] a task" }, { id: "a", markdown: "No tasks" }])).toEqual({ kind: "progress", done: 2, total: 3, perPage: [{ pageId: "b", done: 2, total: 3 }, { pageId: "a", done: 0, total: 0 }] });
   });
-  it.each(["€12", "€ 12", "12€", "12 €", "€12–15", "€12-15"])("reads %s without counting the range twice", amount => {
+  it.each(["€12", "€ 12", "12€", "12 €", "€12–15", "€12-15"])("reads %s as 12 (a range counts its first number)", amount => {
     expect(computeWidgetData({ kind: "total", currency: "€", amount: 0, lines: [] }, [{ id: "p", markdown: `- **Dinner** ${amount}` }])).toMatchObject({ amount: 12, lines: [{ pageId: "p", label: expect.stringContaining("Dinner"), amount: 12 }] });
+  });
+  it.each([
+    ["Tram 28 €3", 3], ["Lunch 12,50 €", 12.5], ["€12–€15 a head", 12], ["12–15 € a head", 12],
+    ["Apartment €1,200", 1200], ["€9.75 and 4 €", 13.75], ["Room 4, €80", 80],
+  ])("reads %s as %d", (line, amount) => {
+    expect(computeWidgetData({ kind: "total", currency: "€", amount: 0, lines: [] }, [{ id: "p", markdown: line }])).toMatchObject({ amount });
+  });
+  it.each(["Grand total €200", "Subtotal: €50", "| Total | €200 |", "Totals €5"])("skips %s", line => {
+    expect(computeWidgetData({ kind: "total", currency: "€", amount: 0, lines: [] }, [{ id: "p", markdown: `${line}\n€7` }])).toMatchObject({ amount: 7 });
   });
   it.each(["$", "£"])("reads symbol-first %s amounts only", currency => {
     expect(computeWidgetData({ kind: "total", currency, amount: 0, lines: [] }, [{ id: "p", markdown: `${currency}12 + ${currency} 12.50 + ${currency}1,200; 20${currency}; €50` }])).toMatchObject({ amount: 1224.5, lines: expect.any(Array) });

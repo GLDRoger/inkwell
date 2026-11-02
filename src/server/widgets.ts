@@ -18,14 +18,20 @@ export function computeWidgetData(data: WidgetData, sources: SourcePage[]): Widg
   }
   if (data.kind !== "total") return data;
   const symbol = data.currency.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const number = "(\\d+(?:,\\d{3})*(?:\\.\\d+)?)";
-  const pattern = new RegExp(`${symbol}\\s*${number}${data.currency === "€" ? `|${number}\\s*${symbol}` : ""}`, "g");
+  // "1,200", "12.50" and "12,50" (a decimal comma). Never starts mid-number.
+  const number = "(?<![\\d.,])(\\d+(?:,\\d{3})*(?:\\.\\d+|,\\d{1,2})?)(?![\\d])";
+  const upper = "(?:\\s*[–—-]\\s*" + symbol + "?\\s*\\d+(?:[.,]\\d+)*)?"; // a range counts its first number
+  const prefix = `${symbol}\\s*${number}${upper}`;
+  // "12 €" only when no amount follows the symbol ("Tram 28 €3" is €3).
+  const suffix = `${number}(?:\\s*[–—-]\\s*\\d+(?:[.,]\\d+)*)?\\s*${symbol}(?!\\s*\\d)`;
+  const pattern = new RegExp(data.currency === "€" ? `${prefix}|${suffix}` : prefix, "g");
+  const toAmount = (raw: string) => Number(/,\d{1,2}$/.test(raw) ? raw.replace(/,(?=\d{1,2}$)/, ".").replaceAll(",", "") : raw.replaceAll(",", ""));
   const lines: Extract<WidgetData, { kind: "total" }>["lines"] = [];
   for (const source of sources) for (const line of source.markdown.split(/\r?\n/)) {
-    const label = markdownToPlainText(line).replace(/^\s*(?:[-*+]\s+|\d+[.)]\s+|\[[ x]\]\s*)+/i, "").trim();
-    if (/^total\b/i.test(label)) continue;
+    const label = markdownToPlainText(line).replace(/^[\s|]*(?:[-*+]\s+|\d+[.)]\s+|\[[ x]\]\s*)*/i, "").replace(/\s*\|\s*/g, " ").trim();
+    if (/\b(?:sub|grand\s+)?totals?\b/i.test(label)) continue;
     for (const match of line.matchAll(pattern)) {
-      const amount = Number((match[1] ?? match[2])!.replaceAll(",", ""));
+      const amount = toAmount((match[1] ?? match[2])!);
       if (Number.isFinite(amount)) lines.push({ pageId: source.id, label: label.slice(0, 60), amount });
     }
   }
@@ -107,9 +113,10 @@ export function createWidgetReactor(db: Db, bus: EventBus, collab: Pick<CollabSe
     if (!current) return;
     const data = await liveWidgetData(collab, ws, current.data, current.pageIds);
     // Never resurrect a removed/replaced widget after an async read.
+    // Only the sources and kind matter: a drag or rename meanwhile must not drop this result.
     const latest = getWidget(db, ws, widgetId);
-    if (!latest || JSON.stringify(latest) !== JSON.stringify(current)) return;
-    if (JSON.stringify(data) !== JSON.stringify(current.data)) saveWidget(db, bus, ws, { ...current, data, updatedAt: nowIso() });
+    if (!latest || latest.data.kind !== current.data.kind || JSON.stringify(latest.pageIds) !== JSON.stringify(current.pageIds)) return;
+    if (JSON.stringify(data) !== JSON.stringify(latest.data)) saveWidget(db, bus, ws, { ...latest, data, updatedAt: nowIso() });
   };
   return {
     changed(ws: string, pageId: string) {
