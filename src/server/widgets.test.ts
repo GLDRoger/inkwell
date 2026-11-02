@@ -74,3 +74,38 @@ it("nudges placement clear of all existing widget boxes", () => {
   expect(widgetPosition([source], [widget])).toEqual({ x: 380, y: 230 });
   expect(widgetPosition([], [])).toEqual({ x: 0, y: 0 });
 });
+
+it("reacts to an authenticated person's websocket edit, not just agent writes", async () => {
+  const { HocuspocusProvider } = await import("@hocuspocus/provider");
+  const { default: WebSocket } = await import("ws");
+  const Y = await import("yjs");
+  const { createApp, startServer } = await import("./main.ts");
+  const f = createFixture(fixtures);
+  const { db, bus } = f.services;
+  const widget = newWidget(f.session.person, "Budget", [f.page.id], { kind: "total", currency: "€", amount: 0, lines: [] }, { x: 0, y: 0 });
+  saveWidget(db, bus, f.ws, widget);
+  const server = await startServer(f.services, createApp(f.services), 0);
+  const doc = new Y.Doc();
+  const provider = new HocuspocusProvider({ url: `ws://127.0.0.1:${server.port}/collab`, name: f.page.id, document: doc,
+    // @ts-expect-error ws polyfill typing differs from lib.dom WebSocket
+    WebSocketPolyfill: class extends WebSocket { constructor(address: string, protocols?: string | string[]) { super(address, protocols, { headers: { Cookie: `inkwell_sid=${f.session.sessionId}` } }); } },
+  });
+  try {
+    await new Promise<void>(resolve => provider.on("synced", () => resolve()));
+    applyJSONToYDoc(doc, markdownToTiptapJSON("Apartment: €440\nFlights: €380"));
+    await expect.poll(() => getWidget(db, f.ws, widget.id)?.data).toMatchObject({ amount: 820 });
+    expect(f.events.some(e => e.type === "widget.updated" && e.widget.data.kind === "total" && e.widget.data.amount === 820)).toBe(true);
+  } finally { provider.destroy(); doc.destroy(); await server.close(); }
+});
+
+it("flushes a pending widget recompute on shutdown", async () => {
+  const { createWidgetReactor } = await import("./widgets.ts");
+  const f = createFixture(fixtures);
+  const { db, bus } = f.services;
+  const widget = newWidget(f.session.person, "Progress", [f.page.id], progress, { x: 0, y: 0 });
+  saveWidget(db, bus, f.ws, widget);
+  const reactor = createWidgetReactor(db, bus, { getPageJSON: async () => markdownToTiptapJSON("- [x] Last-second edit") });
+  reactor.changed(f.ws, f.page.id);
+  await reactor.close();
+  expect(getWidget(db, f.ws, widget.id)?.data).toMatchObject({ done: 1, total: 1 });
+});

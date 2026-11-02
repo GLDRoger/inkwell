@@ -20,7 +20,7 @@ function fixture() {
     withPageLock: async (_id, fn) => fn(), askAgent: async () => "Done" });
   // Exercise the helper's execution boundary; schema validation is done by AI SDK.
   const invoke = (name: keyof typeof tools, input: object) => (tools[name].execute as (input: object, options: object) => Promise<string>)(input, {});
-  return { ...f, run, invoke };
+  return { ...f, run, invoke, tools };
 }
 it("validates lens page ids and duplicate membership without replacing valid state", async () => {
   const f = fixture();
@@ -87,4 +87,16 @@ it("accepts max-50 scope, drops unknown ids, stores scope and limits the root pr
   expect(listDiaryEntries(f.services.db, f.ws, result.threadId)[0]?.pageIds).toEqual([f.page.id]);
   const tooMany = await app.request("/api/diary", { method: "POST", headers, body: JSON.stringify({ text: "Read", scopePageIds: Array(51).fill(f.page.id) }) });
   expect(tooMany.status).toBe(400);
+});
+
+it("bounds lens groups, facts and supported currencies at the tool schema", () => {
+  const f = fixture();
+  const lens = f.tools.show_lens.inputSchema as import("zod").ZodType;
+  for (const groups of [[], Array.from({ length: 7 }, () => ({ label: "A", pageIds: [] }))]) {
+    expect(lens.safeParse({ title: "State", kind: "columns", groups }).success).toBe(false);
+  }
+  const widget = f.tools.create_widget.inputSchema as import("zod").ZodType;
+  expect(widget.safeParse({ kind: "facts", title: "Facts", items: Array.from({ length: 9 }, () => ({ label: "A", value: "B" })) }).success).toBe(false);
+  expect(widget.safeParse({ kind: "total", title: "Money", currency: "unknown" }).success).toBe(false);
+  expect(widget.safeParse({ kind: "total", title: "Money", pageIds: [f.page.id] })).toMatchObject({ success: true, data: { currency: "€" } });
 });

@@ -99,32 +99,40 @@ export async function liveWidgetData(collab: Pick<CollabService, "getPageJSON">,
 
 /** Both collab onChange and persisted body edits feed this per-widget debounce. */
 export function createWidgetReactor(db: Db, bus: EventBus, collab: Pick<CollabService, "getPageJSON">) {
-  const pending = new Map<string, ReturnType<typeof setTimeout>>();
+  const pending = new Map<string, { timer: ReturnType<typeof setTimeout>; recompute: () => Promise<void> }>();
   const active = new Set<Promise<void>>();
   let closed = false;
+  const recompute = async (ws: string, widgetId: string) => {
+    const current = getWidget(db, ws, widgetId);
+    if (!current) return;
+    const data = await liveWidgetData(collab, ws, current.data, current.pageIds);
+    // Never resurrect a removed/replaced widget after an async read.
+    const latest = getWidget(db, ws, widgetId);
+    if (!latest || JSON.stringify(latest) !== JSON.stringify(current)) return;
+    if (JSON.stringify(data) !== JSON.stringify(current.data)) saveWidget(db, bus, ws, { ...current, data, updatedAt: nowIso() });
+  };
   return {
     changed(ws: string, pageId: string) {
       if (closed) return;
       for (const widget of listWidgets(db, ws)) {
         if (!widget.pageIds.includes(pageId) || !["progress", "total"].includes(widget.data.kind)) continue;
-        clearTimeout(pending.get(widget.id));
+        clearTimeout(pending.get(widget.id)?.timer);
+        const run = () => recompute(ws, widget.id).catch(error => console.error("[inkwell] widget recompute failed", error));
         const timer = setTimeout(() => {
           pending.delete(widget.id);
-          const task = (async () => {
-            const current = getWidget(db, ws, widget.id);
-            if (!current) return;
-            const data = await liveWidgetData(collab, ws, current.data, current.pageIds);
-            // Never resurrect a removed/replaced widget after an async read.
-            const latest = getWidget(db, ws, widget.id);
-            if (!latest || JSON.stringify(latest) !== JSON.stringify(current)) return;
-            if (JSON.stringify(data) !== JSON.stringify(current.data)) saveWidget(db, bus, ws, { ...current, data, updatedAt: nowIso() });
-          })().catch(error => console.error("[inkwell] widget recompute failed", error));
+          const task = run();
           active.add(task); void task.finally(() => active.delete(task));
         }, 300);
-        timer.unref(); pending.set(widget.id, timer);
+        timer.unref(); pending.set(widget.id, { timer, recompute: run });
       }
     },
-    async close() { closed = true; for (const timer of pending.values()) clearTimeout(timer); pending.clear(); await Promise.all(active); },
+    async close() {
+      closed = true;
+      const remaining = [...pending.values()]; pending.clear();
+      for (const entry of remaining) clearTimeout(entry.timer);
+      // Persist an edit made just before shutdown instead of losing its debounce.
+      await Promise.all([...active, ...remaining.map(entry => entry.recompute())]);
+    },
   };
 }
 
