@@ -67,6 +67,16 @@ describe("lensLayout", () => {
   });
 });
 
+describe("lens widgets", () => {
+  it("docks a widget made with the lens even when it reads no pages", () => {
+    const l = lensLayout({ ...lens("columns", [{ label: "A", pageIds: ["p0"] }]), agentId: "atlas" }, home, [
+      { id: "clock", w: 300, h: 140, pageIds: [], createdAt: "2026-11-02T10:00:20Z", createdBy: { id: "atlas" } },
+      { id: "old", w: 300, h: 140, pageIds: [], createdAt: "2026-10-01T10:00:00Z", createdBy: { id: "atlas" } },
+    ]);
+    expect([...l.widgets.keys()]).toEqual(["clock"]);
+  });
+});
+
 describe("withLens", () => {
   it("moves only the lens's cards and keeps the stored places of the rest", () => {
     const l = lensLayout(lens("columns", [{ label: "A", pageIds: ["p4"] }]), home);

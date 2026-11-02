@@ -49,6 +49,16 @@ export interface LensWidget {
   w: number;
   h: number;
   pageIds: Id[];
+  createdAt?: string;
+  createdBy?: { id: Id };
+}
+
+/** A widget made with the lens (same agent, within a few minutes) belongs beside it, even with no pages to read. */
+const SAME_RUN_MS = 5 * 60_000;
+function madeWith(w: LensWidget, lens: Lens): boolean {
+  if (w.pageIds.length || !w.createdAt) return false;
+  const gap = Math.abs(Date.parse(w.createdAt) - Date.parse(lens.createdAt));
+  return gap < SAME_RUN_MS && (!lens.agentId || !w.createdBy || w.createdBy.id === lens.agentId);
 }
 
 /** A stable key for a lens, so the same lens shown again doesn't fly twice. */
@@ -79,7 +89,7 @@ export function lensLayout(lens: Lens, home: Pick<MapLayout, "cards" | "bounds">
   const groupsW = sized.reduce((t, s) => t + s.w, 0) + Math.max(0, sized.length - 1) * LENS_COL_GAP;
   const groupsH = sized.reduce((m, s) => Math.max(m, s.h), cardH);
 
-  const lensWidgets = widgets.filter((w) => w.pageIds.some((id) => seen.has(id)));
+  const lensWidgets = widgets.filter((w) => w.pageIds.some((id) => seen.has(id)) || madeWith(w, lens));
   const dockW = lensWidgets.length ? Math.max(...lensWidgets.map((w) => w.w)) : 0;
   const dockH = lensWidgets.reduce((t, w) => t + w.h, 0) + Math.max(0, lensWidgets.length - 1) * LENS_ROW_GAP;
   const totalW = groupsW + (dockW ? LENS_COL_GAP + dockW : 0);

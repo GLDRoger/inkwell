@@ -204,7 +204,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       // The lens floats above everything on the map, widgets included.
       const homes = widgetList.map((w) => ({ x: w.x, y: w.y, ...widgetSize(w.data) }));
       const bounds = layout.cards.size ? unionBox([layout.bounds, ...homes])! : layout.bounds;
-      return lensLayout(lens, { cards: layout.cards, bounds }, widgetList.map((w) => ({ id: w.id, ...widgetSize(w.data), pageIds: w.pageIds })));
+      return lensLayout(lens, { cards: layout.cards, bounds }, widgetList.map((w) => ({ id: w.id, ...widgetSize(w.data), pageIds: w.pageIds, createdAt: w.createdAt, createdBy: w.createdBy })));
     },
     [lens, layout, widgetList],
   );
@@ -489,7 +489,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     camera.hush(1800);
     if (lensId && box) {
       if (!was) beforeLens.current = { ...camera.cam };
-      const target = fitCamera(box.bounds, camera.vw, camera.vh, insets(), compact ? 12 : 48, 1);
+      let room = insets();
+      if (followingRef.current) {
+        // The demo's lens is the moment: the page panel makes way and the follow holds off while it lands.
+        gate.current.pause(Date.now());
+        if (peekRef.current) {
+          setPeek(null, "demo");
+          room = { ...room, right: (insetProbe.current?.offsetWidth ?? 0) + 12, bottom: room.bottom - coverRef.current.bottom };
+        }
+      }
+      const target = fitCamera(box.bounds, camera.vw, camera.vh, room, compact ? 12 : 48, 1);
       if (reducedRef.current) camera.set(target);
       else camera.flyTo(target, 1150);
       camera.touched = true;
@@ -499,7 +508,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     beforeLens.current = null;
     if (reducedRef.current) camera.set(back);
     else camera.flyTo(back, 1100);
-  }, [lensId, camera, insets, compact, fitAll]);
+  }, [lensId, camera, insets, compact, fitAll, setPeek]);
   // Until someone moves the map, keep it fitted as the window changes, and as
   // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
@@ -1094,14 +1103,23 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     showFocus(lasso.ids, true);
   }, [lasso, following, camera, showFocus]);
   const focusWidget = demoFocus.widgetId;
+  const focusPage = demoFocus.pageId;
   const widgetReady = !!focusWidget && widgetPlaces.has(focusWidget);
   useEffect(() => {
     if (!focusWidget || !widgetReady || !following || !placed.current || !gate.current.active(Date.now())) return;
-    const box = widgetPlacesRef.current.get(focusWidget);
-    if (!box) return;
-    camera.hush(1600);
-    camera.flyTo(cameraFor({ ...box, id: focusWidget, depth: 0, regionId: "", pinned: true }, "mid"), 1100);
-  }, [focusWidget, widgetReady, following, camera, cameraFor, demoIndex]);
+    // A widget docked beside the lens is already in the lens's view.
+    if (lensBoxRef.current?.widgets.has(focusWidget)) return;
+    // After the page's own peek camera has moved: frame the widget, with the page it's about when there is one.
+    const t = window.setTimeout(() => {
+      const box = widgetPlacesRef.current.get(focusWidget);
+      if (!box || !followingRef.current || !gate.current.active(Date.now())) return;
+      const page = focusPage ? layoutRef.current.cards.get(focusPage) : undefined;
+      camera.hush(1600);
+      if (page) camera.flyTo(fitCamera(unionBox([box, page])!, camera.vw, camera.vh, insets(), narrow ? 16 : 48, 0.95), 1100);
+      else camera.flyTo(cameraFor({ ...box, id: focusWidget, depth: 0, regionId: "", pinned: true }, "mid"), 1100);
+    }, focusPage ? 1400 : 0);
+    return () => window.clearTimeout(t);
+  }, [focusWidget, focusPage, widgetReady, following, camera, cameraFor, demoIndex, insets, narrow]);
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);

@@ -63,13 +63,20 @@ export function whenLabel(date: string): string {
 }
 
 const formatters = new Map<string, Intl.NumberFormat>();
-/** An amount in its currency ("€1,284.50"). An unknown currency code is written after the number. */
-export function money(amount: number, currency: string, whole = false): string {
+/** The server sends a symbol ("€"); an ISO code ("EUR") works too. */
+const SYMBOLS: Record<string, string> = { "€": "EUR", $: "USD", "£": "GBP", "¥": "JPY", "₹": "INR" };
+/** An amount in its currency ("€1,284.50"). Anything else is written before the number as given. */
+export function money(amount: number, currencyIn: string, whole = false): string {
+  const currency = SYMBOLS[currencyIn.trim()] ?? currencyIn.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) {
+    const plain = new Intl.NumberFormat("en-GB", { maximumFractionDigits: whole ? 0 : 2, minimumFractionDigits: whole ? 0 : 2 }).format(amount);
+    return `${currencyIn.trim()}${plain}`;
+  }
   const key = `${currency}:${whole}`;
   let f = formatters.get(key);
   if (!f) {
     try {
-      f = new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: whole ? 0 : 2, minimumFractionDigits: whole ? 0 : undefined });
+      f = new Intl.NumberFormat("en-GB", { style: "currency", currency, currencyDisplay: "narrowSymbol", maximumFractionDigits: whole ? 0 : 2, minimumFractionDigits: whole ? 0 : undefined });
     } catch {
       f = new Intl.NumberFormat("en-GB", { maximumFractionDigits: whole ? 0 : 2 });
       formatters.set(key, f);
