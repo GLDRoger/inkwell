@@ -176,6 +176,11 @@ export class CameraController {
     return !!this.tween;
   }
 
+  /** Where the camera is headed: the end of a flight, or where it is. */
+  get target(): Cam {
+    return this.tween ? this.tween.to : this.cam;
+  }
+
   stop() {
     this.tween = null;
   }

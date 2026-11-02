@@ -139,14 +139,24 @@ export function standingSpots(state: MapState, layout: MapLayout, s: number, obs
 
 /**
  * The zoom names were last placed for. Names are placed again once the zoom
- * has settled somewhere noticeably different, never during a gesture.
+ * has settled somewhere noticeably different, never during a gesture. A
+ * flight's end is known when it starts: names go straight to their spots for
+ * it, so they never ride a whole flight placed for the zoom it left.
  */
 function usePlacementScale(camera: CameraController): number {
-  const [s, setS] = useState(() => camera.cam.s);
+  const [s, setS] = useState(() => camera.target.s);
   const sRef = useRef(s);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const off = camera.listen((c) => {
+      if (camera.flying) {
+        const to = camera.target.s;
+        if (Math.abs(Math.log(to / sRef.current)) < 0.05) return;
+        clearTimeout(timer);
+        sRef.current = to;
+        setS(to);
+        return;
+      }
       if (Math.abs(Math.log(c.s / sRef.current)) < 0.12) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
