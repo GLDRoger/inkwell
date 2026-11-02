@@ -216,7 +216,7 @@ export function parseArgs(args) {
 export async function main(args = process.argv.slice(2)) {
   const options = parseArgs(args);
   if (options.help) {
-    console.log('node scripts/corpus/run.mjs [--base URL] [--case NAME] [--repeat N] [--json FILE]\nCases: ' + cases.map((c) => c.name).join(', '));
+    console.log('node scripts/corpus/run.mjs [--base URL] [--case NAME] [--repeat N] [--strict] [--json FILE]\nCases: ' + cases.map((c) => c.name).join(', '));
     return 0;
   }
   const results = [];
@@ -224,7 +224,9 @@ export async function main(args = process.argv.slice(2)) {
     for (const testCase of cases.filter((c) => !options.names.length || options.names.includes(c.name))) {
       const result = { ...await runCase(testCase, options), repetition };
       results.push(result);
-      console.log(`${result.pass ? 'PASS' : 'FAIL'} ${result.name} #${repetition}: ${result.checks.filter((c) => !c.ok).map((c) => c.why).join('; ') || 'all checks passed'}`);
+      const gates = result.checks.filter(c => !c.ok && (!c.soft || options.strict));
+      const soft = result.checks.filter(c => !c.ok && c.soft);
+      console.log(`${result.pass ? 'PASS' : 'FAIL'} ${result.name} #${repetition}: ${gates.map(c => c.why).join('; ') || 'all gates passed'}${soft.length ? `; soft misses: ${soft.map(c => c.why).join('; ')}` : ''}`);
     }
   }
   console.table(results.map((r) => ({ case: r.name, repeat: r.repetition, result: r.pass ? 'PASS' : 'FAIL',

@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MockLanguageModelV4 } from "ai/test";
-import { AGENT_FILES, loadDefinitions, skillsFor } from "./load.ts";
+import { AGENT_FILES, instructionsFor, loadDefinitions, skillsFor } from "./load.ts";
 import { skillPrompt } from "./skills.ts";
 import { createFixture, call, answer } from "./testing.ts";
 import { listRecentRuns } from "../db.ts";
@@ -30,6 +30,10 @@ describe("file definitions", () => {
     expect(AGENT_FILES.agents.Atlas!.skills.map(s => s.name)).toContain("trip-budget");
     expect(AGENT_FILES.agents.Wren!.skills.map(s => s.name)).not.toContain("trip-budget");
     expect(skillsFor({ name: "Atlas", instructions: "My custom instructions" }).map(s => s.name)).toEqual(["delegate"]);
+    expect(instructionsFor({ name: "Atlas", instructions: "My custom instructions" })).toBe("My custom instructions");
+    expect(instructionsFor({ name: "Atlas", instructions: AGENT_FILES.agents.Atlas!.seededText })).toBe(AGENT_FILES.agents.Atlas!.instructions);
+    expect(AGENT_FILES.agents.Wren!.skills.find(s => s.name === "long-page")?.body).toMatch(/outline first.*append_to_page/);
+    expect(AGENT_FILES.agents.Wren!.skills.find(s => s.name === "long-page")?.body).toContain("1,500 words");
   });
   it.each(["missing", "description", "duplicate", "name", "metadata", "empty"])("fails fast on %s definitions", mode => {
     const dir = copy();
