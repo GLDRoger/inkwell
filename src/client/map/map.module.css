@@ -1008,6 +1008,23 @@
   pointer-events: none;
 }
 
+/* How wide the diary is when open (whether or not it is): the demo frames things clear of it before it opens. */
+.diaryProbe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+@media (min-width: 641px) {
+  .diaryProbe {
+    width: calc(min(var(--panel-w), 100vw - 24px) + 12px);
+  }
+}
+
 .probe {
   position: absolute;
   width: 0;
@@ -1443,11 +1460,33 @@
   position: absolute;
   left: 0;
   top: 0;
+  box-sizing: border-box;
   width: calc(var(--w) * var(--s) * 1px);
   transform: translate(round(calc(var(--x) * var(--s) * 1px), 1px), round(calc(var(--y) * var(--s) * 1px), 1px));
   display: flex;
   flex-direction: column;
   gap: clamp(2px, calc(var(--s) * 6px), 6px);
+}
+
+/*
+ * A column's rule is the bottom edge of its label: where the threads start
+ * (--rule world units down), or lower when the label's text needs more room,
+ * so it never runs through the words. Drawn in from the left.
+ */
+.lensGroup[data-kind="columns"] {
+  min-height: calc(var(--rule) * var(--s) * 1px);
+  padding-bottom: clamp(3px, calc(var(--s) * 8px), 8px);
+}
+
+.lensGroup[data-kind="columns"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.25px;
+  background: color-mix(in oklab, var(--ink) 26%, transparent);
+  transform-origin: 0 50%;
 }
 
 .lensLabel {
@@ -1476,6 +1515,8 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  /* Zoomed out, where the note's smallest size outgrows its room, one line. */
+  max-height: calc(1.35em * clamp(1, round(down, calc(var(--s) * 2.4), 1), 2));
 }
 
 /* Threads from the question to each group, a rule under each label, or the timeline's axis. */
@@ -1513,6 +1554,15 @@
   }
   .lensGroup {
     animation: settle 600ms calc(300ms + var(--i, 0) * 80ms) var(--ease-ink) both;
+  }
+  .lensGroup[data-kind="columns"]::after {
+    animation: drawRule 900ms calc(380ms + var(--i, 0) * 90ms) var(--ease-ink) both;
+  }
+}
+
+@keyframes drawRule {
+  from {
+    transform: scaleX(0);
   }
 }
 

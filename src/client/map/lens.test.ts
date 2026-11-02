@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Lens } from "@shared/types";
 import { CARD_H, CARD_W, overlaps, type CardBox, type MapLayout } from "./layout";
-import { LENS_LIFT, lensKey, lensLayout, withLens } from "./lens";
+import { fittedLensLayout, LENS_LIFT, lensKey, lensLayout, withLens } from "./lens";
 
 const card = (id: string, x: number, y: number): CardBox => ({ id, x, y, w: CARD_W, h: CARD_H, depth: 1, regionId: "r", pinned: false });
 const ids = Array.from({ length: 12 }, (_, i) => `p${i}`);
@@ -90,5 +90,39 @@ describe("withLens", () => {
   it("is the map itself without a lens", () => {
     expect(withLens(home, null)).toBe(home);
     expect(lensKey(null)).toBe("");
+  });
+
+  describe("on a screen taller than wide", () => {
+    const three = lens("columns", [{ label: "Done", pageIds: ["p0"] }, { label: "Doing", pageIds: ["p1", "p2"] }, { label: "To do", pageIds: ["p3", "p4"] }]);
+    const widgets = [{ id: "w1", w: 255, h: 120, pageIds: ["p1"] }, { id: "w2", w: 255, h: 250, pageIds: ["p3"] }];
+
+    it("wraps the groups two to a row, the docked widgets taking the last place", () => {
+      const l = lensLayout(three, home, widgets, { perRow: 2 });
+      const [done, doing, todo] = l.groups;
+      expect(doing.y).toBe(done.y);
+      expect(doing.x).toBeGreaterThan(done.x);
+      expect(todo.y).toBeGreaterThan(done.y + done.h);
+      expect(todo.x).toBe(done.x);
+      const w1 = l.widgets.get("w1")!;
+      expect(w1.y).toBe(todo.y);
+      expect(w1.x).toBeGreaterThan(todo.x + todo.w);
+      const boxes = [...l.cards.values(), ...l.widgets.values()];
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(overlaps(boxes[i], boxes[j])).toBe(false);
+      expect(l.bounds.y + l.bounds.h).toBeLessThanOrEqual(home.bounds.y - LENS_LIFT + 1);
+    });
+
+    it("is fitted to the screen: a phone held upright sees it a third bigger, a wide screen keeps the row", () => {
+      const phone = { w: 366, h: 544 };
+      const scale = (l: ReturnType<typeof lensLayout>, f: { w: number; h: number }) => Math.min(f.w / l.bounds.w, f.h / l.bounds.h);
+      const row = lensLayout(three, home, widgets);
+      expect(scale(fittedLensLayout(three, home, widgets, phone), phone)).toBeGreaterThan(scale(row, phone) * 1.33);
+      const wide = { w: 1100, h: 640 };
+      expect(fittedLensLayout(three, home, widgets, wide).bounds).toEqual(row.bounds);
+    });
+
+    it("keeps a timeline on one line, read left to right", () => {
+      const l = lensLayout({ ...three, kind: "timeline" }, home, [], { perRow: 2 });
+      expect(new Set(l.groups.map((g) => g.y)).size).toBe(1);
+    });
   });
 });

@@ -12,20 +12,34 @@ export const FOLLOW_PAUSE_MS = 8000;
 
 export class FollowGate {
   private until = 0;
+  private held = 0;
   constructor(private ms = FOLLOW_PAUSE_MS) {}
   /** The viewer took the wheel. */
   pause(now: number) {
     this.until = now + this.ms;
   }
+  /**
+   * The demo itself holds the camera on a moment (a lens landing, a lasso, a
+   * widget changing) for `ms`: following waits, but the demo's own framing
+   * doesn't, since the viewer didn't move anything.
+   */
+  hold(now: number, ms: number) {
+    this.held = Math.max(this.held, now + ms);
+  }
   active(now: number) {
+    return now >= this.until && now >= this.held;
+  }
+  /** The viewer hasn't taken the wheel (the demo's own holds don't count). */
+  free(now: number) {
     return now >= this.until;
   }
   /** How long until following resumes, ms (0 when it's on). */
   resumesIn(now: number) {
-    return Math.max(0, this.until - now);
+    return Math.max(0, this.until - now, this.held - now);
   }
   reset() {
     this.until = 0;
+    this.held = 0;
   }
 }
 

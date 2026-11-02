@@ -48,6 +48,8 @@ const DRY_MS = 1700;
 const MISS_MS = 750;
 const LASSO_DRAW_MS = 1500;
 const LASSO_HOLD_MS = 3400;
+/** How long the demo's lasso is on screen, drawing and held. */
+export const LASSO_MS = LASSO_DRAW_MS + LASSO_HOLD_MS;
 
 export interface PenProps {
   camera: CameraController;

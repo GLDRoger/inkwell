@@ -47,6 +47,15 @@ const chromeTop = () => {
   return (parseFloat(v) || 56) + 10;
 };
 
+/** Ask an open peek to bring a line of its page into view: `window.dispatchEvent(new CustomEvent(PEEK_REVEAL, { detail }))`. */
+export const PEEK_REVEAL = "inkwell:peek-reveal";
+export interface PeekReveal {
+  pageId: Id;
+  /** The line's text (its start is enough). */
+  text: string;
+}
+const squash = (t: string) => t.replace(/\s+/g, " ").trim().toLowerCase();
+
 /** Too narrow for both side by side, so the peek sits in front of the open diary (see peek.css). */
 export const BOTH_PANELS_MIN_W = 1240;
 /**
@@ -119,6 +128,43 @@ export function PeekPanel({ pageId, page, readOnly, fixture, onClose, onOpenFull
     };
   }, [report]);
   useEffect(() => () => coverRef.current({ right: 0, bottom: 0 }), []);
+
+  // The map asks to show a line that just changed (the demo's new price): bring it into view
+  // in the page, once it has arrived there. A no-op when it's already on screen.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onReveal = (e: Event) => {
+      const want = (e as CustomEvent<PeekReveal>).detail;
+      if (!want || want.pageId !== pageId) return;
+      const needle = squash(want.text).slice(0, 48);
+      if (!needle) return;
+      clearTimeout(timer);
+      const started = Date.now();
+      const look = () => {
+        const scroller = ref.current?.querySelector<HTMLElement>(".peek-scroll");
+        const found = scroller
+          ? [...scroller.querySelectorAll<HTMLElement>(".ProseMirror p, .ProseMirror li, .ProseMirror td, .ProseMirror h2, .ProseMirror h3")]
+              .filter((el) => squash(el.textContent ?? "").includes(needle))
+              .sort((a, b) => (a.textContent?.length ?? 0) - (b.textContent?.length ?? 0))[0]
+          : undefined;
+        if (!found || !scroller) {
+          if (Date.now() - started < 3000) timer = setTimeout(look, 200);
+          return;
+        }
+        const box = found.getBoundingClientRect();
+        const view = scroller.getBoundingClientRect();
+        if (box.top >= view.top + 8 && box.bottom <= view.bottom - 8) return;
+        const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        scroller.scrollTo({ top: scroller.scrollTop + box.top - view.top - (view.height - box.height) / 2, behavior: reduce ? "auto" : "smooth" });
+      };
+      look();
+    };
+    window.addEventListener(PEEK_REVEAL, onReveal);
+    return () => {
+      window.removeEventListener(PEEK_REVEAL, onReveal);
+      clearTimeout(timer);
+    };
+  }, [pageId]);
 
   // Esc closes the peek, unless something inside (a slash menu) or another layer used it.
   const closeRef = useRef(onClose);

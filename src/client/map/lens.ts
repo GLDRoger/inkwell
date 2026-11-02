@@ -64,8 +64,41 @@ function madeWith(w: LensWidget, lens: Lens): boolean {
 /** A stable key for a lens, so the same lens shown again doesn't fly twice. */
 export const lensKey = (lens: Pick<Lens, "id" | "createdAt"> | null) => (lens ? `${lens.id}@${lens.createdAt}` : "");
 
-export function lensLayout(lens: Lens, home: Pick<MapLayout, "cards" | "bounds">, widgets: LensWidget[] = []): LensLayout {
-  const rows = LENS_ROWS[lens.kind] ?? LENS_ROWS.columns;
+/** Between rows of groups when a narrow lens wraps, world units. */
+export const LENS_WRAP_GAP = 64;
+
+export interface LensLayoutOptions {
+  /**
+   * At most this many groups side by side (the docked widgets count as one);
+   * the rest wrap into rows below. A phone held upright reads two at a time
+   * far better than a long row zoomed out to fit.
+   */
+  perRow?: number;
+  /** Cards per column before a group wraps into another column (LENS_ROWS by default). */
+  rows?: number;
+}
+
+/**
+ * The lens laid out to suit the free part of the screen (`free`, px): of a
+ * few arrangements (one long row; groups wrapped two or three to a row;
+ * columns of one or two cards), the one that can be shown biggest. Wide screens keep
+ * the single row; a phone held upright gets something it can read.
+ */
+export function fittedLensLayout(lens: Lens, home: Pick<MapLayout, "cards" | "bounds">, widgets: LensWidget[], free: { w: number; h: number }): LensLayout {
+  const fit = (l: LensLayout) => ({ l, s: Math.min(free.w / l.bounds.w, free.h / l.bounds.h) });
+  const plain = fit(lensLayout(lens, home, widgets));
+  let best = plain;
+  for (const perRow of [undefined, 3, 2])
+    for (const rows of [undefined, 2, 1]) {
+      const f = fit(lensLayout(lens, home, widgets, { perRow, rows }));
+      if (f.s > best.s) best = f;
+    }
+  // A clear gain only: the plain row is the lens's natural shape.
+  return best.s > plain.s * 1.06 ? best.l : plain.l;
+}
+
+export function lensLayout(lens: Lens, home: Pick<MapLayout, "cards" | "bounds">, widgets: LensWidget[] = [], opts: LensLayoutOptions = {}): LensLayout {
+  const rows = Math.max(1, opts.rows ?? LENS_ROWS[lens.kind] ?? LENS_ROWS.columns);
   const seen = new Set<Id>();
   // A page sits in at most one group: the first that names it. Pages not on the map are skipped.
   const groups = lens.groups.slice(0, 6).map((g) => {
@@ -86,46 +119,65 @@ export function lensLayout(lens: Lens, home: Pick<MapLayout, "cards" | "bounds">
     const inCol = Math.max(1, Math.min(rows, ids.length));
     return { g, ids, cols, w: cols * cardW + (cols - 1) * SUB_GAP, h: inCol * cardH + (inCol - 1) * LENS_ROW_GAP };
   });
-  const groupsW = sized.reduce((t, s) => t + s.w, 0) + Math.max(0, sized.length - 1) * LENS_COL_GAP;
-  const groupsH = sized.reduce((m, s) => Math.max(m, s.h), cardH);
 
   const lensWidgets = widgets.filter((w) => w.pageIds.some((id) => seen.has(id)) || madeWith(w, lens));
   const dockW = lensWidgets.length ? Math.max(...lensWidgets.map((w) => w.w)) : 0;
   const dockH = lensWidgets.reduce((t, w) => t + w.h, 0) + Math.max(0, lensWidgets.length - 1) * LENS_ROW_GAP;
-  const totalW = groupsW + (dockW ? LENS_COL_GAP + dockW : 0);
-  const bodyH = Math.max(groupsH, dockH - LENS_HEAD_H);
-  const totalH = LENS_TITLE_H + LENS_HEAD_H + bodyH;
+
+  // Cells in reading order (the groups, then the dock), in rows of `perRow`. A timeline keeps one row: it reads left to right.
+  type Cell = { group: (typeof sized)[number] | null; w: number; h: number };
+  const cells: Cell[] = sized.map((g) => ({ group: g, w: g.w, h: LENS_HEAD_H + Math.max(g.h, cardH) }));
+  if (dockW) cells.push({ group: null, w: dockW, h: dockH });
+  const perRow = lens.kind === "timeline" ? Infinity : Math.max(1, opts.perRow ?? Infinity);
+  const lines: Cell[][] = [];
+  for (const c of cells) {
+    const last = lines[lines.length - 1];
+    if (last && last.length < perRow) last.push(c);
+    else lines.push([c]);
+  }
+  const lineW = (line: Cell[]) => line.reduce((t, c) => t + c.w, 0) + Math.max(0, line.length - 1) * LENS_COL_GAP;
+  const lineH = (line: Cell[]) => Math.max(LENS_HEAD_H + cardH, ...line.map((c) => c.h));
+  const totalW = Math.max(0, ...lines.map(lineW));
+  const totalH = LENS_TITLE_H + lines.reduce((t, l) => t + lineH(l), 0) + Math.max(0, lines.length - 1) * LENS_WRAP_GAP;
 
   // Centred over the map, just above its top edge.
   const hb = home.bounds;
   const x0 = Math.round(hb.x + hb.w / 2 - totalW / 2);
   const y0 = Math.round(hb.y - LENS_LIFT - totalH);
-  const top = y0 + LENS_TITLE_H;
-  const cardsTop = top + LENS_HEAD_H;
 
   const cards = new Map<Id, Box>();
   const order = new Map<Id, number>();
   const out: LensGroupBox[] = [];
-  let x = x0;
-  let n = 0;
-  sized.forEach((s, index) => {
-    s.ids.forEach((id, i) => {
-      const col = Math.floor(i / rows);
-      const row = i % rows;
-      cards.set(id, { x: x + col * (cardW + SUB_GAP), y: cardsTop + row * (cardH + LENS_ROW_GAP), w: cardW, h: cardH });
-      order.set(id, n++);
-    });
-    out.push({ index, label: s.g.label, note: s.g.note, count: s.ids.length, x, y: top, w: s.w, h: LENS_HEAD_H + s.h });
-    x += s.w + LENS_COL_GAP;
-  });
-
   const dock = new Map<Id, Box>();
-  let wy = top;
-  for (const w of lensWidgets) {
-    dock.set(w.id, { x: x0 + groupsW + LENS_COL_GAP, y: wy, w: w.w, h: w.h });
-    order.set(w.id, n++);
-    wy += w.h + LENS_ROW_GAP;
+  let n = 0;
+  let index = 0;
+  let top = y0 + LENS_TITLE_H;
+  for (const line of lines) {
+    let x = x0;
+    for (const cell of line) {
+      const s = cell.group;
+      if (s) {
+        const cardsTop = top + LENS_HEAD_H;
+        s.ids.forEach((id, i) => {
+          const col = Math.floor(i / rows);
+          const row = i % rows;
+          cards.set(id, { x: x + col * (cardW + SUB_GAP), y: cardsTop + row * (cardH + LENS_ROW_GAP), w: cardW, h: cardH });
+          order.set(id, n++);
+        });
+        out.push({ index: index++, label: s.g.label, note: s.g.note, count: s.ids.length, x, y: top, w: s.w, h: LENS_HEAD_H + s.h });
+      } else {
+        let wy = top;
+        for (const w of lensWidgets) {
+          dock.set(w.id, { x, y: wy, w: w.w, h: w.h });
+          wy += w.h + LENS_ROW_GAP;
+        }
+      }
+      x += cell.w + LENS_COL_GAP;
+    }
+    top += lineH(line) + LENS_WRAP_GAP;
   }
+  // Docked widgets fly in after the pages.
+  for (const w of lensWidgets) order.set(w.id, n++);
 
   const head = { x: x0, y: y0, w: totalW, h: LENS_TITLE_H };
   const bounds = unionBox([head, ...cards.values(), ...dock.values(), ...out])!;

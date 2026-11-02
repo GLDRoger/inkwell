@@ -100,7 +100,8 @@ export function insidePolygon(p: Pt, poly: Pt[]): boolean {
 
 const inBox = (p: Pt, b: Box, m = 0) => p.x >= b.x - m && p.x <= b.x + b.w + m && p.y >= b.y - m && p.y <= b.y + b.h + m;
 
-function bboxOf(pts: Pt[]): Box {
+/** The box round a set of points. */
+export function boundsOf(pts: Pt[]): Box {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -134,7 +135,7 @@ export function recognize(raw: Pt[], targetsIn: Iterable<Target>, px = 1): Gestu
   const len = pathLength(raw);
   if (len < 40 * px) return { kind: "none" };
   const pts = resample(raw, 6 * px);
-  const box = bboxOf(pts);
+  const box = boundsOf(pts);
   const big = Math.max(box.w, box.h);
   const first = pts[0];
   const last = pts[pts.length - 1];

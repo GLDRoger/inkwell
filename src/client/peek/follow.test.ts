@@ -26,6 +26,19 @@ describe("FollowGate", () => {
     expect(g.active(8500)).toBe(false);
     expect(g.active(14_000)).toBe(true);
   });
+
+  it("a demo hold stops following without counting as the viewer's pause", () => {
+    const g = new FollowGate();
+    g.hold(0, 5000);
+    expect(g.active(4000)).toBe(false);
+    expect(g.free(4000)).toBe(true);
+    expect(g.resumesIn(1000)).toBe(4000);
+    expect(g.active(5000)).toBe(true);
+    g.reset();
+    g.hold(0, 5000);
+    g.reset();
+    expect(g.active(0)).toBe(true);
+  });
 });
 
 describe("followTarget", () => {

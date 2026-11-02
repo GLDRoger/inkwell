@@ -4,31 +4,36 @@ import type { Agent } from "@shared/types";
 import { LENS_HEAD_H, type LensLayout } from "./lens";
 import css from "./map.module.css";
 
-/** Where a group's rule (columns) or the timeline's axis runs, world units. */
-const ruleY = (lens: LensLayout) => (lens.groups[0]?.y ?? lens.head.y + lens.head.h) + LENS_HEAD_H - 30;
+/** Where a group's rule sits (and its threads start), world units below the group's top. */
+const RULE_AT = LENS_HEAD_H - 30;
 const r = (n: number) => Math.round(n * 10) / 10;
 
 /**
- * The lens's lines, drawn under the cards in world units: a rule under each
- * group (columns) or one axis through the groups in order (timeline), and a
- * thread each column of cards hangs from. They draw themselves in once the cards have started to fly.
+ * The lens's lines, drawn under the cards in world units: the timeline's axis
+ * through the groups in order, and a thread each column of cards hangs from,
+ * seen in the gaps between the cards. (A column's rule is drawn with its label,
+ * in LensLabels, so it always sits under the label's text at any zoom.) They
+ * draw themselves in once the cards have started to fly.
  */
 export const LensBack = memo(function LensBack({ lens }: { lens: LensLayout }) {
-  const y = ruleY(lens);
-  // Each column of cards hangs on one thread from its group's rule, seen in the gaps between the cards.
-  const columns = new Map<number, { x: number; y: number }>();
+  // Each column of cards hangs on one thread from its group's rule.
+  const columns = new Map<string, { x: number; top: number; y: number }>();
   for (const b of lens.cards.values()) {
     const cx = b.x + b.w / 2;
-    const c = columns.get(cx);
-    if (!c || b.y > c.y) columns.set(cx, { x: cx, y: b.y + b.h / 2 });
+    const g = lens.groups.find((g) => cx >= g.x && cx <= g.x + g.w && b.y >= g.y && b.y <= g.y + g.h);
+    if (!g) continue;
+    const key = `${g.index}:${cx}`;
+    const c = columns.get(key);
+    if (!c || b.y > c.y) columns.set(key, { x: cx, top: g.y + RULE_AT, y: b.y + b.h / 2 });
   }
   const threads = [...columns.values()].map((c, i) => (
-    <path key={`t${i}`} d={`M${r(c.x)},${y} L${r(c.x)},${r(c.y)}`} pathLength={1} style={{ "--i": i } as CSSProperties} />
+    <path key={`t${i}`} d={`M${r(c.x)},${r(c.top)} L${r(c.x)},${r(c.y)}`} pathLength={1} style={{ "--i": i } as CSSProperties} />
   ));
   if (lens.kind === "timeline") {
     const first = lens.groups[0];
     const last = lens.groups[lens.groups.length - 1];
     if (!first || !last) return null;
+    const y = first.y + RULE_AT;
     const x0 = first.x;
     const x1 = last.x + last.w + 40;
     return (
@@ -44,9 +49,6 @@ export const LensBack = memo(function LensBack({ lens }: { lens: LensLayout }) {
   }
   return (
     <g className={css.lensLines} data-kind="columns">
-      {lens.groups.map((g) => (
-        <path key={g.index} d={`M${g.x},${y} L${g.x + g.w},${y}`} pathLength={1} style={{ "--i": g.index } as CSSProperties} />
-      ))}
       {threads}
     </g>
   );
@@ -64,7 +66,7 @@ export const LensLabels = memo(function LensLabels({ lens }: { lens: LensLayout 
           key={g.index}
           className={css.lensGroup}
           data-kind={lens.kind}
-          style={{ "--x": g.x + (lens.kind === "timeline" ? 22 : 0), "--y": g.y, "--w": g.w - (lens.kind === "timeline" ? 22 : 0), "--i": g.index } as CSSProperties}
+          style={{ "--x": g.x + (lens.kind === "timeline" ? 22 : 0), "--y": g.y, "--w": g.w - (lens.kind === "timeline" ? 22 : 0), "--rule": RULE_AT, "--i": g.index } as CSSProperties}
         >
           <span className={css.lensLabel}>
             {g.label}

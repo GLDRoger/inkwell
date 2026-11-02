@@ -26,20 +26,20 @@ import { aspectBucket, overviewCamera } from "./overview";
 import { isUntouchedSeed } from "../page/title";
 import { Names, Prints, useWalks } from "./walkers";
 import { INK_SPAN_MS, inkDelay, WorldBack, worldFrame } from "./world";
-import { PeekPanel, panelsSideBySide, type PeekCover } from "../peek/PeekPanel";
+import { PEEK_REVEAL, PeekPanel, panelsSideBySide, type PeekCover, type PeekReveal } from "../peek/PeekPanel";
 import { peekFrom, peekHistory, withPeek } from "../peek/url";
-import { FollowGate, peekCamera } from "../peek/follow";
+import { FOLLOW_PAUSE_MS, FollowGate, peekCamera } from "../peek/follow";
 import { useDemoFollow } from "../peek/useDemoFollow";
 import { MAP_CAMERA_KEY, useDemoBarRoom } from "../lib/demo-flow";
 import { decodeCamera, encodeCamera } from "./saved-camera";
-import { lensKey, lensLayout, withLens, type LensLayout } from "./lens";
+import { fittedLensLayout, lensKey, withLens, type LensLayout } from "./lens";
 import { useLensFlight } from "./lens-motion";
 import { LensBack, LensBar, LensLabels } from "./lens-view";
 import { MapWidget, WidgetThreads } from "./widgets";
 import { widgetSize } from "./widget-data";
 import { placeWidgets } from "./widget-place";
-import { Pen } from "./pen";
-import type { Target } from "./stroke";
+import { LASSO_MS, Pen } from "./pen";
+import { boundsOf, lassoAround, type Target } from "./stroke";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -76,6 +76,16 @@ function savedCamera(notebook: string): Cam | null {
   } catch {
     return null;
   }
+}
+
+/** A widget shown with the data it had a moment ago (the same object for the same data, so the card doesn't redraw). */
+const heldCache = new WeakMap<Widget, { data: Widget["data"]; out: Widget }>();
+function heldWidget(w: Widget, data: Widget["data"]): Widget {
+  const hit = heldCache.get(w);
+  if (hit && hit.data === data) return hit.out;
+  const out = { ...w, data };
+  heldCache.set(w, { data, out });
+  return out;
 }
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -193,6 +203,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const layout = useMemo(() => layoutMap(pageList, "Other pages", shape), [pageList, shape]);
 
   // ------------------------------------------------------------ lens and widgets
+  /** The map's size on screen, px. */
+  const [size, setSize] = useState({ w: 0, h: 0 });
   // Widgets being deleted (their Undo is still open) are hidden here.
   const [goneWidgets, setGoneWidgets] = useState<ReadonlySet<Id>>(() => new Set());
   const widgetMap = state?.widgets;
@@ -205,9 +217,13 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       // The lens floats above everything on the map, widgets included.
       const homes = widgetList.map((w) => ({ x: w.x, y: w.y, ...widgetSize(w.data) }));
       const bounds = layout.cards.size ? unionBox([layout.bounds, ...homes])! : layout.bounds;
-      return lensLayout(lens, { cards: layout.cards, bounds }, widgetList.map((w) => ({ id: w.id, ...widgetSize(w.data), pageIds: w.pageIds, createdAt: w.createdAt, createdBy: w.createdBy })));
+      const docked = widgetList.map((w) => ({ id: w.id, ...widgetSize(w.data), pageIds: w.pageIds, createdAt: w.createdAt, createdBy: w.createdBy }));
+      // Arranged for the screen: a phone held upright reads groups wrapped into rows, zoomed in,
+      // rather than one long row zoomed out (roughly the room left by the bars, the panels and the demo's caption).
+      const free = { w: Math.max(200, size.w - 24), h: Math.max(200, size.h - (size.w < 640 ? 300 : 230)) };
+      return fittedLensLayout(lens, { cards: layout.cards, bounds }, docked, free);
     },
-    [lens, layout, widgetList],
+    [lens, layout, widgetList, size],
   );
   /** The map as drawn: the lens's cards in the lens, everything else where it is. */
   const widgetPlaces = useMemo(() => {
@@ -243,7 +259,6 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const reducedRef = useRef(reduced);
   reducedRef.current = reduced;
   const zoomTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const [size, setSize] = useState({ w: 0, h: 0 });
   const narrow = size.w > 0 && size.w < 640;
   /** Width left for the map beside an open diary. */
   const [freeW, setFreeW] = useState(0);
@@ -364,6 +379,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // The shell's variables are calc() expressions, which getComputedStyle hands
   // back unresolved; a hidden probe sized by them reads them in pixels.
   const insetProbe = useRef<HTMLDivElement>(null);
+  const diaryProbe = useRef<HTMLDivElement>(null);
   const lensOn = !!lensBox;
   const insets = useCallback((): Insets => {
     const p = insetProbe.current;
@@ -493,7 +509,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       let room = insets();
       if (followingRef.current) {
         // The demo's lens is the moment: the page panel makes way and the follow holds off while it lands.
-        gate.current.pause(Date.now());
+        gate.current.hold(Date.now(), FOLLOW_PAUSE_MS);
         if (peekRef.current) {
           setPeek(null, "demo");
           room = { ...room, right: (insetProbe.current?.offsetWidth ?? 0) + 12, bottom: room.bottom - coverRef.current.bottom };
@@ -507,9 +523,17 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     }
     const back = beforeLens.current ?? fitAll();
     beforeLens.current = null;
-    if (reducedRef.current) camera.set(back);
-    else camera.flyTo(back, 1100);
+    const goBack = () => {
+      if (reducedRef.current) camera.set(back);
+      else camera.flyTo(back, 1100);
+    };
+    // The demo clears its lens just before it points at what comes next: give that focus a
+    // moment to arrive and take the camera there in one flight, rather than flying back first.
+    if (followingRef.current) lensReturn.current = window.setTimeout(goBack, 450);
+    else goBack();
   }, [lensId, camera, insets, compact, fitAll, setPeek]);
+  const lensReturn = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(lensReturn.current), []);
   // Until someone moves the map, keep it fitted as the window changes, and as
   // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
@@ -878,6 +902,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const box = viewLayout.cards.get(peekId);
     if (!box) return;
     peekShown.current = peekKey;
+    // The demo is framing a widget with this page: one flight, its own (below).
+    if (followingRef.current && framingWidget.current) return;
     const target = peekCamera(box, camera.cam, camera.vw, camera.vh, insets(), midScale());
     if (!target) return;
     if (followingRef.current) camera.hush(1600);
@@ -938,17 +964,21 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const was = wasEnded.current;
     wasEnded.current = ended;
     if (ended !== "finished" || was === "finished" || !demo) return;
-    // Only the ending re-arms this; peek and layout changes must not cancel it.
+    // With the final caption, both panels close at once: the last frame is the map and its widgets.
+    finale.current.setPeek(null, "demo");
+    if (getUi().diaryOpen) setUi({ diaryOpen: false });
+    window.clearTimeout(lensReturn.current);
+    // Only the ending re-arms this; peek and layout changes must not cancel it. The fit waits
+    // a beat for the closed panels to hand their room back.
     const t = window.setTimeout(() => {
       if (!placed.current) return;
-      finale.current.setPeek(null, "demo");
       camera.hush();
       camera.touched = false;
       const whole = finale.current.fitAll();
       if (reducedRef.current) camera.set(whole);
       else camera.flyTo(whole, 1400);
       camera.touched = false;
-    }, 1200);
+    }, 180);
     return () => window.clearTimeout(t);
   }, [ended]);
 
@@ -1096,33 +1126,141 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const onWidgetPeek = useCallback((pageId: Id) => handlers.current.onPeek(pageId), []);
 
   // ------------------------------------------------------------ demo: lasso and widgets
+  // These are the demo's headline moments, so each gets the screen: the panels make way,
+  // following holds off, and the camera frames the change in the part of the map that's
+  // really in view, once.
+  /** The free part of the screen once the panels settle: none on the right but the diary if `diary`, nothing at the bottom but the bar. */
+  const roomWith = useCallback(
+    (diary: boolean): Insets => {
+      const i = insets();
+      const probe = insetProbe.current?.offsetWidth ?? 0;
+      return { ...i, right: (diary ? Math.max(probe, diaryProbe.current?.offsetWidth ?? 0) : probe) + 12, bottom: i.bottom - coverRef.current.bottom };
+    },
+    [insets],
+  );
   const circled = demoFocus.circledPageIds;
   const lassoKey = circled?.length ? `${demoIndex}:${circled.join(",")}` : "";
   const lasso = useMemo(() => (lassoKey && circled ? { key: lassoKey, ids: circled } : null), [lassoKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!lasso || !following || !placed.current || !gate.current.active(Date.now())) return;
-    // Bring the circled cards into view before the hand draws round them.
+    if (!lasso || !following || !placed.current || !gate.current.free(Date.now())) return;
+    // The last page shown has nothing to do with this: it goes, and the hand draws in the open.
+    if (peekRef.current) setPeek(null, "demo");
+    // Held through the request that follows: the agent reads the circled pages, already in view,
+    // and the answer's widget is framed when it lands (below).
+    gate.current.hold(Date.now(), LASSO_MS + 8000);
+    const boxes = lasso.ids.flatMap((id) => layoutRef.current.cards.get(id) ?? []);
+    if (!boxes.length) return;
+    // Frame the loop the hand will draw (it runs well outside the cards), with room above it for its chip.
+    const loop = boundsOf(lassoAround(boxes));
+    const frame = { ...loop, y: loop.y - loop.h * 0.08, h: loop.h * 1.08 };
+    // The request opens the diary while the loop is still up: keep clear of where it will be.
+    const target = fitCamera(frame, camera.vw, camera.vh, roomWith(true), narrow ? 8 : 24, 1);
     camera.hush(1600);
-    showFocus(lasso.ids, true);
-  }, [lasso, following, camera, showFocus]);
+    camera.touched = true;
+    window.clearTimeout(lensReturn.current);
+    if (reducedRef.current) camera.set(target);
+    else camera.flyTo(target, 900);
+  }, [lasso, following, camera, setPeek, roomWith, narrow]);
+
   const focusWidget = demoFocus.widgetId;
   const focusPage = demoFocus.pageId;
-  const widgetReady = !!focusWidget && widgetPlaces.has(focusWidget);
+  const widgetBox = focusWidget ? widgetPlaces.get(focusWidget) : undefined;
+  const widgetBoxKey = widgetBox ? `${Math.round(widgetBox.x)},${Math.round(widgetBox.y)},${Math.round(widgetBox.w)},${Math.round(widgetBox.h)}` : "";
+  const docked = !!focusWidget && !!lensBox?.widgets.has(focusWidget);
+  /** The demo is about to frame a widget: the peek's own camera stands aside. */
+  const framingWidget = useRef(false);
+  framingWidget.current = following && !!widgetBoxKey && !docked;
+  // The demo changes a page a moment after pointing at it, sooner than the camera can get
+  // there: the widget keeps showing what it said until the camera has landed, then counts up.
+  const freezeKey = framingWidget.current && focusWidget ? `${demoIndex}:${focusWidget}` : "";
+  const frozen = useRef<{ key: string; id: Id; data: Widget["data"] } | null>(null);
+  const focused = focusWidget ? widgetMap?.get(focusWidget) : undefined;
+  if (freezeKey && frozen.current?.key !== freezeKey && focused) frozen.current = { key: freezeKey, id: focused.id, data: focused.data };
+  const [thawed, setThawed] = useState("");
+  const thaw = useCallback((key: string) => setThawed((k) => (k === key ? k : key)), []);
   useEffect(() => {
-    if (!focusWidget || !widgetReady || !following || !placed.current || !gate.current.active(Date.now())) return;
-    // A widget docked beside the lens is already in the lens's view.
-    if (lensBoxRef.current?.widgets.has(focusWidget)) return;
-    // After the page's own peek camera has moved: frame the widget, with the page it's about when there is one.
+    if (!freezeKey) return;
+    // However the framing goes, the number never waits long.
+    const t = window.setTimeout(() => thaw(freezeKey), 3200);
+    return () => window.clearTimeout(t);
+  }, [freezeKey, thaw]);
+  const held = frozen.current && frozen.current.key === freezeKey && thawed !== freezeKey ? frozen.current : null;
+  const sideBySide = size.w >= 900;
+  // The panels first: on a wide screen the page stays open beside the map (the ticked box
+  // and the moving number side by side) and the diary makes way; a request's answer keeps
+  // the diary. On a phone the sheet would cover the widget, so it closes.
+  useEffect(() => {
+    if (!framingWidget.current || !placed.current || !gate.current.free(Date.now())) return;
+    window.clearTimeout(lensReturn.current);
+    gate.current.hold(Date.now(), FOLLOW_PAUSE_MS);
+    if (sideBySide && focusPage) {
+      if (getUi().diaryOpen) setUi({ diaryOpen: false });
+      if (peekRef.current !== focusPage) setPeek(focusPage, "demo");
+    } else {
+      if (!sideBySide && getUi().diaryOpen) setUi({ diaryOpen: false });
+      if (peekRef.current) setPeek(null, "demo");
+    }
+  }, [focusWidget, focusPage, demoIndex, sideBySide, widgetBoxKey, docked, following, setPeek]);
+  // Then the camera, once the panels have settled: the widget, with the page it's about when
+  // there is one (or its pages, when they fit), in the part of the map that's really in view.
+  const framed = useRef("");
+  const panelsReady = sideBySide && focusPage ? peekId === focusPage && cover.right > 0 && !diaryOpen : !peekId && cover.bottom === 0 && cover.right === 0 && (sideBySide || !diaryOpen);
+  useEffect(() => {
+    if (!framingWidget.current || !focusWidget || !panelsReady || !placed.current || !gate.current.free(Date.now())) return;
+    const key = `${demoIndex}:${focusWidget}:${widgetBoxKey}:${cover.right}:${cover.bottom}:${diaryOpen}:${size.w}x${size.h}`;
+    if (framed.current === key) return;
+    // A beat for the panels' last measurements, then one flight.
     const t = window.setTimeout(() => {
       const box = widgetPlacesRef.current.get(focusWidget);
-      if (!box || !followingRef.current || !gate.current.active(Date.now())) return;
-      const page = focusPage ? layoutRef.current.cards.get(focusPage) : undefined;
+      if (!box || !followingRef.current) return;
+      framed.current = key;
+      const cards = layoutRef.current.cards;
+      const room = insets();
+      const pad = narrow ? 14 : 36;
+      const at = (b: Box, max: number) => fitCamera(b, camera.vw, camera.vh, room, pad, max);
+      const page = focusPage ? cards.get(focusPage) : undefined;
+      const sources = (widgetMap?.get(focusWidget)?.pageIds ?? []).flatMap((id) => cards.get(id) ?? []);
+      // Readable: the widget's number and the page's lines. Widen the frame only while it stays so.
+      const readable = narrow ? 0.62 : 0.5;
+      let target = at(box, narrow ? 1.1 : 1);
+      for (const extra of [page ? [page] : [], page ? [] : sources]) {
+        if (!extra.length) continue;
+        const wider = at(unionBox([box, ...extra])!, 0.95);
+        if (wider.s >= readable) {
+          target = wider;
+          break;
+        }
+      }
+      gate.current.hold(Date.now(), FOLLOW_PAUSE_MS);
       camera.hush(1600);
-      if (page) camera.flyTo(fitCamera(unionBox([box, page])!, camera.vw, camera.vh, insets(), narrow ? 16 : 48, 0.95), 1100);
-      else camera.flyTo(cameraFor({ ...box, id: focusWidget, depth: 0, regionId: "", pinned: true }, "mid"), 1100);
-    }, focusPage ? 1400 : 0);
+      camera.touched = true;
+      if (reducedRef.current) camera.set(target);
+      else camera.flyTo(target, 1000);
+      const step = `${demoIndex}:${focusWidget}`;
+      window.setTimeout(() => thaw(step), reducedRef.current ? 150 : 1150);
+    }, 160);
     return () => window.clearTimeout(t);
-  }, [focusWidget, focusPage, widgetReady, following, camera, cameraFor, demoIndex, insets, narrow]);
+  }, [focusWidget, focusPage, demoIndex, widgetBoxKey, panelsReady, cover, diaryOpen, size, narrow, camera, insets, widgetMap, thaw]);
+
+  // A total that changed with a page open beside it: show the line that changed in the page
+  // (the demo's new price sits below the fold).
+  const lastLines = useRef(new Map<Id, Map<string, number>>());
+  useEffect(() => {
+    if (!widgetMap) return;
+    for (const w of widgetMap.values()) {
+      if (w.data.kind !== "total") continue;
+      const now = new Map(w.data.lines.map((l) => [`${l.pageId}\u0000${l.label}`, l.amount]));
+      const before = lastLines.current.get(w.id);
+      lastLines.current.set(w.id, now);
+      if (!before || !demo || !peekRef.current) continue;
+      for (const [key, amount] of now) {
+        const [pageId, label] = key.split("\u0000");
+        if (pageId !== peekRef.current || before.get(key) === amount) continue;
+        window.dispatchEvent(new CustomEvent<PeekReveal>(PEEK_REVEAL, { detail: { pageId, text: label } }));
+        break;
+      }
+    }
+  }, [widgetMap, demo]);
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);
@@ -1293,6 +1431,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       }}
     >
       <div ref={insetProbe} className={css.insetProbe} aria-hidden />
+      <div ref={diaryProbe} className={css.diaryProbe} aria-hidden />
       <p id="inkwell-map-help" className={css.srOnly}>
         Drag or scroll to move, pinch or Control and scroll to zoom. Arrow keys move, plus and minus zoom, 0 shows
         everything. Click a page, or press Space on it, to peek at it beside the map; double-click it, or press Enter, to
@@ -1456,7 +1595,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             widgetList.map((w) => (
               <MapWidget
                 key={w.id}
-                widget={w}
+                widget={held && held.id === w.id ? heldWidget(w, held.data) : w}
                 box={widgetPlaces.get(w.id)!}
                 detail={detail}
                 pages={state.pages}
