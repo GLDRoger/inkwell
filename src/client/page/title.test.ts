@@ -68,6 +68,6 @@ describe("editorName", () => {
     expect(editorName({ kind: "agent", id: "a", name: "Wren" }, { meId: "u", demo: true })).toBe("Wren");
     expect(editorName(person, { meId: "u", demo: false })).toBe("You");
     expect(editorName(person, { meId: "other", demo: false })).toBe("Sam");
-    expect(editorName(person, { meId: "u", demo: true })).toBe("Demo");
+    expect(editorName(person, { meId: "u", demo: true })).toBe("Maya");
   });
 });

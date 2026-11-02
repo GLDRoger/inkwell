@@ -57,7 +57,7 @@ describe("a card on the map", () => {
   });
 
   it("credits what a person did in the recorded demo to the demo, not to you", () => {
-    expect(card({ readOnly: true }).el.getAttribute("aria-label")).toMatch(/Last edited by Demo/);
+    expect(card({ readOnly: true }).el.getAttribute("aria-label")).toMatch(/Last edited by Maya/);
     cleanup();
     expect(card().el.getAttribute("aria-label")).toMatch(/Last edited by you/);
   });

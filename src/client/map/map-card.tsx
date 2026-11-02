@@ -6,6 +6,7 @@ import type { Page } from "@shared/types";
 import type { CameraController } from "./camera";
 import type { CardBox } from "./layout";
 import type { Detail } from "./lod";
+import { DEMO_PERSON } from "../page/title";
 import { ago, farTitle, initial, splitTitle, titleOf } from "./util";
 import css from "./map.module.css";
 
@@ -99,7 +100,7 @@ export const MapCard = memo(function MapCard(p: Props) {
 
   const by = page.updatedBy;
   // In the recorded demo, what a person did (a photo, a cover) was the recording's, not yours.
-  const who = by.kind === "person" && p.readOnly ? "Demo" : p.you ? "you" : by.name;
+  const who = by.kind === "person" && p.readOnly ? DEMO_PERSON : p.you ? "you" : by.name;
   const when = p.seeded ? "when your notebook was made" : ago(page.updatedAt, p.now);
   // A mid card's byline has one short line.
   const whenShort = p.seeded ? "from the start" : when;

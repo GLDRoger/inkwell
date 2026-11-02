@@ -178,7 +178,7 @@ export const MapWidget = memo(function MapWidget(p: Props) {
           <ul className={css.wRows}>
             {rows.shown.map((r) => (
               <li key={r.pageId}>
-                <button type="button" className={css.wPage} onClick={() => p.onPeek?.(r.pageId)} tabIndex={-1}>
+                <button type="button" className={css.wPage} onClick={() => p.onPeek?.(r.pageId)}>
                   {pageTitle(r.pageId)}
                 </button>
                 <span className={css.wMini} aria-hidden>
@@ -210,7 +210,7 @@ export const MapWidget = memo(function MapWidget(p: Props) {
               <li key={`${l.pageId}:${i}`}>
                 <span className={css.wLine}>
                   {l.label}
-                  <button type="button" className={css.wPage} onClick={() => p.onPeek?.(l.pageId)} tabIndex={-1}>
+                  <button type="button" className={css.wPage} onClick={() => p.onPeek?.(l.pageId)}>
                     {pageTitle(l.pageId)}
                   </button>
                 </span>

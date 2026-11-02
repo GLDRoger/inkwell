@@ -54,13 +54,16 @@ export class TitleDraft {
   }
 }
 
+/** The person in the recorded demo: who ticks the task and changes the price. */
+export const DEMO_PERSON = "Maya";
+
 /**
  * Who edited a page last, as a byline says it: the agent's or person's name,
- * "You" for yourself, and "Demo" in the recorded demo, where nobody watching
- * wrote anything (its photo and cover are the recording's, not the viewer's).
+ * "You" for yourself, and the recording's person (DEMO_PERSON) in the recorded
+ * demo, where nobody watching wrote anything (its photo, cover and edits are hers).
  */
 export function editorName(by: Pick<Page["updatedBy"], "kind" | "id" | "name">, o: { meId: string | null | undefined; demo: boolean }): string {
   if (by.kind === "agent") return by.name;
-  if (o.demo) return "Demo";
+  if (o.demo) return DEMO_PERSON;
   return o.meId != null && by.id === o.meId ? "You" : by.name;
 }

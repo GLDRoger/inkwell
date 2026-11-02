@@ -58,6 +58,8 @@ const supportsLinear = () => typeof CSS !== "undefined" && typeof CSS.supports =
 export const STAGGER_MS = 42;
 export const STAGGER_CAP_MS = 520;
 export const flightDelay = (order: number) => Math.min(STAGGER_CAP_MS, order * STAGGER_MS);
+/** Into a lens, the cards wait this long, so they land as the camera arrives rather than before it. */
+export const LENS_LEAD_MS = 300;
 
 /** The offset a card is drawn at right now, mid-flight. */
 function currentOffset(el: HTMLElement): { x: number; y: number } {
@@ -72,7 +74,7 @@ interface Flight {
   order: number;
 }
 
-function fly(flights: Flight[], reduced: boolean) {
+function fly(flights: Flight[], reduced: boolean, lead = 0) {
   const linear = supportsLinear();
   for (const f of flights) {
     const running = f.el.getAnimations().filter((a) => (a as Animation & { id: string }).id === "lens-flight");
@@ -87,7 +89,7 @@ function fly(flights: Flight[], reduced: boolean) {
     const dx = f.from.x - f.to.x + off.x;
     const dy = f.from.y - f.to.y + off.y;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
-    const delay = flightDelay(f.order);
+    const delay = lead + flightDelay(f.order);
     f.el.setAttribute("data-flying", "");
     const a = f.el.animate(
       [
@@ -130,6 +132,6 @@ export function useLensFlight(layer: RefObject<HTMLElement | null>, key: string,
       if (!from || !to || (from.x === to.x && from.y === to.y)) continue;
       flights.push({ el: node, from, to, order: order(id) });
     }
-    fly(flights, reduced);
+    fly(flights, reduced, key ? LENS_LEAD_MS : 0);
   });
 }

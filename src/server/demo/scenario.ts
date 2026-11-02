@@ -97,7 +97,7 @@ export const LISBON_TOUR: ScenarioDefinition = {
     },
     {
       id: "tick",
-      caption: "Tick a task and the widget updates.",
+      caption: "Tick a task and the count goes up.",
       minMs: 5000,
       action: { kind: "edit", title: /^Product roadmap$/, find: "- [ ] Billing: cards, invoices, dunning emails", replace: "- [x] Billing: cards, invoices, dunning emails" },
     },
