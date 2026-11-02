@@ -4,6 +4,7 @@ import { agentStatuses, type MapState, type Walker } from "./model";
 import { inkOf } from "./walkers";
 import { titleOf } from "./util";
 import css from "./map.module.css";
+import { AgentAvatar } from "../agents/AgentAvatar";
 
 /** What a working agent is doing, in a few words. */
 export function workingLine(action: Walker["action"], where: Page | undefined): string {
@@ -63,7 +64,11 @@ export function Roster({
         aria-label={`${name}: ${line}${pageId ? ". Show on the map." : ""}`}
         title={`${name}: ${line}`}
       >
-        <span className={css.chipDot} aria-hidden />
+        {w.kind === "agent" ? (
+          <AgentAvatar name={name} color={w.color ?? "#555"} size={22} state={working ? "thinking" : "idle"} animate={working} className={css.chipAvatar} />
+        ) : (
+          <span className={css.chipDot} aria-hidden />
+        )}
         <span className={css.chipName}>{name}</span>
         {!short && (
           <span className={css.chipLine}>

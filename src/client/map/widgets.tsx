@@ -200,7 +200,7 @@ export const MapWidget = memo(function MapWidget(p: Props) {
       <>
         <div className={css.wBig}>
           <span className={css.wNum} data-bump={bump ?? undefined}>
-            {money(shown, d.currency, far || Math.abs(d.amount) >= 10_000)}
+            {money(Number.isInteger(d.amount) ? Math.round(shown) : shown, d.currency, far || Number.isInteger(d.amount) || Math.abs(d.amount) >= 10_000)}
           </span>
           {!far && <span className={css.wSub}>{d.lines.length === 1 ? "1 item" : `${d.lines.length} items`}</span>}
         </div>

@@ -333,6 +333,7 @@
 .picker-detail { font-size: 12.5px; line-height: 1.4; color: var(--ink-faint); text-wrap: pretty; }
 .picker-check { color: var(--ink); flex: none; margin-top: 3px; }
 .agent-picker .picker-button { font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+.agent-avatar { flex: none; margin: -3px 0; }
 .agent-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: inline-block; }
 .agent-dot.any { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-faint); }
 

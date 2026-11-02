@@ -837,6 +837,11 @@
   cursor: default;
 }
 
+.chipAvatar {
+  flex: none;
+  margin: -4px -2px -4px -6px;
+}
+
 .chipDot {
   flex: none;
   width: 8px;

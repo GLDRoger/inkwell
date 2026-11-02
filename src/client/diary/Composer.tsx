@@ -7,6 +7,7 @@ import { mediaErrorCopy } from "../lib/media";
 import { canRecord, startRecording, type Recording } from "./recorder";
 import { Picker } from "./Picker";
 import { COPY, composerPlaceholder } from "./copy";
+import { AgentAvatar } from "../agents/AgentAvatar";
 
 export interface PendingAttachment {
   key: string;
@@ -316,7 +317,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
             className="agent-picker"
             button={
               <>
-                <span className={agent ? "agent-dot" : "agent-dot any"} style={agent ? { background: agent.color } : undefined} aria-hidden />
+                {agent ? <AgentAvatar name={agent.name} color={agent.color} size={20} animate={false} className="agent-avatar" /> : <span className="agent-dot any" aria-hidden />}
                 <span>{agent?.name ?? COPY.anyAgent}</span>
               </>
             }
@@ -330,7 +331,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
                   </span>
                 ),
                 detail: a.description,
-                lead: <span className="agent-dot" style={{ background: a.color }} aria-hidden />,
+                lead: <AgentAvatar name={a.name} color={a.color} size={22} animate={false} className="agent-avatar" />,
               })),
             ]}
           />

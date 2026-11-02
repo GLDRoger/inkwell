@@ -37,6 +37,7 @@ import { useLensFlight } from "./lens-motion";
 import { LensBack, LensBar, LensLabels } from "./lens-view";
 import { MapWidget, WidgetThreads } from "./widgets";
 import { widgetSize } from "./widget-data";
+import { placeWidgets } from "./widget-place";
 import { Pen } from "./pen";
 import type { Target } from "./stroke";
 import css from "./map.module.css";
@@ -210,10 +211,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   );
   /** The map as drawn: the lens's cards in the lens, everything else where it is. */
   const widgetPlaces = useMemo(() => {
-    const out = new Map<Id, Box>();
-    for (const w of widgetList) out.set(w.id, lensBox?.widgets.get(w.id) ?? { x: w.x, y: w.y, ...widgetSize(w.data) });
+    const out = placeWidgets(widgetList, layout.cards);
+    if (lensBox) for (const [id, box] of lensBox.widgets) out.set(id, box);
     return out;
-  }, [widgetList, lensBox]);
+  }, [widgetList, lensBox, layout]);
   // Widgets count as part of the map's extent: the overview and the minimap include them.
   const viewLayout = useMemo(() => {
     const v = withLens(layout, lensBox);
