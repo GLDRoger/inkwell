@@ -2187,7 +2187,7 @@
   padding-right: 6px;
   white-space: normal;
   width: max-content;
-  max-width: min(640px, calc(100% - 24px - var(--map-inset, var(--diary-inset, 0px))));
+  max-width: min(720px, calc(100% - 24px - var(--map-inset, var(--diary-inset, 0px))));
 }
 
 .hintDone {
@@ -2201,4 +2201,17 @@
   font: 550 12.5px/1 var(--font-ui);
   cursor: pointer;
   pointer-events: auto;
+}
+
+/* On a phone the pen sits above the photo button, bottom left, in reach of a thumb. */
+.root[data-compact] .penPill {
+  position: absolute;
+  left: 12px;
+  bottom: calc(var(--map-bottom, 0px) + 64px + env(safe-area-inset-bottom, 0px));
+  width: 44px;
+  height: 44px;
+}
+
+.root[data-compact] .hint[data-pen-hint] {
+  bottom: calc(var(--map-bottom, 0px) + 120px + env(safe-area-inset-bottom, 0px));
 }

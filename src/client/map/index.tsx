@@ -641,6 +641,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
           keyActions.current.togglePen();
           break;
         case "Escape":
+          // A pen choice open on the map answers Escape itself (it cancels just that stroke).
+          if (root.querySelector("[data-pen-ui]")) return;
           if (keyActions.current.pen) keyActions.current.togglePen();
           else if (keyActions.current.lens && !peekRef.current) keyActions.current.back();
           else return;
@@ -1325,7 +1327,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
 
           {pen && (
             <p className={css.hint} data-pen-hint role="status">
-              {compact ? "Circle pages to ask about them" : "Circle pages to ask about them, draw from one page to another to link them, or strike one out."}
+              {compact ? "Circle pages to ask about them" : "Circle pages to ask about them. Draw a line between two to link them, or strike one out."}
               <button type="button" className={css.hintDone} data-map-control onClick={togglePen}>
                 Done
               </button>
