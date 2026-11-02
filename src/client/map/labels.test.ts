@@ -26,6 +26,23 @@ describe("placeLabel", () => {
     expect(overlaps(spot.box, card)).toBe(false);
   });
 
+  it("in a packed cluster up close, rests on its own card's foot rather than a neighbour's words", () => {
+    const s = 0.85;
+    // Neighbours 18 units off on every side: no gap is as tall as a name.
+    const ring = [
+      { x: 318, y: 0, w: 300, h: 250 },
+      { x: -318, y: 0, w: 300, h: 250 },
+      { x: 0, y: 268, w: 300, h: 250 },
+      { x: 0, y: -268, w: 300, h: 250 },
+      { x: 318, y: 268, w: 300, h: 250 },
+      { x: -318, y: 268, w: 300, h: 250 },
+    ];
+    const spot = placeLabel(card, labelWidth("Atlas", "thinking"), s, { cards: ring }, 48);
+    for (const c of ring) expect(overlaps(spot.box, c)).toBe(false);
+    // Over the bottom of its own card, below its title.
+    expect(spot.box.y).toBeGreaterThan(card.y + card.h * 0.6);
+  });
+
   it("never covers its own card or a neighbour's title, even far out where the gaps are thin", () => {
     const s = 0.3;
     const spot = placeLabel(card, labelWidth("Atlas", "writing"), s, { cards: [right, below, above], far: true });

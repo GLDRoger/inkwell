@@ -32,7 +32,7 @@ import { FOLLOW_PAUSE_MS, FollowGate, peekCamera } from "../peek/follow";
 import { useDemoFollow } from "../peek/useDemoFollow";
 import { MAP_CAMERA_KEY, useDemoBarRoom } from "../lib/demo-flow";
 import { decodeCamera, encodeCamera } from "./saved-camera";
-import { fittedLensLayout, lensKey, withLens, type LensLayout } from "./lens";
+import { fittedLensLayout, LENS_HEAD_H, lensKey, withLens, type LensLayout } from "./lens";
 import { useLensFlight } from "./lens-motion";
 import { LensBack, LensBar, LensLabels } from "./lens-view";
 import { MapWidget, WidgetThreads } from "./widgets";
@@ -1264,7 +1264,11 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   }, [widgetMap, demo]);
 
   // ------------------------------------------------------------ walkers
-  const widgetBoxes = useMemo(() => [...widgetPlaces.values()], [widgetPlaces]);
+  // Names keep off the widgets, and off a lens's question and its groups' labels and notes.
+  const widgetBoxes = useMemo(
+    () => [...widgetPlaces.values(), ...(lensBox ? [lensBox.head, ...lensBox.groups.map((g) => ({ x: g.x, y: g.y, w: g.w, h: LENS_HEAD_H }))] : [])],
+    [widgetPlaces, lensBox],
+  );
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);
   const live = state ?? emptyState;
   const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, viewLayout, camera, reduced, widgetBoxes);

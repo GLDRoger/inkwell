@@ -1763,9 +1763,15 @@
   display: none;
 }
 
-/* A countdown is too short for both far out: its number ("31 days") says it. */
-.widget[data-detail="rooms"][data-kind="countdown"] .wHead {
-  display: none;
+/* A widget too short for its title and its number keeps the number ("31 days" says what it is). */
+.widget[data-detail="rooms"] {
+  container-type: size;
+}
+
+@container (max-height: 44px) {
+  .wHead {
+    display: none;
+  }
 }
 
 .wRemove {

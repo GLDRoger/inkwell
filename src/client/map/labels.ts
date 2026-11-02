@@ -115,7 +115,7 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
   const taken = opts.taken ?? [];
   const zones = opts.cards.map((c) => titleZone(c, !!opts.far));
 
-  const candidates: { side: Side; ax: number; ay: number; x: number; y: number }[] = [];
+  const candidates: { side: Side; ax: number; ay: number; x: number; y: number; own?: boolean }[] = [];
   // Along the bottom and top edges, a name's width at a time.
   const step = pw + 6 * k;
   const runs = Math.max(1, Math.floor((card.w - inset) / step) + 1);
@@ -153,6 +153,15 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     candidates.push({ side: "left", ax: card.x, ay: card.y + card.h, x: card.x - gap - pw, y });
   }
 
+  // Last resort, closer in, where the gaps are thinner than a name: resting on its own card's
+  // bottom edge, over that card's byline, rather than on a neighbour's words.
+  if (!opts.far)
+    for (let i = 0; i < runs; i++) {
+      const x = card.x + card.w - inset - pw - i * step;
+      if (x < card.x) break;
+      candidates.push({ side: "below", ax: card.x, ay: card.y + card.h, x, y: card.y + card.h + Math.min(gap, ph / 3) - ph, own: true });
+    }
+
   let best: (typeof candidates)[number] | null = null;
   let bestScore = Infinity;
   for (const c of candidates) {
@@ -162,6 +171,8 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     for (const a of opts.areas ?? []) if (overlaps(a, box)) score += area(a, box) * 10;
     for (const o of opts.obstacles ?? []) if (overlaps(o, box)) score += area(o, box) * 10;
     if (opts.within) score += (box.w * box.h - area(opts.within, box)) * 20;
+    // Its own card's foot is the byline: a fraction of the cost of a neighbour's text.
+    if (c.own) score += area(card, box) * 0.3;
     for (let i = 0; i < opts.cards.length; i++) {
       const o = opts.cards[i];
       if (!overlaps(o, box)) continue;
