@@ -17,6 +17,15 @@ describe("placeLabel", () => {
     for (const c of [right, below]) expect(overlaps(spot.box, c)).toBe(false);
   });
 
+  it("keeps off a live widget the way it keeps off a title", () => {
+    const s = 0.85;
+    // A widget right under the card, where the name would otherwise go.
+    const widget = { x: -20, y: 262, w: 255, h: 250 };
+    const spot = placeLabel(card, labelWidth("Wren", "reading"), s, { cards: [right], obstacles: [widget] });
+    expect(overlaps(spot.box, widget)).toBe(false);
+    expect(overlaps(spot.box, card)).toBe(false);
+  });
+
   it("never covers its own card or a neighbour's title, even far out where the gaps are thin", () => {
     const s = 0.3;
     const spot = placeLabel(card, labelWidth("Atlas", "writing"), s, { cards: [right, below, above], far: true });

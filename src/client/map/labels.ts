@@ -89,6 +89,8 @@ export interface PlaceOptions {
   cards: Box[];
   /** Area names nearby: as bad to cover as a title. */
   areas?: Box[];
+  /** Other things a name must keep off, as it would a title: the live widgets, whose numbers are the point. */
+  obstacles?: Box[];
   /** Names already placed. */
   taken?: Box[];
   /** True at the territory view, where titles sit mid-card. */
@@ -158,6 +160,7 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     let score = 0;
     for (const t of taken) if (overlaps(t, box)) score += area(t, box) * 5;
     for (const a of opts.areas ?? []) if (overlaps(a, box)) score += area(a, box) * 10;
+    for (const o of opts.obstacles ?? []) if (overlaps(o, box)) score += area(o, box) * 10;
     if (opts.within) score += (box.w * box.h - area(opts.within, box)) * 20;
     for (let i = 0; i < opts.cards.length; i++) {
       const o = opts.cards[i];

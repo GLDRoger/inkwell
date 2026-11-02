@@ -1263,9 +1263,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   }, [widgetMap, demo]);
 
   // ------------------------------------------------------------ walkers
+  const widgetBoxes = useMemo(() => [...widgetPlaces.values()], [widgetPlaces]);
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);
   const live = state ?? emptyState;
-  const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, viewLayout, camera, reduced);
+  const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, viewLayout, camera, reduced, widgetBoxes);
 
   // Say what moved, for screen readers.
   const [announce, setAnnounce] = useState("");
@@ -1487,7 +1488,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
 
           {pen && (
             <p className={css.hint} data-pen-hint role="status">
-              {compact ? "Circle pages to ask about them" : "Circle pages to ask about them. Draw a line between two to link them, or strike one out."}
+              {compact || coarse ? "Circle pages to ask about them. Two fingers to move." : "Circle pages to ask about them. Draw a line between two to link them, or strike one out."}
               <button type="button" className={css.hintDone} data-map-control onClick={togglePen}>
                 Done
               </button>

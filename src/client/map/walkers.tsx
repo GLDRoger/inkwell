@@ -84,6 +84,8 @@ export function figureFor(w: Pick<Walker, "name" | "kind" | "action">, s: number
   return { w: Math.max(Math.round(a * 0.8), text), h: a - TUCK[band] + NAME_LINE[band], cy: a / 2 };
 }
 
+const NONE: Box[] = [];
+
 /** The page lies the other way from the side the walker stands on. */
 const LOOK: Record<Side, Look> = { below: "up", above: "down", left: "right", right: "left" };
 
@@ -100,7 +102,7 @@ export interface Standing {
  * Where each placed walker stands: its name just outside its page's card,
  * clear of the titles around it, agents first, then people.
  */
-export function standingSpots(state: MapState, layout: MapLayout, s: number): Map<string, Standing> {
+export function standingSpots(state: MapState, layout: MapLayout, s: number, obstacles: Box[] = []): Map<string, Standing> {
   const byPage = new Map<string, Walker[]>();
   for (const w of state.walkers.values()) {
     if (!w.pageId || !layout.cards.has(w.pageId)) continue;
@@ -122,9 +124,10 @@ export function standingSpots(state: MapState, layout: MapLayout, s: number): Ma
       if (c.id === pageId) continue;
       if (Math.abs(c.x - card.x) < reach && Math.abs(c.y - card.y) < reach) near.push(c);
     }
+    const blocks = obstacles.filter((o) => Math.abs(o.x - card.x) < reach + o.w && Math.abs(o.y - card.y) < reach + o.h);
     list.forEach((w, slot) => {
       const fig = figureFor(w, s);
-      const placed = placeLabel(card, fig.w, s, { cards: near, areas, taken, far, within: layout.bounds }, fig.h, fig.w / 2);
+      const placed = placeLabel(card, fig.w, s, { cards: near, areas, obstacles: blocks, taken, far, within: layout.bounds }, fig.h, fig.w / 2);
       // placeLabel centres the dot in the box; the walker's point is the avatar's middle, at the top.
       const spot = { ...placed, dy: placed.dy - fig.h / 2 + fig.cy };
       taken.push(spot.box);
@@ -164,10 +167,11 @@ function usePlacementScale(camera: CameraController): number {
  * with the walker's name carried along. Positions are written to the DOM
  * directly, once a frame, only while someone is walking.
  */
-export function useWalks(state: MapState, layout: MapLayout, camera: CameraController, reduced: boolean) {
+export function useWalks(state: MapState, layout: MapLayout, camera: CameraController, reduced: boolean, obstacles: Box[] = NONE) {
   const store = useMemo(() => new WalkStore(), []);
   const scale = usePlacementScale(camera);
-  const spots = useMemo(() => standingSpots(state, layout, scale), [state, layout, scale]);
+  // Names stand clear of the cards' titles and of the widgets on the map.
+  const spots = useMemo(() => standingSpots(state, layout, scale, obstacles), [state, layout, scale, obstacles]);
   const seen = useRef(new Map<string, number>());
   const pos = useRef(new Map<string, Pt>());
   const els = useRef(new Map<string, HTMLElement>());
