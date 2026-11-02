@@ -13,8 +13,9 @@ const hits = (a: Box, b: Box, pad = 12) =>
  * stored box covers a card moves to the right of its source cards, down the
  * first free slot, so it never hides the pages it reads.
  */
-export function placeWidgets(widgets: Widget[], cards: Map<Id, CardBox>): Map<Id, Box> {
+export function placeWidgets(widgets: Widget[], cards: Map<Id, CardBox>, opts: { strip?: Box } = {}): Map<Id, Box> {
   const out = new Map<Id, Box>();
+  if (opts.strip) return stripOf(widgets, opts.strip);
   const taken: Box[] = [...cards.values()];
   // Widgets that are already clear keep their place (people may have dragged them there).
   const blocked: Widget[] = [];
@@ -41,5 +42,36 @@ export function placeWidgets(widgets: Widget[], cards: Map<Id, CardBox>): Map<Id
     out.set(w.id, box);
     taken.push(box);
   }
+  return out;
+}
+
+/**
+ * A phone held upright lays the cards out afresh in a column, so the places
+ * widgets were given beside the wide map mean nothing there: they line up in
+ * rows above the cards instead (`over`, the cards' bounds), first thing you see.
+ */
+function stripOf(widgets: Widget[], over: Box): Map<Id, Box> {
+  const rows: { w: Widget; size: { w: number; h: number } }[][] = [[]];
+  let x = 0;
+  for (const w of widgets) {
+    const size = widgetSize(w.data);
+    if (rows[rows.length - 1].length && x + size.w > over.w) {
+      rows.push([]);
+      x = 0;
+    }
+    rows[rows.length - 1].push({ w, size });
+    x += size.w + GAP;
+  }
+  const heights = rows.map((r) => Math.max(0, ...r.map((c) => c.size.h)));
+  let y = over.y - GAP - heights.reduce((t, h) => t + h + GAP, 0) + GAP;
+  const out = new Map<Id, Box>();
+  rows.forEach((r, i) => {
+    let cx = over.x;
+    for (const c of r) {
+      out.set(c.w.id, { x: cx, y, ...c.size });
+      cx += c.size.w + GAP;
+    }
+    y += heights[i] + GAP;
+  });
   return out;
 }

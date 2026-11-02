@@ -1748,13 +1748,24 @@
   min-height: 0;
 }
 
+/* Far out a widget says what it is and its number, nothing else: the title wraps rather than cutting off. */
 .widget[data-detail="rooms"] .wTitle {
-  font-size: 0.7em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 0.82em;
+  line-height: 1.15;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .widget[data-detail="rooms"] .wIcon {
-  width: 0.7em;
-  height: 0.7em;
+  display: none;
+}
+
+/* A countdown is too short for both far out: its number ("31 days") says it. */
+.widget[data-detail="rooms"][data-kind="countdown"] .wHead {
+  display: none;
 }
 
 .wRemove {

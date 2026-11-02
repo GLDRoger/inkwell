@@ -26,4 +26,16 @@ describe("placeWidgets", () => {
     expect(overlaps(out.get("w1")!, out.get("w2")!)).toBe(false);
     for (const box of out.values()) for (const c of cards.values()) expect(overlaps(box, c)).toBe(false);
   });
+  it("on a phone's column, lines widgets up in rows above the cards, wherever they were stored", () => {
+    const over = { x: 0, y: 0, w: 640, h: 540 };
+    const out = placeWidgets([widget("w1", 2000, 900, ["a"]), widget("w2", -800, 40, ["b"]), widget("w3", 5, 5, [])], cards, { strip: over });
+    const boxes = [...out.values()];
+    expect(boxes).toHaveLength(3);
+    for (const b of boxes) {
+      expect(b.y + b.h).toBeLessThanOrEqual(over.y);
+      expect(b.x).toBeGreaterThanOrEqual(over.x);
+      expect(b.x + b.w).toBeLessThanOrEqual(over.x + over.w);
+    }
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) expect(overlaps(boxes[i], boxes[j])).toBe(false);
+  });
 });

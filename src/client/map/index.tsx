@@ -227,10 +227,11 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   );
   /** The map as drawn: the lens's cards in the lens, everything else where it is. */
   const widgetPlaces = useMemo(() => {
-    const out = placeWidgets(widgetList, layout.cards);
+    // A phone's column of cards is laid out afresh: widgets line up above it, not where the wide map had them.
+    const out = placeWidgets(widgetList, layout.cards, shape.flow && layout.cards.size ? { strip: layout.bounds } : {});
     if (lensBox) for (const [id, box] of lensBox.widgets) out.set(id, box);
     return out;
-  }, [widgetList, lensBox, layout]);
+  }, [widgetList, lensBox, layout, shape.flow]);
   // Widgets count as part of the map's extent: the overview and the minimap include them.
   const viewLayout = useMemo(() => {
     const v = withLens(layout, lensBox);
