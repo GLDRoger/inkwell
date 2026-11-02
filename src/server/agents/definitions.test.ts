@@ -17,6 +17,7 @@ afterEach(async () => {
   for (const { services, dir } of fixtures.splice(0)) { await services.close(); fs.rmSync(dir, { recursive: true, force: true }); }
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 const copy = () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "inkwell-defs-")); dirs.push(dir);
@@ -84,7 +85,7 @@ describe("skill and safety contracts", () => {
     expect(child.doStreamCalls[0]?.tools?.map(t => t.name)).not.toContain("ask_agent");
     expect(f.services.pages.getPage(f.ws, id)).not.toBeNull();
   });
-  it("failed child reports the pages it changed", async () => {
+  it.each([false, true])("failed child reports pages changed even before a tool error (partial=%s)", async partial => {
     let rootStep = 0, childStep = 0;
     const root = new MockLanguageModelV4({ doStream: async () => ++rootStep === 1 ? call("ask_agent", { agentName: "Wren", request: "Draft a page" }) : answer("Partial work saved.") });
     const child = new MockLanguageModelV4({ doStream: async () => {
@@ -92,6 +93,7 @@ describe("skill and safety contracts", () => {
       throw new Error("Provider unavailable");
     } });
     const f = createFixture(fixtures, { modelFactory: a => a.name === "Scout" ? root : child });
+    if (partial) vi.spyOn(f.services.collab, "showAgent").mockRejectedValueOnce(new Error("presence unavailable"));
     const result = await f.start().done;
     expect(result.run.steps[0]?.ok).toBe(false);
     expect(result.run.steps[0]?.summary).toContain("Pages changed: [Partial draft](/p/");

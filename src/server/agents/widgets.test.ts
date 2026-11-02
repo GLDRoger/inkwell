@@ -16,7 +16,7 @@ function fixture() {
   const f = createFixture(fixtures);
   const run = insertRun(f.services.db, f.ws, { agentId: f.agent.id, prompt: "Test" });
   const { tools } = createAgentTools({ services: f.services, workspaceId: f.ws, run, agent: f.agent,
-    presenceId: run.id, rootPrompt: "Test", canDelegate: true, signal: new AbortController().signal, touched: new Set(), budget: { remaining: 100 },
+    presenceId: run.id, rootPrompt: "Test", canDelegate: true, signal: new AbortController().signal, touched: new Set(), changed: new Set(), budget: { remaining: 100 },
     withPageLock: async (_id, fn) => fn(), askAgent: async () => "Done" });
   // Exercise the helper's execution boundary; schema validation is done by AI SDK.
   const invoke = (name: keyof typeof tools, input: object) => (tools[name]!.execute as (input: object, options: object) => Promise<string>)(input, {});
@@ -99,4 +99,34 @@ it("bounds lens groups, facts and supported currencies at the tool schema", () =
   expect(widget.safeParse({ kind: "facts", title: "Facts", items: Array.from({ length: 9 }, () => ({ label: "A", value: "B" })) }).success).toBe(false);
   expect(widget.safeParse({ kind: "total", title: "Money", currency: "unknown" }).success).toBe(false);
   expect(widget.safeParse({ kind: "total", title: "Money", pageIds: [f.page.id] })).toMatchObject({ success: true, data: { currency: "€" } });
+});
+
+it("accepts every recorded Lisbon tool argument, including case-sensitive display names", async () => {
+  const f = fixture();
+  const cassette = JSON.parse(fs.readFileSync(new URL("../demo/cassettes/lisbon-tour.json", import.meta.url), "utf8"));
+  const calls: { name: string; arguments: string }[] = [];
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const object = value as Record<string, unknown>;
+    if (Array.isArray(object.toolCalls)) calls.push(...object.toolCalls as typeof calls);
+    Object.values(object).forEach(visit);
+  };
+  visit(cassette);
+  expect(calls.length).toBeGreaterThan(40);
+  for (const recorded of calls) {
+    const schema = f.tools[recorded.name as keyof typeof f.tools]!.inputSchema as { safeParse: (input: unknown) => { success: boolean } };
+    expect(schema.safeParse(JSON.parse(recorded.arguments)).success, recorded.name + ": " + recorded.arguments).toBe(true);
+  }
+});
+
+it("gives notebook-wide failures relevant recovery advice without leaking raw errors", async () => {
+  const f = fixture();
+  const original = f.services.pages.listPages;
+  f.services.pages.listPages = () => { throw new Error("private provider diagnostic"); };
+  try {
+    const result = await f.invoke("list_pages", {});
+    expect(result).toContain("Listing pages failed. Retry once");
+    expect(result).not.toContain("Read the page again");
+    expect(result).not.toContain("private provider diagnostic");
+  } finally { f.services.pages.listPages = original; }
 });

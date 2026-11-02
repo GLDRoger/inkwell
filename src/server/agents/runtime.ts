@@ -49,7 +49,7 @@ interface StartInput {
    */
   meta?: MetaAccess;
 }
-export interface RunResult { run: Run; text: string; pageIds: string[] }
+export interface RunResult { run: Run; text: string; pageIds: string[]; changedPageIds: string[] }
 /** Shared by a request and all its child runs. */
 interface Family { rootPrompt: string; remaining: number; children: number; meta?: MetaAccess }
 /** One run's own share: a deadline and an output-token allowance. */
@@ -199,6 +199,7 @@ export class AgentRuntime {
     const ws = input.workspaceId;
     const signal = state.controller.signal;
     const touched = new Set<string>();
+    const changed = new Set<string>();
     const presenceId = `${agent.id}:${original.id}`;
     let text = "";
     let failure: string | null = null;
@@ -210,7 +211,7 @@ export class AgentRuntime {
     const timeout = setTimeout(() => this.stop(original.id, "failed", TIMED_OUT), Math.max(0, limits.deadline - Date.now()));
     timeout.unref();
     const { tools, drain } = createAgentTools({
-      services: s, workspaceId: ws, run: original, agent, signal, touched, presenceId, budget: family, rootPrompt: family.rootPrompt, canDelegate: depth === 0,
+      services: s, workspaceId: ws, run: original, agent, signal, touched, changed, presenceId, budget: family, rootPrompt: family.rootPrompt, canDelegate: depth === 0,
       withPageLock: (id, fn) => this.withPageLock(id, fn),
       askAgent: async (name, request) => {
         signal.throwIfAborted();
@@ -229,9 +230,9 @@ export class AgentRuntime {
         try {
           const result = await child.done;
           result.pageIds.forEach((id) => touched.add(id));
+          result.changedPageIds.forEach(id => changed.add(id));
           if (result.run.status !== "succeeded") {
-            const changed = result.run.steps.filter(step => step.ok && step.pageId && /^(create_page|append_to_page|edit_page|rewrite_page|rename_page|move_page|delete_page)$/.test(step.tool));
-            const pages = [...new Set(changed.map(step => step.pageId!))].map(id => {
+            const pages = result.changedPageIds.map(id => {
               const page = s.pages.getPage(ws, id);
               return page ? pageLink(page.title, id) : `${id} (no longer available)`;
             });
@@ -332,7 +333,7 @@ export class AgentRuntime {
     const from = getRun(s.db, ws, original.id)?.pageId ?? null;
     this.publish(ws, { type: "agent.moved", runId: original.id, agentId: agent.id, fromPageId: from, toPageId: null, action: "leaving" });
     const run = this.patch(ws, original.id, { status, error: failure, usage });
-    return { run, text, pageIds: [...touched] };
+    return { run, text, pageIds: [...touched], changedPageIds: [...changed] };
   }
 
   private stop(id: string, status: "cancelled" | "failed", error: string) {

@@ -28,6 +28,7 @@ export interface ToolContext {
   canDelegate: boolean;
   signal: AbortSignal;
   touched: Set<string>;
+  changed: Set<string>;
   budget: { remaining: number };
   withPageLock: <T>(id: string, fn: () => Promise<T>) => Promise<T>;
   askAgent: (name: string, request: string) => Promise<string>;
@@ -144,6 +145,7 @@ export function createAgentTools(ctx: ToolContext) {
     check();
     const written = await s.collab.editPage(pageId, ws, fn, actor);
     if (!written) throw new ToolFailure(PAGE_NOT_FOUND);
+    ctx.changed.add(pageId);
     await showCaret(pageId);
     return readView(written).version;
   };
@@ -231,6 +233,7 @@ export function createAgentTools(ctx: ToolContext) {
         const parent = parentId ? page(parentId) : null;
         const created = s.pages.createPage(ws, actor, { title, parentId, icon: pickIcon(icon, title, parent?.icon) });
         ctx.touched.add(created.id);
+        ctx.changed.add(created.id);
         const v = await write(created.id, async () => ({
           text: body ? await edit(created.id, () => markdownToTiptapJSON(stripTitleHeading(body, title))) : pageVersion(""),
           summary: "",
@@ -266,12 +269,14 @@ export function createAgentTools(ctx: ToolContext) {
     rename_page: define("rename_page", "Change a page title. Get pageId from list_pages.", z.object({ pageId: id, title: z.string().min(1).max(500) }),
       ({ pageId, title }) => write(pageId, async () => {
         s.pages.updatePage(ws, actor, pageId, { title });
+        ctx.changed.add(pageId);
         return { text: `Renamed to ${pageLink(title, pageId)}.`, summary: `Renamed ${title}`, pageId };
       })),
     move_page: define("move_page", "Get pageId from list_pages. Move a page under a parent (parentId null = notebook root).",
       z.object({ pageId: id, parentId: parentRef }), ({ pageId, parentId }) => write(pageId, async () => {
         if (parentId) page(parentId);
         s.pages.updatePage(ws, actor, pageId, { parentId });
+        ctx.changed.add(pageId);
         const moved = page(pageId);
         const under = parentId ? ` under ${pageLink(page(parentId).title, parentId)}` : " to the notebook root";
         return { text: `Moved ${pageLink(moved.title, pageId)}${under}.`, summary: `Moved ${moved.title}`, pageId };
@@ -286,6 +291,7 @@ export function createAgentTools(ctx: ToolContext) {
         const descendants = s.pages.getDescendantIds(ws, pageId);
         await s.collab.hideAgent(pageId, ctx.presenceId);
         s.pages.deletePage(ws, pageId);
+        [pageId, ...descendants].forEach(id => ctx.changed.add(id));
         // Never leave the run standing on a page that no longer exists.
         const from = getRun(s.db, ws, run.id)?.pageId ?? null;
         if (from && (from === pageId || descendants.includes(from))) {
