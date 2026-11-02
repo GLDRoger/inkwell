@@ -123,7 +123,68 @@ export interface MapGraph {
   agents: Agent[];
   /** Active and recent runs, newest first. */
   runs: Run[];
+  /** Live widgets on the map. */
+  widgets: Widget[];
+  /** The lens the map is showing, or null for the ordinary map. */
+  lens: Lens | null;
 }
+
+/**
+ * A lens: the map rearranged to answer a question. An agent picks the layout and
+ * which pages go in each group; the client animates the cards into place and
+ * draws threads from the lens to its pages. "Back to map" (DELETE /api/lens) clears it.
+ * Pages not in any group fade back; they never move in the stored map.
+ */
+export interface Lens {
+  id: Id;
+  /** The question it answers, as a heading: "What's left before launch". */
+  title: string;
+  /** columns: side-by-side groups (Done / Doing / To do). timeline: groups in order, left to right. */
+  kind: "columns" | "timeline";
+  /** 1 to 6 groups, in display order. A page appears in at most one group. */
+  groups: LensGroup[];
+  agentId: Id | null;
+  runId: Id | null;
+  createdAt: string;
+}
+
+export interface LensGroup {
+  label: string;
+  pageIds: Id[];
+  /** One short line under the label, optional. */
+  note?: string;
+}
+
+/**
+ * A live widget on the map, built by an agent from a fixed kit. Its data is
+ * computed by the server from its source pages and recomputed whenever one of
+ * them changes (event "widget.updated"), so it reacts as you type.
+ */
+export interface Widget {
+  id: Id;
+  title: string;
+  /** World position of its top-left corner, like a card. Movable by people. */
+  x: number;
+  y: number;
+  /** The pages it reads from (threads are drawn to them). */
+  pageIds: Id[];
+  data: WidgetData;
+  createdBy: Actor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WidgetData =
+  /** Counts down to `date` (ISO date or date-time); the client ticks it. */
+  | { kind: "countdown"; date: string; label: string }
+  /** Task-list items (`- [ ]` / `- [x]`) across the source pages. */
+  | { kind: "progress"; done: number; total: number; perPage: { pageId: Id; done: number; total: number }[] }
+  /** Amounts in `currency` found in the source pages, one line per amount. */
+  | { kind: "total"; currency: string; amount: number; lines: { pageId: Id; label: string; amount: number }[] }
+  /** Key facts the agent wrote; static until the agent replaces the widget. */
+  | { kind: "facts"; items: { label: string; value: string }[] };
+
+export type WidgetKind = WidgetData["kind"];
 
 /**
  * Server-sent events on GET /api/events (one stream per workspace).
@@ -144,9 +205,15 @@ export type ServerEvent =
   | { type: "agent.moved"; runId: Id; agentId: Id; fromPageId: Id | null; toPageId: Id | null; action: "reading" | "writing" | "thinking" | "leaving" }
   | { type: "diary.entry"; entry: DiaryEntry }
   | { type: "diary.delta"; entryId: Id; threadId: Id; text: string }
+  /** A widget was created or its data, title or position changed (upsert by id). */
+  | { type: "widget.updated"; widget: Widget }
+  | { type: "widget.deleted"; widgetId: Id }
+  /** The map should show this lens (replaces any current one). */
+  | { type: "lens.shown"; lens: Lens }
+  | { type: "lens.cleared" }
   | { type: "presence"; people: { id: Id; name: string; pageId: Id | null }[] }
   /** Demo notebook only: the demo moved to its next step (docs/DEMO-MODE.md). */
-  | { type: "demo.step"; index: number; step: DemoStep; focus: { pageId?: Id; agentId?: Id; runId?: Id } }
+  | { type: "demo.step"; index: number; step: DemoStep; focus: DemoFocus }
   | { type: "demo.ended"; reason: "finished" | "stopped" };
 
 /** Text models a visitor may choose in hands-on mode (header X-Meta-Model). The first is the default. */
@@ -158,6 +225,16 @@ export type TextModelId = (typeof TEXT_MODELS)[number]["id"];
 
 /** Which notebook a request is for. Header X-Inkwell-Notebook; ?notebook= on SSE and collab. */
 export type NotebookKind = "own" | "demo";
+
+export interface DemoFocus {
+  pageId?: Id;
+  agentId?: Id;
+  runId?: Id;
+  /** The demo person circles these cards with the pen before asking (draw the lasso around them). */
+  circledPageIds?: Id[];
+  /** Pan the camera to this widget (it just appeared or changed). */
+  widgetId?: Id;
+}
 
 export interface DemoStep {
   id: string;
@@ -206,7 +283,9 @@ export interface Me {
  * POST   /api/agents {name, description, instructions, color} -> Agent
  * GET    /api/diary                      -> DiaryThread[]
  * GET    /api/diary/:threadId            -> DiaryEntry[]
- * POST   /api/diary {threadId?, text, agentId?, attachmentIds?, pageId?} -> { entry: DiaryEntry; runId: Id; threadId: Id }
+ * POST   /api/diary {threadId?, text, agentId?, attachmentIds?, pageId?, scopePageIds?} -> { entry: DiaryEntry; runId: Id; threadId: Id }
+ *        scopePageIds: the pages the person circled or connected with the pen (max 50); the
+ *        agent is told to work on exactly those. Stored on the entry as its pageIds.
  *        If the agent can't start, nothing is saved: 503 { error, code: "restarting" } or
  *        400/500 { error, code: "agent_unavailable" | "internal" }. `error` is plain English.
  * POST   /api/runs/:id/cancel            -> Run
@@ -214,6 +293,9 @@ export interface Me {
  * POST   /api/transcribe (multipart audio) -> { text: string }      (Muse Voice Transcribe)
  * POST   /api/pages/:id/illustrate       -> Page                    (Muse Image cover)
  * POST   /api/import/photo {attachmentId} -> { pages: Page[] }      (photo of notes/whiteboard -> cards, SAM 3.1 + vision)
+ * PATCH  /api/widgets/:id {x?, y?, title?}  -> Widget
+ * DELETE /api/widgets/:id                -> 204
+ * DELETE /api/lens                       -> 204 (back to the ordinary map; publishes lens.cleared)
  * GET    /api/events                     -> text/event-stream of ServerEvent
  * WS     /collab                         Hocuspocus; document name = page id
  */

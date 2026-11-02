@@ -155,3 +155,22 @@ Apply after the server worker lands, then re-record the demo cassette:
 ### Judge flow shipped (2026-10-30, deployed 2d205d4)
 Welcome (Muse Image objects, "Three AI agents, running on Meta's Muse models…") → Watch it work (110 s recorded real-Wonder demo: plan, voice, handoff with Wren shown inline, photo to cards with the photo on its page, Muse Image cover, Atlas links; ends on the whole notebook) → Try it yourself (guide, BYOK key dialog: Wonder or Spark Contributor). Peek panel on click. 579 tests. Audit of the judge journey: all P0/P1 fixed.
 Left for the owner: record the video from "Watch it work" + a short hands-on segment (docs/DEMO.md); submission form (team details, AI disclosure draft in docs/SUBMISSION.md, confirm track); optional DNS for inkwell.questili.com.
+
+## Lenses, widgets, drawing, avatars (2026-11-02, owner chose this scope; freeze Nov 4 noon ET)
+
+Pitch: other canvases hold your notes; Inkwell rearranges them around what you're asking.
+
+Contract: `Lens`, `Widget`, `WidgetData`, `DemoFocus`, events `widget.updated|widget.deleted|lens.shown|lens.cleared`, `scopePageIds` on diary POST, `/api/widgets/:id`, `/api/lens` in `src/shared/types.ts`.
+
+| Area | Owner | Files |
+|---|---|---|
+| Server: lens/widget storage, tools `show_lens` `create_widget` `remove_widget`, reactive widget data, REST, scope, seed prices/dates, demo steps + player actions, re-record cassette | Sol | `src/server/**`, `scripts/**` |
+| Map: lens layout + animation, widgets, pen (lasso scope, arrow link, strike delete), composer scope chip, demo lasso | Opus (map) | `src/client/**` except the avatar files |
+| Agent avatars: animated blobs with names under them, map + diary | Opus (avatars) | `src/client/map/walkers.tsx`, `src/client/agents/**`, `src/client/diary/Entries.tsx`, `src/client/diary/DiaryPanel.tsx`, `src/client/styles/avatar.css` |
+
+Sub-goals, each with its check:
+1. Server tools and reactive widgets: unit tests; a person edit to a source page republishes the widget with new data.
+2. Client lens/widgets/pen against the dev fixture, then against the server: visual check at 390 px and 1440 px, reduced motion honoured.
+3. Avatars: visual check on map and diary, both themes.
+4. New demo steps (after tidy): "What's left before we launch?" (lens + countdown + progress), a person ticks a task (progress updates), circle the Lisbon cards and ask "What will this trip cost?" (total widget), a person changes a price (total updates). Re-record from real Muse Wonder; full demo plays clean.
+5. Re-shoot video, README/SUBMISSION, deploy.
