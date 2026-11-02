@@ -3,8 +3,9 @@ import type { CameraController } from "./camera";
 import { REGION_PAD, type Box, type MapLayout } from "./layout";
 import type { MapState, Walker } from "./model";
 import { FOOT_PATH, footprintTrail, pointAlong, printScale, stepMs, strideFor, type Print, type Pt } from "./footprints";
-import { areaNameBox, DOT_ONLY, dotOf, labelWidth, placeLabel, SMALL_DOT_X, SMALL_H, type LabelSpot } from "./labels";
+import { areaNameBox, dotOf, labelWidth, placeLabel, type LabelSpot, type Side } from "./labels";
 import { DOTS_AT, MID_AT } from "./lod";
+import { AgentAvatar, type Look } from "../agents/AgentAvatar";
 
 /** Below this zoom (the overview), names are set a size smaller so they fit between the cards. */
 export const SMALL_NAMES_AT = 0.34;
@@ -59,6 +60,33 @@ const ACTION_TEXT: Record<Walker["action"], string> = {
 };
 export const actionText = (w: Pick<Walker, "kind" | "action">) => (w.kind === "agent" ? ACTION_TEXT[w.action] : "");
 
+/**
+ * A walker on the map is an avatar with its name set under it. Sizes in
+ * screen px, per zoom band: the full figure (avatar, name and what it's
+ * doing), a smaller one at the overview (name only), and far out the avatar
+ * alone, still and small.
+ */
+export const AVATAR = { full: 40, small: 28, tiny: 18 } as const;
+/** The name's line height under the avatar, and how far it tucks up into the avatar's empty margin. */
+const NAME_LINE = { full: 14, small: 13 } as const;
+const TUCK = { full: 6, small: 4 } as const;
+
+export type Band = "full" | "small" | "tiny";
+export const bandFor = (s: number): Band => (s < DOTS_AT ? "tiny" : s < SMALL_NAMES_AT ? "small" : "full");
+
+/** The box a walker's figure takes (w, h) and where its avatar's middle sits from the top (cy), screen px. */
+export function figureFor(w: Pick<Walker, "name" | "kind" | "action">, s: number): { w: number; h: number; cy: number } {
+  const band = bandFor(s);
+  const a = AVATAR[band];
+  // blobatar's body fills about 70% of its frame; the rest is air.
+  if (band === "tiny") return { w: Math.round(a * 0.8), h: Math.round(a * 0.8), cy: Math.round(a * 0.4) };
+  const text = band === "small" ? labelWidth(w.name, "", true) - 15 : labelWidth(w.name, actionText(w)) - 20;
+  return { w: Math.max(Math.round(a * 0.8), text), h: a - TUCK[band] + NAME_LINE[band], cy: a / 2 };
+}
+
+/** The page lies the other way from the side the walker stands on. */
+const LOOK: Record<Side, Look> = { below: "up", above: "down", left: "right", right: "left" };
+
 export interface Standing {
   /** Where the name pill sits, placed beside the card for zoom `s`. */
   spot: LabelSpot;
@@ -95,13 +123,10 @@ export function standingSpots(state: MapState, layout: MapLayout, s: number): Ma
       if (Math.abs(c.x - card.x) < reach && Math.abs(c.y - card.y) < reach) near.push(c);
     }
     list.forEach((w, slot) => {
-      // Too far out for names to fit between the cards: just the dot.
-      const spot =
-        s < DOTS_AT
-          ? placeLabel(card, DOT_ONLY, s, { cards: near, areas, taken, far, within: layout.bounds }, DOT_ONLY, DOT_ONLY / 2)
-          : s < SMALL_NAMES_AT
-            ? placeLabel(card, labelWidth(w.name, actionText(w), true), s, { cards: near, areas, taken, far, within: layout.bounds }, SMALL_H, SMALL_DOT_X)
-            : placeLabel(card, labelWidth(w.name, actionText(w)), s, { cards: near, areas, taken, far, within: layout.bounds });
+      const fig = figureFor(w, s);
+      const placed = placeLabel(card, fig.w, s, { cards: near, areas, taken, far, within: layout.bounds }, fig.h, fig.w / 2);
+      // placeLabel centres the dot in the box; the walker's point is the avatar's middle, at the top.
+      const spot = { ...placed, dy: placed.dy - fig.h / 2 + fig.cy };
       taken.push(spot.box);
       out.set(w.key, { spot, pt: dotOf(spot, s), slot, pageId });
     });
@@ -278,15 +303,32 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
     [],
   );
 
+  // Off screen, a walker's avatar holds still: no frames spent on what nobody sees.
+  const io = useRef<IntersectionObserver | null>(null);
+  const watcher = useCallback(() => {
+    if (!io.current && typeof IntersectionObserver === "function")
+      io.current = new IntersectionObserver(
+        (seen) => {
+          for (const e of seen) e.target.toggleAttribute("data-still", !e.isIntersecting);
+        },
+        { rootMargin: "64px" },
+      );
+    return io.current;
+  }, []);
+  useEffect(() => () => io.current?.disconnect(), []);
+
   // One stable ref callback per walker, so a re-render doesn't detach and reattach every name.
   const refs = useRef(new Map<string, (el: HTMLElement | null) => void>());
   const attach = useCallback(
     (key: string) => (el: HTMLElement | null) => {
       if (!el) {
+        const old = els.current.get(key);
+        if (old) watcher()?.unobserve(old);
         els.current.delete(key);
         return;
       }
       els.current.set(key, el);
+      watcher()?.observe(el);
       if (driving.current.has(key)) el.setAttribute("data-walking", "");
       // Only redraw where it was: moving it is the layout effect's job (it may be about to walk).
       if (applied.current.has(key)) paint(key);
@@ -295,7 +337,7 @@ export function useWalks(state: MapState, layout: MapLayout, camera: CameraContr
         if (st) stand(key, st);
       }
     },
-    [stand, paint],
+    [stand, paint, watcher],
   );
   const register = useCallback(
     (key: string) => {
@@ -334,7 +376,7 @@ export function Prints({ store }: { store: WalkStore }) {
   );
 }
 
-/** Names on the map: small pills in each walker's colour, beside their page or walking with their prints. */
+/** Names on the map: each walker's avatar with its name under it, beside their page or walking with their prints. */
 export function Names({
   state,
   spots,
@@ -349,8 +391,7 @@ export function Names({
   onFollow(pageId: string): void;
 }) {
   const list = [...state.walkers.values()].filter((w) => spots.has(w.key));
-  const tiny = scale < DOTS_AT;
-  const small = !tiny && scale < SMALL_NAMES_AT;
+  const band = bandFor(scale);
   return (
     <>
       {list.map((w) => {
@@ -365,20 +406,35 @@ export function Names({
             className={css.name}
             data-kind={w.kind}
             data-action={w.action}
-            data-tiny={tiny || undefined}
-            data-small={small || undefined}
+            data-band={band}
             data-map-control
-            title={tiny ? w.name : undefined}
-            aria-label={w.name}
-            style={{ "--who": inkOf(w) } as CSSProperties}
+            title={band === "tiny" ? w.name : undefined}
+            aria-label={action ? `${w.name}, ${action}` : w.name}
+            style={{ "--who": inkOf(w), "--avatar": `${AVATAR[band]}px` } as CSSProperties}
             onClick={(e) => {
               e.stopPropagation();
               onFollow(spot.pageId);
             }}
           >
-            <span className={css.nameDot} aria-hidden />
-            <span className={css.who}>{w.name}</span>
-            {action && <span className={css.doing}>{action}</span>}
+            {w.kind === "agent" ? (
+              <AgentAvatar
+                name={w.name}
+                color={w.color ?? "#8e8b84"}
+                size={AVATAR[band]}
+                state={w.action}
+                look={LOOK[spot.spot.side]}
+                // Far out the avatars are a few pixels across: a still picture is all that reads.
+                animate={band !== "tiny"}
+              />
+            ) : (
+              <span className={css.personMark} aria-hidden />
+            )}
+            {band !== "tiny" && (
+              <span className={css.label}>
+                <span className={css.who}>{w.name}</span>
+                {action && band === "full" && <span className={css.doing}>{action}</span>}
+              </span>
+            )}
           </button>
         );
       })}

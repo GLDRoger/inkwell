@@ -10,6 +10,8 @@ import { runRecovery } from "./errors";
 import type { QuoteAuthor } from "./ink";
 import { failNote, stopNote, tidyReply, workDone, type NotePart } from "./tidy";
 import { askedFor, childRuns, helperState, waitingFor } from "./handoff";
+import { AgentAvatar } from "../agents/AgentAvatar";
+import { runState } from "../agents/look";
 
 /** What a failed reply's button does: send the same request again, or ask the agent to carry on. */
 export type Recovery = "retry" | "continue";
@@ -70,6 +72,7 @@ export function Steps({
       {n > 0 && (
         <button type="button" className="trail-toggle" aria-expanded={shown} aria-controls={listId} onClick={() => setOpen(!shown)}>
           <ChevronRight size={13} aria-hidden className="trail-chev" />
+          {agent && <AgentAvatar name={agent.name} color={agent.color} size={18} animate={false} className="trail-avatar" />}
           What {agent?.name ?? "the agent"} did
           <span className="trail-count">
             {n} {n === 1 ? "step" : "steps"}
@@ -148,7 +151,13 @@ function Handoff({ run: snapshot, asker, agents, depth }: { run: Run; asker?: Ag
   return (
     <li className="handoff" data-status={run.status} style={{ ["--agent" as string]: agent?.color ?? "var(--ink-soft)" }}>
       <p className="handoff-head" role={active ? "status" : undefined}>
-        {active ? <InkDrops color={agent?.color ?? "var(--ink-faint)"} /> : <span className="handoff-dot" aria-hidden />}
+        {agent ? (
+          <AgentAvatar name={agent.name} color={agent.color} size={24} state={runState(run)} animate={active} follow={active} className="handoff-avatar" />
+        ) : active ? (
+          <InkDrops color="var(--ink-faint)" />
+        ) : (
+          <span className="handoff-dot" aria-hidden />
+        )}
         <span>
           <span className="agent-name">{agent?.name ?? "Another agent"}</span> {helperState(run)}
         </span>
@@ -322,7 +331,7 @@ function AgentEntry({
       ) : (
         streaming && (
           <p className="gathering" role="status">
-            <InkDrops color={color} />
+            {agent ? <AgentAvatar name={agent.name} color={agent.color} size={28} state={run ? runState(run) : "thinking"} follow /> : <InkDrops color={color} />}
             <span className="gathering-label">
               <span className="agent-name">{agent?.name ?? "The agent"}</span> is on it…
             </span>
@@ -338,8 +347,12 @@ function AgentEntry({
             </span>
           )}
           {agent && (
-            <span className="signature" data-show={settled}>
-              {agent.name}
+            <span className="signed">
+              {/* The agent's face by its name: awake while this reply is new here, a still picture in the backlog. */}
+              <AgentAvatar name={agent.name} color={agent.color} size={28} state={streaming ? runState(run) : "idle"} animate={live} follow={live} />
+              <span className="signature" data-show={settled}>
+                {agent.name}
+              </span>
             </span>
           )}
         </div>

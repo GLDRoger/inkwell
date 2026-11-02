@@ -15,6 +15,7 @@ import { timeAgo } from "../lib/time";
 import { diaryReducer, initialDiaryState, isBusy } from "./state";
 import { Composer, type ComposerHandle } from "./Composer";
 import { Entries, InkDrops, isActiveRun, type Recovery } from "./Entries";
+import { AgentAvatar } from "../agents/AgentAvatar";
 import { Picker } from "./Picker";
 import { COPY, STARTERS_NOTEBOOK, STARTERS_PAGE, threadTitle } from "./copy";
 import { cancelErrorCopy, sendErrorCopy } from "./errors";
@@ -59,7 +60,7 @@ function EmptyConversation({ onPick, onPage, agents }: { onPick(text: string): v
 function Gathering({ agent }: { agent?: Agent }) {
   return (
     <p className="gathering" role="status">
-      <InkDrops color={agent?.color ?? "var(--ink-faint)"} />
+      {agent ? <AgentAvatar name={agent.name} color={agent.color} size={28} state="thinking" follow /> : <InkDrops color="var(--ink-faint)" />}
       <span className="gathering-label">
         {agent ? (
           <>
@@ -78,7 +79,11 @@ function IntroNudge({ agent, onOpen, onDismiss }: { agent?: Agent; onOpen(): voi
   return (
     <div className="intro-nudge" role="status">
       <button type="button" className="intro-nudge-open" onClick={onOpen}>
-        <span className="agent-dot" style={{ background: agent?.color ?? "var(--ink-faint)" }} aria-hidden />
+        {agent ? (
+          <AgentAvatar name={agent.name} color={agent.color} size={24} animate={false} />
+        ) : (
+          <span className="agent-dot" style={{ background: "var(--ink-faint)" }} aria-hidden />
+        )}
         <span>
           <strong>{agent?.name ?? "Atlas"}</strong> left you a note
         </span>

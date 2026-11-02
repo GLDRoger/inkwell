@@ -655,8 +655,11 @@
 }
 
 /*
- * A walker's name: a small pill placed just outside its page's card (see
- * labels.ts), its dot at the anchor. While walking, the dot rides the trail.
+ * A walker: its avatar (agents/AgentAvatar.tsx) with its name set under it,
+ * placed just outside its page's card (see standingSpots in walkers.tsx and
+ * labels.ts). The avatar's middle sits on the anchor; while walking, it rides
+ * the trail. No pill: the name keeps a soft halo of paper so it reads over a
+ * card or the paper in either theme.
  */
 .name {
   position: absolute;
@@ -666,71 +669,66 @@
       round(calc(var(--ax, 0) * var(--s) * 1px), 1px),
       round(calc(var(--ay, 0) * var(--s) * 1px), 1px)
     )
-    translate(round(calc(var(--dx, 0) * 1px - var(--ox, 13px)), 1px), calc(var(--dy, 0) * 1px - var(--oy, 12px)));
-  box-sizing: border-box;
-  height: 24px;
-  display: inline-flex;
+    translate(round(calc(var(--dx, 0) * 1px), 1px), round(calc(var(--dy, 0) * 1px - var(--avatar, 30px) / 2), 1px))
+    translate(-50%, 0);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
   margin: 0;
-  padding: 0 10px 0 9px;
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--paper-raised);
-  box-shadow: var(--shadow-chrome);
+  background: none;
   color: var(--who-ink);
-  font: 500 12px/1 var(--font-ui);
+  font: 500 12px/14px var(--font-ui);
   white-space: nowrap;
   cursor: pointer;
   pointer-events: auto;
   z-index: 1;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* The overview: a size smaller, to fit between cards (see SMALL_H in labels.ts). */
-.name[data-small] {
-  --ox: 10px;
-  --oy: 9px;
-  height: 18px;
+.label {
+  display: flex;
   gap: 4px;
-  padding: 0 8px 0 7px;
+  /* Tucked up into the avatar's empty lower margin (TUCK in walkers.tsx). */
+  margin-top: -6px;
+  text-shadow:
+    0 0 2px var(--paper),
+    0 0 2px var(--paper),
+    0 0 4px var(--paper);
+}
+
+/* The overview: a size smaller, name only, to fit between cards. */
+.name[data-band="small"] {
   font-size: 11px;
+  line-height: 13px;
 }
 
-.name[data-small] .nameDot {
-  width: 6px;
-  height: 6px;
+.name[data-band="small"] .label {
+  margin-top: -4px;
 }
 
-/* Far out, just the dot (its name is in the roster, and on hover). */
-.name[data-tiny] {
-  --ox: 7px;
-  --oy: 7px;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  justify-content: center;
-}
-
-.name[data-tiny] .who,
-.name[data-tiny] .doing {
-  display: none;
-}
-
-.nameDot {
+/* A person: a quiet ring the size of an avatar's body, in the map's ink. */
+.personMark {
   flex: none;
-  width: 8px;
-  height: 8px;
+  display: grid;
+  place-items: center;
+  width: var(--avatar);
+  height: var(--avatar);
+}
+
+.personMark::after {
+  content: "";
+  width: 40%;
+  height: 40%;
   border-radius: 50%;
-  background: var(--who-ink);
+  box-shadow:
+    inset 0 0 0 2px var(--who-ink),
+    0 0 0 2px var(--paper);
 }
 
 .name[data-kind="person"] {
   color: var(--ink-soft);
-}
-
-.name[data-kind="person"] .nameDot {
-  background: none;
-  box-shadow: inset 0 0 0 2px var(--who-ink);
 }
 
 .who {
@@ -746,15 +744,15 @@
   color: var(--who-ink);
 }
 
+.name:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .name[data-appear] {
     animation: fadeIn 600ms var(--ease-ink) both;
-  }
-
-  .name[data-action="writing"] .nameDot,
-  .name[data-action="reading"] .nameDot,
-  .name[data-action="thinking"] .nameDot {
-    animation: breathe 2s ease-in-out infinite;
   }
 }
 

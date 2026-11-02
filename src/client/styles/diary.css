@@ -129,7 +129,9 @@
   opacity: 0; transition: opacity var(--dur) ease;
 }
 .provenance[data-show="true"] { opacity: 1; }
-.signature { margin-left: auto; font: 20px/1 var(--font-hand); color: var(--agent-ink); opacity: 0; transition: opacity var(--dur-slow) var(--ease-ink); }
+/* The agent's face by its handwritten name. */
+.signed { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; align-self: center; }
+.signature { font: 20px/1 var(--font-hand); color: var(--agent-ink); opacity: 0; transition: opacity var(--dur-slow) var(--ease-ink); }
 .signature[data-show="true"] { opacity: 1; }
 
 /* What the agent did */
@@ -156,6 +158,7 @@
 .trail-toggle:hover { color: var(--ink); background: var(--paper-sunken); }
 .trail-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .trail-chev { color: var(--ink-faint); transition: transform 160ms var(--ease-ink); }
+.trail-avatar { margin: -2px -2px -2px -1px; }
 .trail-toggle[aria-expanded="true"] .trail-chev { transform: rotate(90deg); }
 .trail-count { color: var(--ink-faint); font-weight: 400; }
 .trail-count::before { content: "· "; }
@@ -206,6 +209,8 @@
 .handoff-head { display: flex; align-items: center; gap: 8px; margin: 0; min-height: 22px; font-size: 13px; color: var(--ink-soft); }
 .handoff-head .ink-drops { padding: 4px 0; gap: 4px; }
 .handoff-head .ink-drops span { width: 5px; height: 5px; }
+.handoff-avatar { margin: -3px -2px -3px -4px; }
+.handoff[data-status="failed"] .handoff-avatar { opacity: 0.7; }
 .handoff-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--agent-ink); flex: none; margin: 0 2px; }
 .handoff[data-status="failed"] .handoff-dot { background: var(--failed); }
 .handoff-ask {
@@ -215,7 +220,7 @@
 .handoff .steps { margin-top: 6px; }
 
 /* Waiting for the reply to begin */
-.gathering { display: flex; align-items: center; gap: 10px; margin: 0; padding: 4px 0 0; }
+.gathering { display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 0 0; }
 .gathering-label { font-size: 13px; color: var(--ink-faint); }
 .ink-drops { display: inline-flex; gap: 6px; padding: 6px 2px; }
 .ink-drops span {
