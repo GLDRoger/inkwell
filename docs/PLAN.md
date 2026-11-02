@@ -183,3 +183,5 @@ Scope: copy eve's file-first conventions into the existing Vercel AI SDK runtime
 2. Route status/money questions to Atlas; load validated instructions and scoped skills from `agents/defs`, with an inline fallback.
 3. Polish tool field contracts, prevent child re-delegation, report failed-child partial work, and enforce deletion intent from the root person request.
 4. Compare real Wonder tool/inline outcomes; run the full corpus, typecheck, tests, production asset boot and replay gates. Record results below before completion.
+
+Verified results: unguided baseline 5/12; file-backed tool skills 6/6, inline 6/6. Tool remains default: all expected skills loaded, and inline overshot the long-diary word limit. All 20 tool-mode case outcomes passed after correcting one singular/plural oracle false negative and rerunning that case. Typecheck, 690 tests, 19 corpus-harness tests, production build/boot and ten-step replay passed. Full per-case tokens, original failures, reruns, cost estimate and limits: [`scripts/corpus/eve-results.md`](../scripts/corpus/eve-results.md).
