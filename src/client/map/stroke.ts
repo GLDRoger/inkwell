@@ -6,8 +6,8 @@ import type { Box } from "./layout";
  *
  * - circle: a roughly closed loop. The cards inside it are the scope.
  * - link: a line (or an arrow) that starts on one card and ends on another.
- * - strike: a line right across one card, starting and ending off it, or a
- *   zig-zag scribbled over it.
+ * - strike: a line right across one card (starting and ending off it, or on
+ *   its neighbours in a dense grid), or a zig-zag scribbled over it.
  *
  * Anything else is "none" and the ink just fades. Points are in world units;
  * `px` is world units per screen pixel, so tolerances feel the same at any zoom.
@@ -149,6 +149,12 @@ export function recognize(raw: Pt[], targetsIn: Iterable<Target>, px = 1): Gestu
     return { kind: "circle", pageIds: inside.map((t) => t.id) };
   }
 
+  // A line across one card in a dense grid starts and ends on its neighbours (the gaps are too
+  // thin to aim for). Straight, through the middle of a card that isn't at either end, and mostly
+  // on that card rather than on the ends: a strike of that card, not a link of its neighbours.
+  const struck = strikeThrough(pts, targets, len, gap);
+  if (struck) return { kind: "strike", pageId: struck };
+
   // A line from one card to another. An arrowhead doubles back, so the tip is the farthest point out.
   const from = topmost(targets, first, 8 * px);
   if (from) {
@@ -173,14 +179,34 @@ export function recognize(raw: Pt[], targetsIn: Iterable<Target>, px = 1): Gestu
 
   // A line right across one card: fairly straight, both ends off every card.
   if (gap / len >= 0.75 && !topmost(targets, first, 0) && !topmost(targets, last, 0)) {
-    const crossed = targets.filter((t) => {
-      const inner = { x: t.box.x + t.box.w * 0.15, y: t.box.y + t.box.h * 0.15, w: t.box.w * 0.7, h: t.box.h * 0.7 };
-      return pts.some((p) => inBox(p, inner));
-    });
+    const crossed = targets.filter((t) => pts.some((p) => inBox(p, innerOf(t.box))));
     if (crossed.length === 1) return { kind: "strike", pageId: crossed[0].id };
   }
 
   return { kind: "none" };
+}
+
+const innerOf = (b: Box): Box => ({ x: b.x + b.w * 0.15, y: b.y + b.h * 0.15, w: b.w * 0.7, h: b.h * 0.7 });
+
+/**
+ * The card a straight stroke strikes out when its ends rest on other cards:
+ * it crosses that one card's middle (and no other card's, besides the ends),
+ * and runs over it for at least 1.6× as long as it runs over the end cards
+ * together (about 3× when only one end is on a card). A line from deep in one
+ * card to deep in another stays a link.
+ */
+function strikeThrough(pts: Pt[], targets: Target[], len: number, chord: number): Id | null {
+  if (chord / len < 0.85) return null;
+  const ends = new Set([topmost(targets, pts[0], 0), topmost(targets, pts[pts.length - 1], 0)].filter((t): t is Target => !!t));
+  if (!ends.size) return null;
+  const crossed = targets.filter((t) => !ends.has(t) && pts.some((p) => inBox(p, innerOf(t.box))));
+  if (crossed.length !== 1) return null;
+  const mid = crossed[0];
+  const onMid = pts.filter((p) => inBox(p, mid.box)).length;
+  const onEnds = pts.filter((p) => [...ends].some((t) => inBox(p, t.box))).length;
+  // With only one end on a card, that end must barely touch it (a start just over the edge).
+  const ratio = ends.size === 2 && topmost(targets, pts[0], 0) !== topmost(targets, pts[pts.length - 1], 0) ? 1.6 : 1 / 0.35;
+  return onMid >= onEnds * ratio ? mid.id : null;
 }
 
 /**

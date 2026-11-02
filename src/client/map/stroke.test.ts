@@ -57,6 +57,42 @@ describe("recognize", () => {
     expect(recognize(line({ x: -40, y: 125 }, { x: 1040, y: 125 }), cards)).toEqual({ kind: "none" });
   });
 
+  describe("in a dense grid, where the gaps are too thin to start a stroke in", () => {
+    // Three cards in a row, 18 apart, like a packed area seen up close.
+    const grid: Target[] = [
+      { id: "l", box: { x: 0, y: 0, w: 260, h: 150 } },
+      { id: "m", box: { x: 278, y: 0, w: 260, h: 150 } },
+      { id: "r", box: { x: 556, y: 0, w: 260, h: 150 } },
+      { id: "u", box: { x: 278, y: 168, w: 260, h: 150 } },
+    ];
+
+    it("reads a line across the middle card, ending on its neighbours, as a strike of that card", () => {
+      expect(recognize(line({ x: 230, y: 60 }, { x: 590, y: 90 }), grid)).toEqual({ kind: "strike", pageId: "m" });
+    });
+
+    it("reads it the same drawn the other way, or with one end in the gap", () => {
+      expect(recognize(line({ x: 600, y: 100 }, { x: 240, y: 50 }), grid)).toEqual({ kind: "strike", pageId: "m" });
+      expect(recognize(line({ x: 268, y: 40 }, { x: 590, y: 110 }), grid)).toEqual({ kind: "strike", pageId: "m" });
+    });
+
+    it("strikes the card at the grid's edge, starting just over its neighbour's edge", () => {
+      expect(recognize(line({ x: 520, y: 60 }, { x: 850, y: 90 }), grid)).toEqual({ kind: "strike", pageId: "r" });
+    });
+
+    it("still reads a line from deep in one card to deep in another as a link", () => {
+      expect(recognize(line({ x: 130, y: 75 }, { x: 686, y: 75 }), grid)).toEqual({ kind: "link", from: "l", to: "r" });
+    });
+
+    it("still links two neighbours", () => {
+      expect(recognize(line({ x: 130, y: 75 }, { x: 400, y: 80 }), grid)).toEqual({ kind: "link", from: "l", to: "m" });
+    });
+
+    it("doesn't strike when a wobbly stroke isn't straight", () => {
+      const wobble = line({ x: 230, y: 60 }, { x: 590, y: 90 }).map((p, i) => ({ x: p.x, y: p.y + (i % 2 ? 70 : -40) }));
+      expect(recognize(wobble, grid).kind).not.toBe("strike");
+    });
+  });
+
   it("does nothing for a line from a card to empty paper", () => {
     expect(recognize(line({ x: 150, y: 125 }, { x: 150, y: 900 }), cards)).toEqual({ kind: "none" });
   });
