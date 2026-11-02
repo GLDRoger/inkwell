@@ -48,5 +48,4 @@ Total: 3:00. If the event's limit is shorter, drop the cold open and the cover s
 - **The camera is somewhere else when you want it.** Don't touch the map while recording: moving it pauses the demo camera for 8 seconds.
 - **The live reply is slow.** Keep recording until it finishes, cut the wait, and add "Wait shortened". If it fails with "Muse didn't start answering in time", that is the watchdog; click Try again off camera and record the shot again from the start.
 - **The live lens groups pages differently from the recording.** Keep it: it is live. If Atlas answers without a lens, record again.
-- **Wren's write is refused because you typed.** That is the version check. Either keep it and say so, or record again without typing.
 - **Practice without spending credit.** `npm run rehearse` runs the hands-on flow against a stand-in API. Use it for timing and camera moves only; nothing it produces goes in the video.
