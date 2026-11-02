@@ -1,13 +1,15 @@
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpRight, ImagePlus, ScanText } from "lucide-react";
-import type { Id, MapGraph, Page } from "@shared/types";
+import { ArrowUpRight, ImagePlus, PenLine, ScanText } from "lucide-react";
+import type { Id, MapGraph, Page, Widget } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
 import { emit, subscribe } from "../lib/events";
 import { keys } from "../lib/queries";
 import { getDemo, useDemo } from "../lib/demo";
-import { getUi, setUi, useUi } from "../lib/ui";
+import { getUi, personColor, scopeDiary, setUi, useUi } from "../lib/ui";
+import { dismiss, notify } from "../lib/notices";
+import { PendingDeletes, UNDO_MS, useDeleteFromMap } from "../page/deleteUndo";
 import { paintCover, usePhotoImport } from "../lib/media";
 import { attachGestures, CameraController, fitCamera, visibleWorld, type Cam, type Insets } from "./camera";
 import { layoutMap, REGION_PAD, unionBox, type Box, type CardBox } from "./layout";
@@ -30,6 +32,13 @@ import { FollowGate, peekCamera } from "../peek/follow";
 import { useDemoFollow } from "../peek/useDemoFollow";
 import { MAP_CAMERA_KEY, useDemoBarRoom } from "../lib/demo-flow";
 import { decodeCamera, encodeCamera } from "./saved-camera";
+import { lensKey, lensLayout, withLens, type LensLayout } from "./lens";
+import { useLensFlight } from "./lens-motion";
+import { LensBack, LensBar, LensLabels } from "./lens-view";
+import { MapWidget, WidgetThreads } from "./widgets";
+import { widgetSize } from "./widget-data";
+import { Pen } from "./pen";
+import type { Target } from "./stroke";
 import css from "./map.module.css";
 
 export interface MapViewProps {
@@ -101,15 +110,33 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     void import("./dev-fixture").then((m) => {
       if (dead) return;
       const g = m.makeFixtureGraph(fixture.pages);
+      const q = new URLSearchParams(location.search);
+      // Dev handles: __inkwellMap.lens("columns" | "timeline"), .clearLens(), .bump() changes the widgets' numbers.
+      (window as unknown as Record<string, unknown>).__inkwellMap = {
+        emit,
+        graph: g,
+        camera,
+        lens: (kind: "columns" | "timeline" = "columns") => emit({ type: "lens.shown", lens: m.fixtureLens(g, kind) }),
+        clearLens: () => emit({ type: "lens.cleared" }),
+        bump: (by = 1) => {
+          for (const w of g.widgets) {
+            const d = w.data;
+            if (d.kind === "progress") w.data = { ...d, done: Math.max(0, Math.min(d.total, d.done + by)) };
+            else if (d.kind === "total") w.data = { ...d, amount: d.amount + 86 * by, lines: d.lines.map((l, i) => (i === 0 ? { ...l, amount: l.amount + 86 * by } : l)) };
+            else continue;
+            emit({ type: "widget.updated", widget: { ...w, updatedAt: new Date().toISOString() } });
+          }
+        },
+      };
+      if (q.get("lens") === "columns" || q.get("lens") === "timeline") g.lens = m.fixtureLens(g, q.get("lens") as "columns");
       setFixtureGraph(g);
-      (window as unknown as Record<string, unknown>).__inkwellMap = { emit, graph: g };
       if (fixture.script) stop = m.runFixtureScript(g, emit);
     });
     return () => {
       dead = true;
       stop?.();
     };
-  }, [fixture]);
+  }, [fixture]); // eslint-disable-line react-hooks/exhaustive-deps
   const graph = fixture ? fixtureGraph : query.data;
   // Who "you" are, so a card says "Last edited by you".
   const me = useQuery({ queryKey: keys.me, queryFn: api.me, staleTime: Infinity, enabled: !fixture, retry: 1 });
@@ -120,6 +147,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const demo = useDemo((s) => s.notebook === "demo");
   const playing = useDemo((s) => s.playing);
   const demoFocus = useDemo((s) => s.focus);
+  const demoIndex = useDemo((s) => s.index);
   const following = demo && playing && !fixture;
 
   // ------------------------------------------------------------ the peek
@@ -162,6 +190,37 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // out afresh in a column it can read; wider screens keep the arrangement.
   const [shape, setShape] = useState({ aspect: 2, flow: false });
   const layout = useMemo(() => layoutMap(pageList, "Other pages", shape), [pageList, shape]);
+
+  // ------------------------------------------------------------ lens and widgets
+  // Widgets being deleted (their Undo is still open) are hidden here.
+  const [goneWidgets, setGoneWidgets] = useState<ReadonlySet<Id>>(() => new Set());
+  const widgetMap = state?.widgets;
+  const widgetList = useMemo(() => (widgetMap ? [...widgetMap.values()].filter((w) => !goneWidgets.has(w.id)) : []), [widgetMap, goneWidgets]);
+  const lens = state?.lens ?? null;
+  /** The lens laid out over the map: a view only, the stored map never moves. */
+  const lensBox = useMemo<LensLayout | null>(
+    () => {
+      if (!lens) return null;
+      // The lens floats above everything on the map, widgets included.
+      const homes = widgetList.map((w) => ({ x: w.x, y: w.y, ...widgetSize(w.data) }));
+      const bounds = layout.cards.size ? unionBox([layout.bounds, ...homes])! : layout.bounds;
+      return lensLayout(lens, { cards: layout.cards, bounds }, widgetList.map((w) => ({ id: w.id, ...widgetSize(w.data), pageIds: w.pageIds })));
+    },
+    [lens, layout, widgetList],
+  );
+  /** The map as drawn: the lens's cards in the lens, everything else where it is. */
+  const widgetPlaces = useMemo(() => {
+    const out = new Map<Id, Box>();
+    for (const w of widgetList) out.set(w.id, lensBox?.widgets.get(w.id) ?? { x: w.x, y: w.y, ...widgetSize(w.data) });
+    return out;
+  }, [widgetList, lensBox]);
+  // Widgets count as part of the map's extent: the overview and the minimap include them.
+  const viewLayout = useMemo(() => {
+    const v = withLens(layout, lensBox);
+    if (!widgetPlaces.size || !layout.cards.size) return v;
+    return { ...v, bounds: unionBox([v.bounds, ...widgetPlaces.values()])! };
+  }, [layout, lensBox, widgetPlaces]);
+  const lensId = lensKey(lens);
   const writing = useMemo(() => (state ? writingPages(state) : new Map<string, string>()), [state]);
   const reduced = useReducedMotion();
   const now = useNow(15_000);
@@ -193,8 +252,10 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   const detailRef = useRef(detail);
   const [visible, setVisible] = useState<string[]>([]);
   const visibleRef = useRef<string[]>([]);
-  const layoutRef = useRef(layout);
-  layoutRef.current = layout;
+  const layoutRef = useRef(viewLayout);
+  layoutRef.current = viewLayout;
+  const widgetPlacesRef = useRef(widgetPlaces);
+  widgetPlacesRef.current = widgetPlaces;
 
   useEffect(() => () => camera.dispose(), [camera]);
 
@@ -282,7 +343,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       }),
     [camera, recull],
   );
-  useEffect(() => recull(camera.cam, camera.vw, camera.vh), [layout, camera, recull]);
+  useEffect(() => recull(camera.cam, camera.vw, camera.vh), [viewLayout, camera, recull]);
 
   useEffect(() => {
     camera.onSettle = (c) => {
@@ -302,13 +363,14 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   // The shell's variables are calc() expressions, which getComputedStyle hands
   // back unresolved; a hidden probe sized by them reads them in pixels.
   const insetProbe = useRef<HTMLDivElement>(null);
+  const lensOn = !!lensBox;
   const insets = useCallback((): Insets => {
     const p = insetProbe.current;
     const top = p?.offsetHeight ?? 0;
     const right = Math.max(p?.offsetWidth ?? 0, cover.right);
     const bottom = compact ? 72 : 64;
-    return { top: top + (compact ? 60 : 58), right: right + 12, bottom: bottom + cover.bottom + barSpace, left: 12 };
-  }, [compact, cover, barSpace]);
+    return { top: top + (compact ? 60 : 58) + (lensOn ? 52 : 0), right: right + 12, bottom: bottom + cover.bottom + barSpace, left: 12 };
+  }, [compact, cover, barSpace, lensOn]);
   // Phones on their side, or a map squeezed beside the diary, have no room for the greeting.
   const greets = size.h >= 560 && freeW >= Math.min(GREETING_MIN_W, size.w);
   // The overview: everything, with room above it for the greeting, as long as
@@ -393,6 +455,13 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   useEffect(() => {
     if (placed.current || !size.w || !layout.cards.size) return;
     placed.current = true;
+    if (lensBox) {
+      // The notebook opened on a lens: start there.
+      lensShown.current = lensKey(lens);
+      camera.set(fitCamera(lensBox.bounds, camera.vw, camera.vh, insets(), compact ? 12 : 48, 1));
+      camera.touched = true;
+      return;
+    }
     if (focusIds.length && layout.cards.has(focusIds[0])) {
       // A search result or a photo's cards: fly in from the whole map, so you see where it is.
       camera.set(fitAll());
@@ -404,7 +473,33 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const saved = savedCamera(notebook);
     camera.set(saved ?? fitAll());
     camera.touched = !!saved;
-  }, [size, layout, focusIds, showFocus, fitAll, camera, reduced, notebook]);
+  }, [size, layout, focusIds, showFocus, fitAll, camera, reduced, notebook, lensBox, lens, insets, compact]);
+
+  // A lens comes: remember where you were and fit it. It goes: back to where you were.
+  const lensShown = useRef("");
+  const beforeLens = useRef<Cam | null>(null);
+  const lensBoxRef = useRef(lensBox);
+  lensBoxRef.current = lensBox;
+  useEffect(() => {
+    if (lensId === lensShown.current) return;
+    const was = lensShown.current;
+    lensShown.current = lensId;
+    if (!placed.current) return;
+    const box = lensBoxRef.current;
+    camera.hush(1800);
+    if (lensId && box) {
+      if (!was) beforeLens.current = { ...camera.cam };
+      const target = fitCamera(box.bounds, camera.vw, camera.vh, insets(), compact ? 12 : 48, 1);
+      if (reducedRef.current) camera.set(target);
+      else camera.flyTo(target, 1150);
+      camera.touched = true;
+      return;
+    }
+    const back = beforeLens.current ?? fitAll();
+    beforeLens.current = null;
+    if (reducedRef.current) camera.set(back);
+    else camera.flyTo(back, 1100);
+  }, [lensId, camera, insets, compact, fitAll]);
   // Until someone moves the map, keep it fitted as the window changes, and as
   // the shell's bar and diary settle in or open (they change the free space).
   useEffect(() => {
@@ -441,6 +536,23 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     if (!ids || !placed.current) return;
     if (ids.every((id) => layout.cards.has(id)) && showFocus(ids, true)) pendingFocus.current = null;
   }, [focusPageId, focusIds, layout, showFocus]);
+
+  // Cards fly between the map and the lens; the ones that just left stay mounted until they land.
+  const lastLens = useRef<LensLayout | null>(null);
+  if (lensBox) lastLens.current = lensBox;
+  const [landing, setLanding] = useState<Id[]>([]);
+  const wasLens = useRef<LensLayout | null>(null);
+  useEffect(() => {
+    const prev = wasLens.current;
+    wasLens.current = lensBox;
+    if (prev && !lensBox) {
+      setLanding([...prev.cards.keys()]);
+      const t = setTimeout(() => setLanding([]), 1800);
+      return () => clearTimeout(t);
+    }
+  }, [lensBox]);
+  const flightOrder = useCallback((id: Id) => lastLens.current?.order.get(id) ?? 0, []);
+  useLensFlight(cardsRef, lensId, { cards: viewLayout.cards, widgets: widgetPlaces }, flightOrder, reduced);
 
   // ------------------------------------------------------------ the ink reveal
   const revealTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -495,6 +607,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
 
   // ------------------------------------------------------------ keys
   const book = useMemo(() => new SpellBook(), []);
+  /** What the keys can do right now, read when a key is pressed. */
+  const keyActions = useRef({ canPen: false, pen: false, lens: false, togglePen: () => {}, back: () => {} });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return;
@@ -521,6 +635,16 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       if ((e.target as HTMLElement).closest?.("[data-scrolls]") && e.key.startsWith("Arrow")) return;
       const step = e.shiftKey ? 320 : 80;
       switch (e.key) {
+        case "p":
+        case "P":
+          if (!keyActions.current.canPen) return;
+          keyActions.current.togglePen();
+          break;
+        case "Escape":
+          if (keyActions.current.pen) keyActions.current.togglePen();
+          else if (keyActions.current.lens && !peekRef.current) keyActions.current.back();
+          else return;
+          break;
         case "ArrowLeft":
           camera.panBy(step, 0);
           break;
@@ -560,9 +684,9 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     const el = rootRef.current!;
     return attachGestures(el, camera, {
       canPan: (t) => {
-        if (t.closest("[data-map-control]")) return false;
+        if (t.closest("[data-map-control]") || t.closest("[data-pen-layer][data-active]")) return false;
         // Up close, cards are picked up and moved; far out, the map pans.
-        if (t.closest("[data-card]") && (detailRef.current === "mid" || detailRef.current === "near")) return false;
+        if (t.closest("[data-card],[data-widget]") && (detailRef.current === "mid" || detailRef.current === "near")) return false;
         return true;
       },
       onInput: endReveal,
@@ -656,7 +780,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     onOpenPage(id);
   };
   handlers.current.onMove = (id, x, y) => {
-    if (demo) return;
+    if (demo || lensBox) return;
     const l = layoutRef.current;
     const box = l.cards.get(id);
     if (!box || (box.x === x && box.y === y)) return;
@@ -739,14 +863,14 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       return;
     }
     if (!placed.current || !coverKnown || peekShown.current === peekKey) return;
-    const box = layout.cards.get(peekId);
+    const box = viewLayout.cards.get(peekId);
     if (!box) return;
     peekShown.current = peekKey;
     const target = peekCamera(box, camera.cam, camera.vw, camera.vh, insets(), midScale());
     if (!target) return;
     if (followingRef.current) camera.hush(1600);
     camera.flyTo(target, followingRef.current ? 1100 : undefined);
-  }, [peekId, peekKey, coverKnown, layout, size, camera, insets, midScale]);
+  }, [peekId, peekKey, coverKnown, viewLayout, size, camera, insets, midScale]);
   const closePeek = useCallback(() => {
     const id = peekRef.current;
     if (followingRef.current) gate.current.pause(Date.now());
@@ -817,12 +941,170 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
   }, [ended]);
 
   // ------------------------------------------------------------ demo camera
-  useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout, writing, ready: placed, peekRef, setPeek: demoPeek, insets, midScale });
+  useDemoFollow({ following, focus: demoFocus, camera, gate: gate.current, state, layout: viewLayout, writing, ready: placed, peekRef, setPeek: demoPeek, insets, midScale });
+
+  // ------------------------------------------------------------ the lens's way back
+  const backToMap = useCallback(() => {
+    // A view only: clearing it here moves nothing in the stored map.
+    setState((s) => (s && s.lens ? { ...s, lens: null } : s));
+    if (fixture) return;
+    client.setQueryData<MapGraph>(keys.map, (old) => (old && old.lens ? { ...old, lens: null } : old));
+    // The demo notebook is the recording's: there the lens just closes for you.
+    if (!demo) api.clearLens().catch((err) => console.error("[map] couldn't clear the lens", err));
+  }, [client, fixture, demo]);
+
+  // ------------------------------------------------------------ the pen
+  const [pen, setPen] = useState(false);
+  const canPen = !demo && !!state && layout.cards.size > 0;
+  useEffect(() => {
+    if (!canPen) setPen(false);
+  }, [canPen]);
+  const togglePen = useCallback(() => setPen((on) => !on), []);
+  keyActions.current = { canPen, pen, lens: !!lensBox, togglePen, back: backToMap };
+  const deleteFromMap = useDeleteFromMap();
+  const penTargets = useCallback((): Target[] => {
+    const l = layoutRef.current;
+    return visibleRef.current.flatMap((id) => {
+      const box = l.cards.get(id);
+      return box ? [{ id, box }] : [];
+    });
+  }, []);
+  const penBoxOf = useCallback((id: Id) => layoutRef.current.cards.get(id) ?? null, []);
+  const penTitle = useCallback((id: Id) => titleOf(stateRef.current?.pages.get(id)), []);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const onCircle = useCallback((ids: Id[]) => {
+    const titles = ids.map((id) => titleOf(stateRef.current?.pages.get(id)));
+    scopeDiary({ pageIds: ids, titles, label: `${ids.length} ${ids.length === 1 ? "page" : "pages"} circled` });
+  }, []);
+  const onLink = useCallback((from: Id, to: Id) => {
+    const s = stateRef.current;
+    const [a, b] = [titleOf(s?.pages.get(from)), titleOf(s?.pages.get(to))];
+    const atlas = s ? [...s.agents.values()].find((ag) => /atlas/i.test(ag.name)) : undefined;
+    scopeDiary({ pageIds: [from, to], titles: [a, b], label: "Linking 2 pages", send: { text: `Link ${a} and ${b}`, agentId: atlas?.id ?? null } });
+  }, []);
+  const onStrike = useCallback(
+    (id: Id) => {
+      const page = stateRef.current?.pages.get(id);
+      if (!page) return;
+      if (peekRef.current === id) setPeek(null);
+      if (fixture) {
+        setState((s) => (s ? applyEvent(s, { type: "page.deleted", pageId: id }, Date.now()) : s));
+        return;
+      }
+      deleteFromMap(page);
+    },
+    [deleteFromMap, fixture, setPeek],
+  );
+  const penInk = personColor(meId ?? "you");
+
+  // ------------------------------------------------------------ widgets
+  const [hotWidget, setHotWidget] = useState<Id | null>(null);
+  const onWidgetHover = useCallback((id: Id | null) => setHotWidget(id), []);
+  const patchWidget = useCallback(
+    (id: Id, patch: Partial<Widget>) => {
+      setState((s) => {
+        const w = s?.widgets.get(id);
+        if (!s || !w) return s;
+        const widgets = new Map(s.widgets);
+        widgets.set(id, { ...w, ...patch });
+        return { ...s, widgets };
+      });
+      if (!fixture) client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, widgets: (old.widgets ?? []).map((w) => (w.id === id ? { ...w, ...patch } : w)) } : old));
+    },
+    [client, fixture],
+  );
+  const onWidgetMove = useCallback(
+    (id: Id, x: number, y: number) => {
+      if (demo || lensBoxRef.current) return;
+      patchWidget(id, { x, y });
+      if (!fixture) api.updateWidget(id, { x, y }).catch((err) => console.error("[map] couldn't save the widget's place", err));
+    },
+    [demo, fixture, patchWidget],
+  );
+  // Removing a widget has the page's Undo: hidden at once, deleted when the notice goes.
+  const widgetDeletes = useMemo(() => new PendingDeletes(UNDO_MS), []);
+  useEffect(() => {
+    const flush = () => widgetDeletes.flush();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [widgetDeletes]);
+  const onWidgetDelete = useCallback(
+    (id: Id) => {
+      const w = stateRef.current?.widgets.get(id);
+      if (!w) return;
+      const hide = (on: boolean) =>
+        setGoneWidgets((g) => {
+          const next = new Set(g);
+          if (on) next.add(id);
+          else next.delete(id);
+          return next;
+        });
+      hide(true);
+      const noticeId = `widget-${id}`;
+      widgetDeletes.schedule(id, [id], () => {
+        dismiss(noticeId);
+        const drop = () => {
+          setState((s) => (s ? applyEvent(s, { type: "widget.deleted", widgetId: id }, Date.now()) : s));
+          if (!fixture) client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, widgets: (old.widgets ?? []).filter((x) => x.id !== id) } : old));
+          hide(false);
+        };
+        if (fixture) return drop();
+        api.deleteWidget(id).then(drop, (err) => {
+          if (isNotFound(err)) return drop();
+          hide(false);
+          notify({ tone: "error", persist: true, text: `Couldn't remove “${w.title}”, so it's still on the map.` });
+        });
+      });
+      notify({
+        id: noticeId,
+        tone: "done",
+        persist: true,
+        sticky: true,
+        text: `Removed “${w.title}”.`,
+        action: {
+          label: "Undo",
+          run: () => {
+            if (widgetDeletes.cancel(id)) hide(false);
+            dismiss(noticeId);
+          },
+        },
+        onHold: () => widgetDeletes.pause(id),
+        onRelease: () => widgetDeletes.resume(id),
+        onClose: () => widgetDeletes.commitNow(id),
+      });
+    },
+    [client, fixture, widgetDeletes],
+  );
+  const onWidgetPeek = useCallback((pageId: Id) => handlers.current.onPeek(pageId), []);
+
+  // ------------------------------------------------------------ demo: lasso and widgets
+  const circled = demoFocus.circledPageIds;
+  const lassoKey = circled?.length ? `${demoIndex}:${circled.join(",")}` : "";
+  const lasso = useMemo(() => (lassoKey && circled ? { key: lassoKey, ids: circled } : null), [lassoKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!lasso || !following || !placed.current || !gate.current.active(Date.now())) return;
+    // Bring the circled cards into view before the hand draws round them.
+    camera.hush(1600);
+    showFocus(lasso.ids, true);
+  }, [lasso, following, camera, showFocus]);
+  const focusWidget = demoFocus.widgetId;
+  const widgetReady = !!focusWidget && widgetPlaces.has(focusWidget);
+  useEffect(() => {
+    if (!focusWidget || !widgetReady || !following || !placed.current || !gate.current.active(Date.now())) return;
+    const box = widgetPlacesRef.current.get(focusWidget);
+    if (!box) return;
+    camera.hush(1600);
+    camera.flyTo(cameraFor({ ...box, id: focusWidget, depth: 0, regionId: "", pinned: true }, "mid"), 1100);
+  }, [focusWidget, widgetReady, following, camera, cameraFor, demoIndex]);
 
   // ------------------------------------------------------------ walkers
   const emptyState = useMemo(() => fromGraph({ pages: [], links: [], agents: [], runs: [], widgets: [], lens: null }, 0), []);
   const live = state ?? emptyState;
-  const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, layout, camera, reduced);
+  const { store: walkStore, spots, register, scale: nameScale } = useWalks(live, viewLayout, camera, reduced);
 
   // Say what moved, for screen readers.
   const [announce, setAnnounce] = useState("");
@@ -920,7 +1202,14 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
     return iso ? [{ createdAt: iso }] : [];
   }, [pageList]);
   const agentInk = (p: Page) => (p.updatedBy.kind === "agent" ? (state?.agents.get(p.updatedBy.id)?.color ?? null) : null);
-  const frame = worldFrame(layout.bounds);
+  const frame = worldFrame(viewLayout.bounds);
+  // Lens cards are always on show (they fly in from wherever they were); so are those flying home.
+  const shown = useMemo(() => {
+    const extra = lensBox ? [...lensBox.cards.keys()] : landing;
+    if (!extra.length) return visible;
+    const set = new Set(visible);
+    return [...visible, ...extra.filter((id) => !set.has(id))];
+  }, [visible, lensBox, landing]);
   const lb = layout.bounds;
   const centre = { x: lb.x + lb.w / 2, y: lb.y + lb.h / 2 };
   const reach = Math.hypot(lb.w, lb.h) / 2;
@@ -950,6 +1239,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
       // A fully open sheet leaves no room below the bar for the zoom and photo buttons.
       data-sheet-full={cover.bottom > size.h * 0.7 || undefined}
       data-readonly={demo || undefined}
+      data-lens={lensBox ? lensBox.kind : undefined}
+      data-pen={pen || undefined}
       style={
         {
           ...(cover.right ? { "--map-inset": `${size.w - freeW}px` } : null),
@@ -996,6 +1287,23 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         <div className={css.chrome}>
           <div className={css.topRow}>
             <Roster state={state} narrow={narrow} room={freeW - 24 - (fixture ? 0 : compact || freeW >= 560 ? 170 : 50)} onFollow={follow} />
+            {canPen && (
+              <button
+                type="button"
+                className={`${css.pill} ${css.penPill}`}
+                data-map-control
+                data-short={(!compact && freeW < 560) || compact || undefined}
+                aria-pressed={pen}
+                aria-keyshortcuts="P"
+                onClick={togglePen}
+                aria-label={pen ? "Pen on: draw on the map. Press P or Escape to stop." : "Pen: circle, link or strike out pages (P)"}
+                title={pen ? "Stop drawing (P or Esc)" : "Pen (P): circle pages to ask about them"}
+              >
+                <PenLine size={16} strokeWidth={1.75} aria-hidden />
+                {!compact && freeW >= 560 && <span>{pen ? "Drawing" : "Pen"}</span>}
+                {!compact && freeW >= 560 && <kbd className={css.kbd}>P</kbd>}
+              </button>
+            )}
             {!fixture && !demo && (
               <button
                 type="button"
@@ -1013,9 +1321,20 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             )}
           </div>
 
+          {lensBox && <LensBar lens={lensBox} agent={(lens?.agentId && state.agents.get(lens.agentId)) || null} onBack={backToMap} />}
+
+          {pen && (
+            <p className={css.hint} data-pen-hint role="status">
+              {compact ? "Circle pages to ask about them" : "Circle pages to ask about them, draw from one page to another to link them, or strike one out."}
+              <button type="button" className={css.hintDone} data-map-control onClick={togglePen}>
+                Done
+              </button>
+            </p>
+          )}
+
           {layout.cards.size > 0 && (
             <Minimap
-              layout={layout}
+              layout={viewLayout}
               state={state}
               spots={spots}
               writing={writing}
@@ -1027,7 +1346,7 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
             />
           )}
 
-          {hint && !demo && (
+          {hint && !demo && !pen && (
             <p className={css.hint} role="status" onClick={() => dismissHint()}>
               {coarse ? "Tap a page to peek." : "Click a page to peek. Double-click to open it."}
             </p>
@@ -1039,6 +1358,12 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
         <div ref={backRef} className={css.world}>
           <div ref={backScaleRef} className={css.scale}>
             {state && <WorldBack layout={layout} links={state.links} />}
+            {state && (widgetList.length > 0 || lensBox) && (
+              <svg className={css.worldSvg} style={{ left: frame.x, top: frame.y, width: frame.w, height: frame.h }} viewBox={frame.viewBox} aria-hidden>
+                {lensBox && <LensBack key={lensId} lens={lensBox} />}
+                <WidgetThreads widgets={widgetList} places={widgetPlaces} cards={viewLayout.cards} hot={hotWidget} />
+              </svg>
+            )}
           </div>
         </div>
 
@@ -1068,13 +1393,14 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
               {r.title}
             </div>
           ))}
+          {lensBox && <LensLabels key={lensId} lens={lensBox} />}
         </div>
 
         <div ref={cardsRef} className={css.layer}>
           {state &&
-            visible.map((id) => {
+            shown.map((id) => {
               const page = state.pages.get(id);
-              const box = layout.cards.get(id);
+              const box = viewLayout.cards.get(id);
               if (!page || !box) return null;
               return (
                 <MapCard
@@ -1091,7 +1417,8 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                   now={now}
                   you={meId !== null && page.updatedBy.kind === "person" && page.updatedBy.id === meId}
                   seeded={isUntouchedSeed(page, firstMade)}
-                  movable={!shape.flow && !demo}
+                  movable={!shape.flow && !demo && !lensBox}
+                  lens={lensBox ? (lensBox.cards.has(id) ? "in" : "out") : null}
                   readOnly={demo}
                   peeked={peekId === id}
                   camera={camera}
@@ -1102,12 +1429,46 @@ export function MapView({ onOpenPage, focusPageId }: MapViewProps) {
                 />
               );
             })}
+          {state &&
+            widgetList.map((w) => (
+              <MapWidget
+                key={w.id}
+                widget={w}
+                box={widgetPlaces.get(w.id)!}
+                detail={detail}
+                pages={state.pages}
+                reduced={reduced}
+                lens={lensBox ? (lensBox.widgets.has(w.id) ? "in" : "out") : null}
+                movable={!demo && !lensBox && !shape.flow}
+                camera={camera}
+                onMove={onWidgetMove}
+                onDelete={demo ? undefined : onWidgetDelete}
+                onHover={onWidgetHover}
+                onPeek={onWidgetPeek}
+              />
+            ))}
         </div>
 
         <div ref={bannersRef} className={`${css.layer} ${css.names}`} aria-hidden>
           <Names state={live} spots={spots} scale={nameScale} register={register} onFollow={follow} />
         </div>
       </div>
+
+      {state && (
+        <Pen
+          camera={camera}
+          active={pen}
+          ink={penInk}
+          reduced={reduced}
+          targets={penTargets}
+          boxOf={penBoxOf}
+          titleOf={penTitle}
+          onCircle={onCircle}
+          onLink={onLink}
+          onStrike={onStrike}
+          lasso={lasso}
+        />
+      )}
 
       {state && layout.cards.size > 0 && greets && (
         <div ref={greetingRef} className={css.greeting} data-away={camera.touched || undefined}>

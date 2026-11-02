@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { DemoScenario, DemoState, DemoStep, Id, NotebookKind, ServerEvent } from "@shared/types";
+import type { DemoFocus, DemoScenario, DemoState, DemoStep, NotebookKind, ServerEvent } from "@shared/types";
 
 /**
  * Which notebook the app is showing, and where the demo is. One small store so
@@ -15,7 +15,7 @@ export interface DemoUiState {
   index: number;
   step: DemoStep | null;
   /** What the camera and peek panel should show for the current step. */
-  focus: { pageId?: Id; agentId?: Id; runId?: Id };
+  focus: DemoFocus;
   /** How the demo last ended, while the visitor is still looking at it (null while it plays, or before it starts). */
   ended: "finished" | "stopped" | null;
   /** Waiting for POST /api/demo/start to answer. */

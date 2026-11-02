@@ -35,6 +35,8 @@ interface Props {
   readOnly?: boolean;
   /** Open in the peek panel right now. */
   peeked?: boolean;
+  /** A lens is showing: this card is in it, or faded behind it. */
+  lens?: "in" | "out" | null;
   camera: CameraController;
   /** A click: the map decides whether it's one (peek) or the first of a double-click (open). */
   onClick(id: string): void;
@@ -117,6 +119,8 @@ export const MapCard = memo(function MapCard(p: Props) {
       data-arrive={arrival?.kind === "held" ? "held" : arrival ? "in" : undefined}
       data-painting={painting || undefined}
       data-peeked={p.peeked || undefined}
+      data-lens-in={p.lens === "in" || undefined}
+      data-lens-out={p.lens === "out" || undefined}
       aria-current={p.peeked || undefined}
       aria-busy={painting || undefined}
       tabIndex={0}

@@ -216,9 +216,10 @@
   left: 0;
   top: 0;
   box-sizing: border-box;
+  /* --fx/--fy: a lens flight's offset, world units, animated back to 0 (lens-motion.ts). */
   transform: translate(
-    round(calc(var(--x) * var(--s) * 1px), 1px),
-    round(calc(var(--y) * var(--s) * 1px), 1px)
+    round(calc((var(--x) + var(--fx, 0)) * var(--s) * 1px), 1px),
+    round(calc((var(--y) + var(--fy, 0)) * var(--s) * 1px), 1px)
   );
   width: round(calc(var(--w) * var(--s) * 1px), 1px);
   height: round(calc(var(--h) * var(--s) * 1px), 1px);
@@ -1371,4 +1372,833 @@
 .root[data-sheet-full] .photo,
 .root[data-sheet-full] .hint {
   visibility: hidden;
+}
+
+/* ---------------------------------------------------------------- lenses */
+
+/*
+ * A lens: the cards it names fly up out of the map into columns or a
+ * timeline (lens.ts, lens-motion.ts); the rest of the map stays put, faded.
+ */
+.card,
+.widget {
+  transition: opacity 520ms var(--ease-in-out), filter 520ms var(--ease-in-out);
+}
+
+.card[data-lens-out],
+.widget[data-lens-out] {
+  opacity: 0.13;
+  filter: saturate(0.3);
+}
+
+.card[data-lens-in],
+.widget[data-lens-in] {
+  z-index: 1;
+}
+
+/* Mid-flight: smooth sub-pixel travel (no rounding), lifted off the paper. */
+.card[data-flying],
+.widget[data-flying] {
+  z-index: 2;
+  transform: translate(
+    calc((var(--x) + var(--fx, 0)) * var(--s) * 1px),
+    calc((var(--y) + var(--fy, 0)) * var(--s) * 1px)
+  );
+  box-shadow: var(--shadow-pop);
+}
+
+.root[data-lens] .area {
+  opacity: 0.12;
+}
+
+.root[data-lens] .links {
+  opacity: 0.25;
+}
+
+.area,
+.links {
+  transition: opacity 520ms var(--ease-in-out);
+}
+
+/* The question, written above the lens in full ink. */
+.lensTitle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--w) * var(--s) * 1px);
+  transform: translate(round(calc(var(--x) * var(--s) * 1px), 1px), round(calc(var(--y) * var(--s) * 1px), 1px));
+  font: 380 clamp(19px, calc(var(--s) * 76px), 64px) / 1.04 var(--font-display);
+  letter-spacing: -0.03em;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--ink);
+}
+
+.lensGroup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--w) * var(--s) * 1px);
+  transform: translate(round(calc(var(--x) * var(--s) * 1px), 1px), round(calc(var(--y) * var(--s) * 1px), 1px));
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, calc(var(--s) * 6px), 6px);
+}
+
+.lensLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  font: 400 clamp(13px, calc(var(--s) * 36px), 32px) / 1.1 var(--font-display);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lensCount {
+  font: 500 clamp(9px, calc(var(--s) * 15px), 13px) / 1 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.lensNote {
+  font: 400 clamp(9.5px, calc(var(--s) * 17px), 15px) / 1.35 var(--font-ui);
+  color: var(--ink-soft);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Threads from the question to each group, a rule under each label, or the timeline's axis. */
+.lensLines path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--ink) 26%, transparent);
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.lensLines[data-kind="timeline"] path {
+  stroke: color-mix(in oklab, var(--ink) 45%, transparent);
+  stroke-width: 1.5;
+}
+
+.lensLines circle {
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lensLines path {
+    stroke-dasharray: 1;
+    animation: drawLine 900ms calc(380ms + var(--i, 0) * 90ms) var(--ease-ink) both;
+  }
+  .lensLines circle {
+    animation: fadeIn 400ms calc(700ms + var(--i, 0) * 110ms) var(--ease-ink) both;
+  }
+  .lensTitle {
+    animation: settle 700ms 120ms var(--ease-ink) both;
+  }
+  .lensGroup {
+    animation: settle 600ms calc(300ms + var(--i, 0) * 80ms) var(--ease-ink) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lensLines,
+  .lensTitle,
+  .lensGroup {
+    animation: fadeIn 240ms both;
+  }
+}
+
+@keyframes drawLine {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The lens's control: who arranged it, and the way back. Centred under the top row. */
+.lensBar {
+  position: absolute;
+  top: calc(var(--shell-top, 0px) + 56px);
+  left: calc(50% - var(--map-inset, var(--diary-inset, 0px)) / 2);
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - var(--map-inset, var(--diary-inset, 0px)) - 24px);
+  padding: 3px 3px 3px 15px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-chrome);
+  font: 500 13px/1 var(--font-ui);
+  color: var(--ink-soft);
+  white-space: nowrap;
+  pointer-events: auto;
+  animation: rise var(--dur-slow) 200ms var(--ease-ink) both;
+}
+
+.lensBy {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 6px;
+}
+
+.lensWho {
+  --who-ink: light-dark(var(--who), color-mix(in oklab, var(--who) 55%, #f2f1ed));
+  font-weight: 550;
+  color: var(--who-ink);
+}
+
+.lensBack {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px 0 11px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--ink);
+  color: var(--paper);
+  font: 550 13px/1 var(--font-ui);
+  cursor: pointer;
+}
+
+.lensBack:hover {
+  background: color-mix(in oklab, var(--ink) 86%, var(--paper));
+}
+
+.lensBack:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 2px;
+}
+
+.root[data-compact] .lensBar {
+  top: calc(var(--shell-top, 0px) + 50px);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- widgets */
+
+/*
+ * A live widget: the same paper as a card, one number set big in the display
+ * serif, and a small kind icon. Sized with the zoom (font-size follows --s),
+ * so it reads as an object on the map rather than chrome.
+ */
+.widget {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  transform: translate(
+    round(calc((var(--x) + var(--fx, 0)) * var(--s) * 1px), 1px),
+    round(calc((var(--y) + var(--fy, 0)) * var(--s) * 1px), 1px)
+  );
+  width: round(calc(var(--w) * var(--s) * 1px), 1px);
+  height: round(calc(var(--h) * var(--s) * 1px), 1px);
+  padding: 1.15em 1.3em 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+  overflow: hidden;
+  font-size: max(7px, calc(var(--s) * 15px));
+  line-height: 1.35;
+  pointer-events: auto;
+  cursor: default;
+  outline: none;
+  background: var(--paper-raised);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 0 0 1px color-mix(in oklab, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.widget:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 3px;
+}
+
+.widget[data-detail="mid"],
+.widget[data-detail="near"] {
+  cursor: grab;
+}
+
+.widget[data-dragging] {
+  z-index: 2;
+  cursor: grabbing;
+  box-shadow: var(--shadow-pop);
+}
+
+.widget[data-detail="rooms"] {
+  justify-content: center;
+  gap: 0.3em;
+  font-size: clamp(8px, calc(var(--s) * 44px), 15px);
+  padding: 0.6em 0.8em;
+  border-radius: clamp(3px, calc(var(--s) * 30px), 12px);
+}
+
+.widget[data-detail="dots"] {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: clamp(3px, calc(var(--s) * 30px), 8px);
+}
+
+.wDot {
+  width: clamp(8px, calc(var(--s) * 110px), 18px);
+  height: auto;
+  color: var(--ink-soft);
+}
+
+.wHead {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  min-height: 1.6em;
+  color: var(--ink-faint);
+}
+
+.wIcon {
+  flex: none;
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.wTitle {
+  flex: 1;
+  min-width: 0;
+  font-weight: 550;
+  font-size: 0.88em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.widget[data-detail="rooms"] .wHead {
+  min-height: 0;
+}
+
+.widget[data-detail="rooms"] .wTitle {
+  font-size: 0.7em;
+}
+
+.widget[data-detail="rooms"] .wIcon {
+  width: 0.7em;
+  height: 0.7em;
+}
+
+.wRemove {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.75em;
+  height: 1.75em;
+  margin: -0.3em -0.45em -0.3em 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-in-out);
+}
+
+.wRemove svg {
+  width: 0.95em;
+  height: 0.95em;
+}
+
+.widget:hover .wRemove,
+.widget:focus-within .wRemove,
+.root[data-compact] .wRemove {
+  opacity: 1;
+}
+
+.wRemove:hover {
+  background: var(--paper-sunken);
+  color: var(--ink);
+}
+
+.wRemove:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--wax);
+  outline-offset: 1px;
+}
+
+.wBig {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+}
+
+.wNum {
+  align-self: flex-start;
+  margin-left: -0.08em;
+  padding: 0 0.08em;
+  border-radius: 0.12em;
+  font: 380 2.65em/1 var(--font-display);
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.wNum small {
+  margin: 0 0.12em 0 0.06em;
+  font: 500 0.36em var(--font-ui);
+  letter-spacing: 0;
+  color: var(--ink-faint);
+  vertical-align: 0.2em;
+}
+
+.widget[data-detail="rooms"] .wNum {
+  font-size: 1.6em;
+}
+
+.wSub {
+  font-size: 0.82em;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The number just changed: it counts to its new value and its paper glows once. */
+@media (prefers-reduced-motion: no-preference) {
+  .wNum[data-bump] {
+    animation: bump 1700ms var(--ease-ink);
+  }
+  .widget[data-changed] {
+    animation: changed 1700ms var(--ease-ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wNum[data-bump] {
+    background: var(--wax-soft);
+  }
+}
+
+@keyframes bump {
+  0% {
+    background: color-mix(in oklab, var(--wax-soft) 100%, transparent);
+    color: var(--wax);
+  }
+  60% {
+    background: color-mix(in oklab, var(--wax-soft) 70%, transparent);
+    color: var(--wax);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes changed {
+  0%,
+  40% {
+    box-shadow:
+      var(--shadow-card),
+      inset 0 0 0 1.5px color-mix(in oklab, var(--wax) 55%, transparent);
+  }
+}
+
+.wBar,
+.wMini {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--paper-sunken);
+}
+
+.wBar {
+  flex: none;
+  height: 0.42em;
+}
+
+.wMini {
+  flex: none;
+  width: 3.4em;
+  height: 0.3em;
+}
+
+.wBar > span,
+.wMini > span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ink);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--k, 0));
+  transition: transform 720ms var(--ease-ink);
+}
+
+.wMini > span {
+  background: var(--ink-soft);
+}
+
+.wRows {
+  margin: 0.2em 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  font-size: 0.86em;
+}
+
+.wRows li {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  min-height: 2.25em;
+  border-top: 1px solid var(--rule);
+}
+
+.wLine {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  white-space: nowrap;
+  overflow: hidden;
+  line-height: 1.2;
+}
+
+.wPage {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.wLine .wPage {
+  flex: none;
+  font-size: 0.85em;
+  color: var(--ink-faint);
+}
+
+.wPage:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklab, currentColor 35%, transparent);
+}
+
+.wVal {
+  flex: none;
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.wMore {
+  color: var(--ink-faint);
+}
+
+.wFacts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9em;
+}
+
+.wFacts div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1em;
+  min-height: 2.25em;
+  border-top: 1px solid var(--rule);
+}
+
+.wFacts div:first-child {
+  border-top: 0;
+}
+
+.wFacts dt {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.wFacts dd {
+  margin: 0;
+  min-width: 0;
+  font-weight: 550;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Threads from a widget to the pages it reads: barely there, firmer while you point at it. */
+.wThreads path {
+  fill: none;
+  stroke: color-mix(in oklab, var(--ink) 13%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 1 5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  transition: stroke var(--dur) var(--ease-in-out);
+}
+
+.wThreads g[data-hot] path {
+  stroke: color-mix(in oklab, var(--ink) 50%, transparent);
+  stroke-width: 1.5;
+}
+
+.root[data-lens] .wThreads {
+  opacity: 0.45;
+}
+
+/* ---------------------------------------------------------------- the pen */
+
+.pen {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.pen[data-active] {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.penSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.penSvg path {
+  --pen-ink: light-dark(var(--pen), color-mix(in oklab, var(--pen) 55%, #f2f1ed));
+  fill: none;
+  stroke: var(--pen-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Ink dries like everywhere else: its colour settles to plain ink, then it fades. */
+.penSvg path[data-phase="dry"] {
+  animation: penDry 1700ms var(--ease-in-out) both;
+}
+
+.penSvg path[data-phase="miss"] {
+  animation: penMiss 750ms var(--ease-in-out) both;
+}
+
+.penSvg path[data-draw] {
+  stroke-dasharray: 1;
+  animation: drawLine var(--draw-ms, 1500ms) cubic-bezier(0.45, 0.05, 0.35, 1) both;
+}
+
+.penSvg path[data-draw][data-phase="dry"] {
+  stroke-dasharray: none;
+  animation: penDry 1700ms var(--ease-in-out) both;
+}
+
+@keyframes penDry {
+  0% {
+    stroke: var(--pen-ink);
+    opacity: 1;
+  }
+  45% {
+    stroke: var(--ink-faint);
+    opacity: 0.8;
+  }
+  100% {
+    stroke: var(--ink-faint);
+    opacity: 0;
+  }
+}
+
+@keyframes penMiss {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .penSvg path[data-phase="dry"],
+  .penSvg path[data-draw][data-phase="dry"] {
+    animation: penMiss 240ms linear both;
+  }
+  .penSvg path[data-draw] {
+    stroke-dasharray: none;
+    animation: fadeIn 240ms both;
+  }
+}
+
+/* The choice at the end of a link or strike stroke. */
+.penChoice {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: max-content;
+  max-width: 240px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-pop);
+  cursor: default;
+  animation: rise var(--dur) var(--ease-ink) both;
+  translate: 0 0;
+}
+
+.penChoice p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.penChoice div {
+  display: flex;
+  gap: 6px;
+}
+
+.penChoice button {
+  height: 32px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunken);
+  color: var(--ink);
+  font: 550 13px/1 var(--font-ui);
+  cursor: pointer;
+}
+
+.penChoice button[data-primary] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.penChoice button[data-danger] {
+  background: var(--failed);
+  color: #fff;
+}
+
+.penChoice button:focus-visible {
+  outline: 2px solid var(--wax);
+  outline-offset: 2px;
+}
+
+/* The demo's "3 pages circled", pinned to the top of its lasso. */
+.penChip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.penChip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 10px;
+  translate: -50% calc(-100% - 10px);
+  border-radius: var(--radius-pill);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-chrome);
+  font: 550 12.5px/1 var(--font-ui);
+  color: var(--ink);
+  white-space: nowrap;
+  animation: fadeIn var(--dur) var(--ease-ink) both;
+}
+
+.penPill {
+  flex: none;
+  gap: 7px;
+  padding: 0 8px 0 13px;
+}
+
+.penPill[data-short] {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
+.penPill svg {
+  color: var(--ink-faint);
+}
+
+.penPill[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.penPill[aria-pressed="true"] svg {
+  color: var(--paper);
+}
+
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 5px;
+  background: var(--paper-sunken);
+  font: 550 10.5px/1 var(--font-ui);
+  color: var(--ink-faint);
+}
+
+.penPill[aria-pressed="true"] .kbd {
+  background: color-mix(in oklab, var(--paper) 18%, transparent);
+  color: var(--paper);
+}
+
+.hint[data-pen-hint] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 6px;
+  white-space: normal;
+  width: max-content;
+  max-width: min(640px, calc(100% - 24px - var(--map-inset, var(--diary-inset, 0px))));
+}
+
+.hintDone {
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--paper-sunken);
+  color: var(--ink);
+  font: 550 12.5px/1 var(--font-ui);
+  cursor: pointer;
+  pointer-events: auto;
 }

@@ -331,5 +331,13 @@ export function useDeleteWithUndo() {
   );
 }
 
+/** The same undoable delete, from the map: you stay where you are. */
+export function useDeleteFromMap() {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  currentNavigate = navigate;
+  return useCallback((page: Page) => void sharedFor(client).remove(page), [client]);
+}
+
 /** True while a page is deleted but its undo window is still open (or the delete is on its way). */
 export const isDeletePending = (id: Id) => shared?.isHidden(id) ?? false;

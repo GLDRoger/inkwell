@@ -34,6 +34,10 @@ const EVENT_TYPES: ServerEventType[] = [
   "diary.entry",
   "diary.delta",
   "presence",
+  "widget.updated",
+  "widget.deleted",
+  "lens.shown",
+  "lens.cleared",
   "demo.step",
   "demo.ended",
 ];
@@ -123,6 +127,10 @@ const upsert = <T extends { id: Id }>(list: T[], item: T, where: "start" | "end"
   next[i] = { ...list[i], ...item };
   return next;
 };
+
+/** A widget event carries the whole widget: replace it, don't merge (its data may change shape). */
+const upsertReplace = <T extends { id: Id }>(list: T[], item: T): T[] =>
+  list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
 
 const byCreated = (a: DiaryEntry, b: DiaryEntry) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0);
 
@@ -223,6 +231,18 @@ export function applyServerEvent(client: QueryClient, e: ServerEvent): void {
         next[i] = { ...list[i], text: applyDelta(list[i].text, e.text) };
         return next;
       });
+      return;
+    case "widget.updated":
+      client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, widgets: upsertReplace(old.widgets ?? [], e.widget) } : old));
+      return;
+    case "widget.deleted":
+      client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, widgets: (old.widgets ?? []).filter((w) => w.id !== e.widgetId) } : old));
+      return;
+    case "lens.shown":
+      client.setQueryData<MapGraph>(keys.map, (old) => (old ? { ...old, lens: e.lens } : old));
+      return;
+    case "lens.cleared":
+      client.setQueryData<MapGraph>(keys.map, (old) => (old && old.lens ? { ...old, lens: null } : old));
       return;
     case "presence":
     case "demo.step":

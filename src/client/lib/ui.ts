@@ -13,6 +13,21 @@ export interface UiState {
   keyDialog?: { reason?: string } | null;
   /** The four-step guide to the visitor's own notebook. */
   guideOpen?: boolean;
+  /**
+   * Pages picked with the map's pen for the next diary request (a chip in the
+   * composer; sent as scopePageIds). `send` asks the composer to send this text at once.
+   */
+  diaryScope?: DiaryScope | null;
+}
+
+export interface DiaryScope {
+  pageIds: Id[];
+  /** What the chip says: "3 pages circled". */
+  label: string;
+  /** The titles, for the chip's tooltip and screen readers. */
+  titles: string[];
+  nonce: number;
+  send?: { text: string; agentId: Id | null };
 }
 
 let state: UiState = { diaryOpen: false, paletteOpen: false, diaryDraft: null };
@@ -34,6 +49,17 @@ export function useUi<T>(select: (s: UiState) => T): T {
 
 export const openDiaryWith = (text: string, agentId: Id | null = null) =>
   setUi({ diaryOpen: true, paletteOpen: false, diaryDraft: { text, agentId, nonce: Date.now() } });
+
+/** Scope the next diary request to these pages, and open the diary to ask about them. */
+export function scopeDiary(scope: Omit<DiaryScope, "nonce">) {
+  const nonce = Date.now();
+  setUi((s) => ({
+    diaryOpen: true,
+    paletteOpen: false,
+    diaryScope: { ...scope, nonce },
+    diaryDraft: scope.send ? { text: scope.send.text, agentId: scope.send.agentId, nonce } : s.diaryDraft,
+  }));
+}
 
 /** Open the key dialog, saying why when an AI action asked for it. */
 export const openKeyDialog = (reason?: string) => setUi({ keyDialog: { reason }, paletteOpen: false, aboutOpen: false });

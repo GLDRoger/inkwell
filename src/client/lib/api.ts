@@ -11,8 +11,10 @@ import type {
   PageWithBody,
   Me,
   Run,
+  Widget,
 } from "@shared/types";
 import { getDemo } from "./demo";
+import { getUi, setUi } from "./ui";
 import { aiHeaders } from "./key";
 
 /** An HTTP failure with its status, so callers can tell "not built yet" (404) from a real error. */
@@ -96,6 +98,20 @@ export interface DiaryPostBody {
   agentId?: Id;
   attachmentIds?: Id[];
   pageId?: Id;
+  /** The pages circled or connected with the pen (max 50); the agent works on exactly those. */
+  scopePageIds?: Id[];
+}
+
+/**
+ * A diary request carries the pen's scope while one is waiting in the composer
+ * (lib/ui.ts diaryScope), and the scope is used up once the request is in.
+ */
+async function writeDiary(body: DiaryPostBody) {
+  const scope = getUi().diaryScope;
+  const scoped = !body.scopePageIds && scope?.pageIds.length ? { ...body, scopePageIds: scope.pageIds.slice(0, 50) } : body;
+  const res = await request<{ entry: DiaryEntry; runId: Id; threadId: Id }>("/diary", json("POST", scoped), { ai: true });
+  if (scope && getUi().diaryScope === scope) setUi({ diaryScope: null });
+  return res;
 }
 
 export const api = {
@@ -114,8 +130,7 @@ export const api = {
   agents: () => request<Agent[]>("/agents"),
   threads: () => request<DiaryThread[]>("/diary"),
   thread: (threadId: Id) => request<DiaryEntry[]>(`/diary/${encodeURIComponent(threadId)}`),
-  writeDiary: (body: DiaryPostBody) =>
-    request<{ entry: DiaryEntry; runId: Id; threadId: Id }>("/diary", json("POST", body), { ai: true }),
+  writeDiary,
   run: (id: Id) => request<Run>(`/runs/${encodeURIComponent(id)}`),
   cancelRun: (id: Id) => request<Run>(`/runs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
   upload: (file: File) => {
@@ -134,6 +149,12 @@ export const api = {
    * `segmentedBy` is "sam-3.1" when SAM found the notes, null when vision did it alone. */
   importPhoto: (attachmentId: Id) =>
     request<{ pages: Page[]; segmentedBy?: "sam-3.1" | null }>("/import/photo", json("POST", { attachmentId }), { ai: true }),
+  /** People move widgets around the map. */
+  updateWidget: (id: Id, body: Partial<Pick<Widget, "x" | "y" | "title">>) =>
+    request<Widget>(`/widgets/${encodeURIComponent(id)}`, json("PATCH", body)),
+  deleteWidget: (id: Id) => request<void>(`/widgets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** Back to the ordinary map (the server publishes lens.cleared). */
+  clearLens: () => request<void>("/lens", { method: "DELETE" }),
   presence: (pageId: Id | null) => request<void>("/presence", json("POST", { pageId })),
 
   /** Reset the demo notebook and play the scenario from the top. */

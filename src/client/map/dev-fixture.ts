@@ -186,24 +186,24 @@ export function makeFixtureGraph(count = 72, seed = 7): MapGraph {
   return { pages, links, agents: AGENTS, runs, widgets: fixtureWidgets(pages, now), lens: null };
 }
 
-/** One widget of each kind, in a column left of the map, reading from the first few pages. */
+/** One widget of each kind, in a row above the whiteboard, reading from the first few pages. */
 export function fixtureWidgets(pages: Page[], now = Date.now()): Widget[] {
   const ids = pages.filter((p) => p.parentId).map((p) => p.id);
   const by = { kind: "agent" as const, id: "ag-cartographer", name: "Cartographer" };
   const at = new Date(now).toISOString();
   const base = (id: string, title: string, x: number, y: number, pageIds: Id[]) => ({ id, title, x, y, pageIds, createdBy: by, createdAt: at, updatedAt: at });
   return [
-    { ...base("w-launch", "Until launch", -420, 0, ids.slice(0, 1)), data: { kind: "countdown", date: new Date(now + 2 * 86_400_000 + 5 * 3_600_000 + 17 * 60_000).toISOString(), label: "Launch day" } },
+    { ...base("w-launch", "Until launch", 0, -900, ids.slice(0, 1)), data: { kind: "countdown", date: new Date(now + 2 * 86_400_000 + 5 * 3_600_000 + 17 * 60_000).toISOString(), label: "Launch day" } },
     {
-      ...base("w-tasks", "Launch checklist", -420, 230, ids.slice(0, 3)),
+      ...base("w-tasks", "Launch checklist", 340, -900, ids.slice(0, 3)),
       data: { kind: "progress", done: 7, total: 12, perPage: [{ pageId: ids[0], done: 3, total: 4 }, { pageId: ids[1], done: 2, total: 5 }, { pageId: ids[2], done: 2, total: 3 }] },
     },
     {
-      ...base("w-trip", "Lisbon trip", -420, 500, ids.slice(3, 6)),
+      ...base("w-trip", "Lisbon trip", 680, -900, ids.slice(3, 6)),
       data: { kind: "total", currency: "EUR", amount: 1284.5, lines: [{ pageId: ids[3], label: "Flights", amount: 412 }, { pageId: ids[4], label: "Hotel, 5 nights", amount: 690 }, { pageId: ids[5], label: "Food and trams", amount: 182.5 }] },
     },
     {
-      ...base("w-facts", "Hiring, at a glance", -420, 800, ids.slice(6, 8)),
+      ...base("w-facts", "Hiring, at a glance", 1020, -900, ids.slice(6, 8)),
       data: { kind: "facts", items: [{ label: "Open roles", value: "2" }, { label: "Loop", value: "Take-home, pairing, chat" }, { label: "Owner", value: "Ada" }] },
     },
   ];

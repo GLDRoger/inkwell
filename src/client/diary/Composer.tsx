@@ -1,8 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUp, AudioLines, FileText, ImagePlus, Loader2, Mic, Square, X } from "lucide-react";
+import { ArrowUp, AudioLines, FileText, ImagePlus, Lasso, Link2, Loader2, Mic, Square, X } from "lucide-react";
 import type { Agent, Attachment } from "@shared/types";
 import { api, isNotFound } from "../lib/api";
-import { prefersReducedMotion } from "../lib/ui";
+import { prefersReducedMotion, setUi, useUi } from "../lib/ui";
 import { mediaErrorCopy } from "../lib/media";
 import { canRecord, startRecording, type Recording } from "./recorder";
 import { Picker } from "./Picker";
@@ -130,6 +130,19 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
   const uploading = files.some((f) => f.status === "uploading");
   const canSend = !!text.trim() && !sending && !uploading;
 
+  // Pages picked with the map's pen ride along with the next request (lib/api.ts writeDiary).
+  const scope = useUi((s) => s.diaryScope ?? null);
+  const autoSent = useRef(0);
+  const submitRef = useRef<() => void>(() => {});
+  // "Link these" on the map: once its words are here and its agent is chosen, it sends itself.
+  useEffect(() => {
+    const send = scope?.send;
+    if (!scope || !send || autoSent.current === scope.nonce || sending) return;
+    if (text.trim() !== send.text.trim() || (send.agentId && agentId !== send.agentId)) return;
+    autoSent.current = scope.nonce;
+    submitRef.current();
+  }, [scope, text, agentId, sending]);
+
   const submit = () => {
     if (!canSend) return;
     const ready = files.flatMap((f) => (f.status === "ready" && f.attachment ? [f.attachment] : []));
@@ -139,6 +152,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
     files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
     setFiles([]);
   };
+
+  submitRef.current = submit;
 
   const addFiles = (list: FileList | File[]) => {
     for (const file of Array.from(list)) {
@@ -213,6 +228,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(prop
       }}
     >
       <div className="composer-box">
+        {scope && (
+          <div className="context-chip scope-chip" title={scope.titles.join(", ")}>
+            {scope.send ? <Link2 size={13} aria-hidden /> : <Lasso size={13} aria-hidden />}
+            <span>
+              <strong>{scope.label}</strong>
+              <span className="sr-only">: {scope.titles.join(", ")}</span>
+            </span>
+            <button type="button" aria-label="Don't limit the request to these pages" onClick={() => setUi({ diaryScope: null })}>
+              <X size={13} aria-hidden />
+            </button>
+          </div>
+        )}
         {context && (
           <div className="context-chip">
             <FileText size={13} aria-hidden />
