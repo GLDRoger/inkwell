@@ -15,6 +15,7 @@ const bodySchema = z.object({
   text: z.string().trim().min(1).max(20_000),
   agentId: z.string().min(1).max(200).optional(),
   attachmentIds: z.array(z.string().min(1).max(200)).max(10).default([]),
+  scopePageIds: z.array(z.string().min(1).max(200)).max(50).optional(),
   pageId: z.string().min(1).max(200).optional(),
 });
 
@@ -31,6 +32,7 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     if (!meta && s.runtime.needsMetaKey && !s.runtime.isClosing) return c.json(NOT_CONNECTED, 503);
     if (body.threadId && !getDiaryThread(s.db, ws, body.threadId)) return c.json({ error: "That conversation no longer exists. Start a new one.", code: "thread_not_found" }, 404);
     if (body.pageId && !s.pages.getPage(ws, body.pageId)) return c.json({ error: "The open page was deleted. Close it and try again.", code: "page_not_found" }, 404);
+    const scopePageIds = body.scopePageIds?.filter((id, index, all) => all.indexOf(id) === index && s.pages.getPage(ws, id));
     const attachmentIds = [...new Set(body.attachmentIds)];
     const attachments = getAttachments(s.db, ws, attachmentIds);
     if (attachments.length !== attachmentIds.length) return c.json({ error: "An attachment is missing. Attach it again.", code: "attachment_not_found" }, 404);
@@ -40,12 +42,12 @@ export function createDiaryRoutes(s: Services): Hono<AppEnv> {
     const { entry, threadId } = s.db.transaction(() => {
       const threadId = body.threadId ?? insertDiaryThread(s.db, ws, body.text.slice(0, 80)).id;
       const entry = insertDiaryEntry(s.db, ws, { threadId, role: "person", text: body.text,
-        attachments, pageIds: body.pageId ? [body.pageId] : [] });
+        attachments, pageIds: scopePageIds ?? (body.pageId ? [body.pageId] : []) });
       return { entry, threadId };
     })();
     let runId: string;
     try {
-      runId = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId, prompt: body.text, pageId: body.pageId,
+      runId = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId, prompt: body.text, pageId: body.pageId, scopePageIds,
         ...(meta ? { meta } : {}) }).run.id;
     } catch (error) {
       // Nothing was answered, so keep nothing: a retry must not duplicate the entry.

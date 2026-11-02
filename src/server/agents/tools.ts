@@ -1,7 +1,9 @@
+import { listWidgets, liveWidgetData, newWidget, saveWidget, deleteWidget, saveLens, widgetPosition, widgetValue } from "../widgets.ts";
+import type { WidgetData } from "../../shared/types.ts";
 import { tool } from "ai";
 import { z } from "zod";
 import type { Agent, Run, ServerEvent } from "../../shared/types.ts";
-import { appendRunStep, getRun, updateRun } from "../db.ts";
+import { appendRunStep, getRun, updateRun, newId, nowIso } from "../db.ts";
 import { appendJSONToYDoc, markdownToTiptapJSON } from "../editor-schema.ts";
 import { PageStoreError } from "../pages.ts";
 import type { Services } from "../services.ts";
@@ -138,7 +140,48 @@ export function createAgentTools(ctx: ToolContext) {
       const pages = s.pages.listPages(ws).map(({ id, title, parentId, excerpt }) => ({
         id, title, link: pageLink(title, id), parentId, excerpt: excerpt.replace(/\s+/g, " ").slice(0, 120),
       }));
-      return { text: JSON.stringify(pages), summary: `Listed ${pages.length} pages` };
+      const widgets = listWidgets(s.db, ws);
+      return { text: JSON.stringify(pages) + (widgets.length ? `\nCurrent widgets: ${JSON.stringify(widgets.map(w => ({ id: w.id, kind: w.data.kind, title: w.title })))}` : ""), summary: `Listed ${pages.length} pages` };
+    }),
+    show_lens: define("show_lens", "Rearrange the map to answer a question about several pages. Get page ids from list_pages. Each page can belong to only one group. Does not change saved card positions.",
+      z.object({ title: z.string().trim().min(1).max(500), kind: z.enum(["columns", "timeline"]), groups: z.array(z.object({ label: z.string().min(1).max(120), pageIds: z.array(id).max(200), note: z.string().max(300).optional() })).min(1).max(6) }),
+      async ({ title, kind, groups }) => {
+        const seen = new Set<string>();
+        for (const group of groups) for (const pageId of group.pageIds) {
+          page(pageId);
+          if (seen.has(pageId)) throw new ToolFailure("Each page can appear in only one lens group. Get ids from list_pages.");
+          seen.add(pageId);
+        }
+        await move(null, "thinking");
+        saveLens(s.db, s.bus, ws, { id: newId(), title, kind, groups, agentId: agent.id, runId: run.id, createdAt: nowIso() });
+        return { text: `Showed "${title}" on the map.`, summary: `Showed "${title}"` };
+      }),
+    create_widget: define("create_widget", "Place a live progress, money total, countdown or facts widget on the map. Same kind and title replaces the existing widget in place. Progress and total recompute from source pages as people edit. Currency defaults to €; use €, $ or £. Get source page ids from list_pages, not from memory.",
+      z.object({ kind: z.enum(["progress", "total", "countdown", "facts"]), title: z.string().trim().min(1).max(500), pageIds: z.array(id).max(200).default([]), date: z.string().max(200).optional(), label: z.string().max(300).optional(), currency: z.enum(["€", "$", "£"]).default("€"), items: z.array(z.object({ label: z.string().min(1).max(120), value: z.string().min(1).max(500) })).min(1).max(8).optional() }),
+      async ({ kind, title, pageIds: ids, date, label, currency, items }) => {
+        const pageIds = [...new Set(ids)];
+        const sources = pageIds.map(page);
+        if ((kind === "progress" || kind === "total") && !pageIds.length) throw new ToolFailure("Progress and total widgets need at least one source page. Get ids from list_pages.");
+        if (kind === "countdown" && (!date || !Number.isFinite(Date.parse(date)))) throw new ToolFailure("A countdown needs a parseable date, such as 2026-12-04.");
+        if (kind === "facts" && !items?.length) throw new ToolFailure("A facts widget needs 1 to 8 label/value items.");
+        if (pageIds[0]) await move(pageIds[0], "reading");
+        const initial: WidgetData = kind === "progress" ? { kind, done: 0, total: 0, perPage: [] }
+          : kind === "total" ? { kind, currency, amount: 0, lines: [] }
+          : kind === "countdown" ? { kind, date: date!, label: label ?? title }
+          : { kind, items: items! };
+        const data = await liveWidgetData(s.collab, ws, initial, pageIds);
+        await move(null, "thinking");
+        const widgets = listWidgets(s.db, ws);
+        const existing = widgets.find(w => w.title === title && w.data.kind === kind);
+        const widget = existing ? { ...existing, pageIds, data, createdBy: actor, updatedAt: nowIso() }
+          : newWidget(actor, title, pageIds, data, widgetPosition(sources, widgets));
+        saveWidget(s.db, s.bus, ws, widget);
+        return { text: `${widgetValue(widget)} (widget id: ${widget.id}).`, summary: `Added "${title}" widget` };
+      }),
+    remove_widget: define("remove_widget", "Remove a map widget. Find its id in the trailing widgets note from list_pages.", z.object({ widgetId: id }), async ({ widgetId }) => {
+      await move(null, "thinking");
+      if (!deleteWidget(s.db, s.bus, ws, widgetId)) throw new ToolFailure("Widget not found. Get its id from list_pages.");
+      return { text: "Removed widget.", summary: "Removed widget" };
     }),
     read_page: define("read_page", "Read a page's live markdown and its version. Pass the version to edit_page or rewrite_page. Continue long pages with nextOffset (a character offset).",
       z.object({ pageId: id, offset: z.number().int().min(0).default(0) }), async ({ pageId, offset }) => {

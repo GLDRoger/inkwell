@@ -34,6 +34,7 @@ interface StartInput {
   threadId?: string;
   pageId?: string;
   parentRunId?: string;
+  scopePageIds?: string[];
   /**
    * Extra direction for this run's system prompt only (the demo's recorded scenario):
    * never shown in the diary and not passed on to child runs.
@@ -71,6 +72,10 @@ Working with pages:
 - Write long pages as an outline first, then add each section with append_to_page. Keep each call's markdown under about 1,500 words.
 - Continue long pages with read_page's nextOffset.
 - Respect any length the person asks for ("700–900 words", "a short note", "three bullets"): stay within it.
+
+Use show_lens when the person asks about the state of several pages, such as "what's left", "what's the plan", or "compare".
+Use create_widget for a number they will want to keep watching: task progress, money, or a date.
+Keep the diary reply short and point to the lens or widget on the map.
 
 Replying:
 - Your final reply appears in the person's diary. "Tell me in the diary" or "answer in the diary" means your reply, not a new page.
@@ -197,6 +202,7 @@ export class AgentRuntime {
       others ? `Other agents you can ask with ask_agent: ${others}.` : "",
       asker ? `${asker} asked you for help on the person's behalf. Your final reply goes back to ${asker}, so make it a short report with links.` : "",
       where,
+      input.scopePageIds !== undefined ? scopePrompt(s, ws, input.scopePageIds) : "",
       input.guidance ?? "",
     ].filter(Boolean).join("\n\n");
   }
@@ -381,4 +387,10 @@ export class AgentRuntime {
     for (const [id] of running) this.stop(id, "failed", INTERRUPTED);
     await Promise.all(running.map(([, state]) => state.done));
   }
+}
+
+/** Scope belongs to this run only; handoffs must name their own pages explicitly. */
+export function scopePrompt(s: Pick<AgentServices, "pages">, ws: string, ids: string[]): string {
+  const links = ids.map(id => s.pages.getPage(ws, id)).filter(p => p !== null).map(p => pageLink(p.title, p.id));
+  return `The person circled these pages on the map; work on exactly these: ${links.length ? links.join(", ") : "none (no circled pages still exist; do not work on other pages)"}.`;
 }
