@@ -1,3 +1,5 @@
+import { getLens, listWidgets, getWidget, saveWidget, deleteWidget, clearLens } from "../widgets.ts";
+import { nowIso } from "../db.ts";
 import { jsonBodyLimit } from "../limits.ts";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -33,11 +35,31 @@ export function createMapRoutes(services: Services): Hono<AppEnv> {
     const { workspaceId } = c.get("ctx");
     const graph: MapGraph = {
       pages: pages.listPages(workspaceId),
+      widgets: listWidgets(db, workspaceId),
+      lens: getLens(db, workspaceId),
       links: pages.listLinks(workspaceId),
       agents: listAgents(db, workspaceId),
       runs: listRecentRuns(db, workspaceId),
     };
     return c.json(graph);
+  });
+
+  app.patch("/api/widgets/:id", jsonBodyLimit(4096), async c => {
+    const { workspaceId } = c.get("ctx");
+    const body = await parseJsonBody(c, z.object({ x: z.number().finite().optional(), y: z.number().finite().optional(), title: z.string().trim().min(1).max(500).optional() }));
+    if (!body.ok) return body.response;
+    const widget = getWidget(db, workspaceId, c.req.param("id"));
+    if (!widget) return c.json({ error: "That widget no longer exists." }, 404);
+    return c.json(saveWidget(db, services.bus, workspaceId, { ...widget, ...body.data, updatedAt: nowIso() }));
+  });
+  app.delete("/api/widgets/:id", c => {
+    if (!deleteWidget(db, services.bus, c.get("ctx").workspaceId, c.req.param("id"))) return c.json({ error: "That widget no longer exists." }, 404);
+    return c.body(null, 204);
+  });
+  app.delete("/api/lens", c => {
+    const ctx = c.get("ctx");
+    if (ctx.notebook !== "demo") clearLens(db, services.bus, ctx.workspaceId);
+    return c.body(null, 204);
   });
 
   app.get("/api/agents", (c) => {

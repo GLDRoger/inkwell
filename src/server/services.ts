@@ -1,3 +1,4 @@
+import { createWidgetReactor } from "./widgets.ts";
 import { AgentRuntime, type RuntimeOptions } from "./agents/runtime.ts";
 import { IDLE_WORKSPACE_DAYS, startJanitor } from "./janitor.ts";
 import { openDatabase, type DatabaseHandle } from "./db.ts";
@@ -27,9 +28,12 @@ export interface Services {
 export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions = {}, demoOptions: DemoPlayerOptions = {}): Services {
   const handle = openDatabase(dataDir);
   const bus = createEventBus();
-  const pages = createPageStore({ db: handle.db, bus });
+  let reactor: ReturnType<typeof createWidgetReactor> | undefined;
+  const onBodyChange = (ws: string, id: string) => reactor?.changed(ws, id);
+  const pages = createPageStore({ db: handle.db, bus, onBodyChange });
   upgradeSeedAgents(handle.db);
-  const collab = createCollab({ db: handle.db, pages });
+  const collab = createCollab({ db: handle.db, pages, onBodyChange });
+  reactor = createWidgetReactor(handle.db, bus, collab);
   const runtime = new AgentRuntime({ db: handle.db, pages, collab, bus, uploadsDir: handle.uploadsDir }, runtimeOptions);
   const services: Services = {
     handle,
@@ -45,6 +49,7 @@ export function createServices(dataDir?: string, runtimeOptions: RuntimeOptions 
       await services.demo.close();
       await stopJanitor();
       await runtime.close();
+      await reactor?.close();
       await collab.close();
       handle.close();
     },

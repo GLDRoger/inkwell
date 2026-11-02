@@ -213,7 +213,8 @@ export function createSessionMiddleware(deps: {
       const demoWorkspaceId = ensureDemoWorkspace(deps, ctx);
       ctx = { ...ctx, workspaceId: demoWorkspaceId, notebook: "demo", demoWorkspaceId };
       // Only the demo runner writes to the demo notebook.
-      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !DEMO_WRITES_OK.has(c.req.path)) {
+      if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method) && !DEMO_WRITES_OK.has(c.req.path)
+        && !(c.req.method === "DELETE" && c.req.path === "/api/lens")) {
         return c.json({ error: "This is the recorded demo, so it can't be changed.", code: "demo_read_only" }, 403);
       }
     }

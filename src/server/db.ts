@@ -172,6 +172,19 @@ export function openDatabase(explicitDataDir?: string): DatabaseHandle {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  // Additive migration: live widgets and one current lens per notebook.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS widgets (
+      id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+      title TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL,
+      page_ids TEXT NOT NULL, data TEXT NOT NULL, created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_widgets_workspace ON widgets(workspace_id);
+    CREATE TABLE IF NOT EXISTS lenses (
+      workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id), lens TEXT NOT NULL
+    );
+  `);
   // Existing installations gain activity tracking without rewriting their tables.
   const columns = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
   if (!columns.some(column => column.name === "last_seen_at")) {
@@ -742,7 +755,7 @@ export function getAttachmentRow(
 export function purgeWorkspaceContent(db: Db, workspaceId: string): void {
   db.prepare("INSERT OR IGNORE INTO pending_file_deletions (path) SELECT path FROM attachments WHERE workspace_id = ?").run(workspaceId);
   // pages.ydoc is removed along with the page.
-  for (const table of ["diary_entries", "runs", "diary_threads", "agents", "attachments", "links", "pages_fts", "pages"]) {
+  for (const table of ["widgets", "lenses", "diary_entries", "runs", "diary_threads", "agents", "attachments", "links", "pages_fts", "pages"]) {
     // Table names are an internal constant allowlist, never request data.
     db.prepare(`DELETE FROM ${table} WHERE workspace_id = ?`).run(workspaceId);
   }

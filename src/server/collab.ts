@@ -154,6 +154,7 @@ const SYSTEM_ACTOR: Actor = { kind: "agent", id: "system", name: "Inkwell" };
 export function createCollab(deps: {
   db: Db;
   pages: PageStore;
+  onBodyChange?: (ws: string, pageId: string) => void;
 }): CollabService {
   const { db, pages } = deps;
 
@@ -252,6 +253,10 @@ export function createCollab(deps: {
           console.error(`[inkwell] corrupt ydoc for page ${documentName}`, err);
         }
       }
+    },
+
+    async onChange({ documentName, context }) {
+      if (context?.workspaceId) deps.onBodyChange?.(context.workspaceId, documentName);
     },
 
     async onStoreDocument({ document, documentName, lastContext }) {

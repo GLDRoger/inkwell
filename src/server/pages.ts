@@ -1,3 +1,4 @@
+import { removePageSources } from "./widgets.ts";
 import { MAX_YDOC_BYTES } from "./limits.ts";
 import { generateKeyBetween } from "fractional-indexing";
 import type { Actor, Link, Page, PageWithBody } from "../shared/types.ts";
@@ -113,7 +114,7 @@ export interface PageStore {
   countPages: (workspaceId: string) => number;
 }
 
-export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
+export function createPageStore(deps: { db: Db; bus: EventBus; onBodyChange?: (ws: string, pageId: string) => void }): PageStore {
   const { db, bus } = deps;
 
   const getPageRow: PageStore["getPageRow"] = (workspaceId, id) => {
@@ -353,6 +354,7 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
         dropLinks.run(workspaceId, pageId, pageId);
       }
     })();
+    removePageSources(db, bus, workspaceId, ids);
     for (const pageId of ids) bus.publish(workspaceId, { type: "page.deleted", pageId });
     return true;
   };
@@ -397,7 +399,10 @@ export function createPageStore(deps: { db: Db; bus: EventBus }): PageStore {
       return syncLinks(workspaceId, pageId, next.markdown);
     })();
     const page = rowToPage(next);
-    if (markdownChanged) bus.publish(workspaceId, { type: "page.updated", page });
+    if (markdownChanged) {
+      bus.publish(workspaceId, { type: "page.updated", page });
+      deps.onBodyChange?.(workspaceId, pageId);
+    }
     // The map draws paths from links; tell it when this page's paths change.
     if (links) bus.publish(workspaceId, { type: "page.links", pageId, links });
     return page;
