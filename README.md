@@ -136,7 +136,7 @@ Leave `META_API_KEY` empty to run like the public site: **Watch it work** plays 
 
 ```sh
 npm run typecheck
-npm test                                        # 547 tests in 65 files, models mocked
+npm test                                        # 721 tests in 79 files, models mocked
 npx tsx --test scripts/rehearsal/fake-meta.test.mjs
 node --test scripts/corpus/fake-server.test.mjs
 ```
