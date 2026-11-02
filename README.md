@@ -4,6 +4,8 @@ A notebook that writes back.
 
 You write a request in the diary, and an agent does the work in your pages: it reads, drafts, edits, links and files. While it works you can see where it is. Every page is a card on a map of the notebook, the agent's footprints move between the cards it reads and changes, and its words arrive in the open page as wet ink that dries. Three agents run on Meta's Muse Wonder: Scout researches, Wren writes, Atlas organises, and they can hand work to each other.
 
+Ask a question about your notes and the map rearranges itself to answer it: "What's left before we launch?" lifts the launch pages into Done, In progress and To do. Agents leave live widgets on the map, such as a countdown, a progress bar or a budget, and the numbers change as you edit the pages they read. Circle pages with the pen to ask about just those.
+
 **Live: [inkwell.76-13-246-244.sslip.io](https://inkwell.76-13-246-244.sslip.io)**
 
 - **Watch it work** needs nothing. It plays a two-minute recording of real Muse Wonder, Muse Voice, SAM 3.1 and Muse Image runs, replayed through the live agent runtime in a throwaway demo notebook.
@@ -17,7 +19,7 @@ You write a request in the diary, and an agent does the work in your pages: it r
 
 ## The two ways in
 
-**Watch it work.** The app plays itself in a separate demo notebook, reset on every start. Six steps, each captioned and labelled with the model that did the work:
+**Watch it work.** The app plays itself in a separate demo notebook, reset on every start. Ten steps, each captioned and labelled with the model that did the work:
 
 1. Wren plans five days in Lisbon: reads the trip pages, creates "Plan: 5 days in Lisbon" and links it from the itinerary (Muse Wonder).
 2. A spoken request, transcribed by Muse Voice, asks Scout to summarise the reading notes on a new page.
@@ -25,6 +27,10 @@ You write a request in the diary, and an agent does the work in your pages: it r
 4. Photo to cards on a photo of sticky notes: SAM 3.1 finds each note and Muse Wonder reads it (SAM 3.1 + Muse Wonder).
 5. Muse Image paints a cover for the Lisbon plan.
 6. Atlas links the new pages into the right parts of the notebook (Muse Wonder).
+7. "What's left before we launch?": the launch pages fly into Done, In progress and To do, and Atlas adds a countdown and a progress widget (Muse Wonder).
+8. A task is ticked and the progress widget counts up.
+9. The trip pages are circled with the pen and Atlas is asked what the trip will cost: it adds a budget widget (Muse Wonder).
+10. A price changes and the total follows.
 
 The camera follows the agent across the map, and the page being written opens in the peek panel so you see each edit land. Replies are marked "Recorded run · Muse Wonder". Stop, or **Try it yourself**, at any time.
 
@@ -34,7 +40,10 @@ The camera follows the agent across the map, and the page being written opens in
 
 ## What you can do
 
-- **Ask in the diary.** Pick Scout, Wren or Atlas, or leave it on **Any agent** and Inkwell routes by the request's verb (an attached image goes to Wren). Agents use eleven tools: `list_pages`, `search_pages`, `read_page`, `create_page`, `append_to_page`, `edit_page`, `rewrite_page`, `rename_page`, `move_page`, `delete_page`, `ask_agent`. A failed reply offers **Try again**; one that ran out of time or steps offers **Continue**.
+- **Ask in the diary.** Pick Scout, Wren or Atlas, or leave it on **Any agent** and Inkwell routes by the request's verb (an attached image goes to Wren). Agents use fourteen tools: `list_pages`, `search_pages`, `read_page`, `create_page`, `append_to_page`, `edit_page`, `rewrite_page`, `rename_page`, `move_page`, `delete_page`, `ask_agent`, `show_lens`, `create_widget`, `remove_widget`. A failed reply offers **Try again**; one that ran out of time or steps offers **Continue**.
+- **Ask a question, get a lens.** A question about several pages ("What's left?", "Compare…") rearranges the map: the pages fly into columns or a timeline, and **Back to map** returns them. The stored map never moves.
+- **Live widgets.** Agents add a countdown, progress over task lists, a money total, or key facts. Progress and totals are recomputed on the server whenever a source page changes, including while you type, and the number counts to its new value. Drag a widget or remove it with undo.
+- **Draw on the map.** Turn on the pen (**P**): circle cards to aim the next request at them, draw a line from one card to another to link them, or strike a card through to delete it with undo.
 - **Watch the map.** Agents walk between cards as they read, write and think. A greeting says what they did since you were last there.
 - **Peek and edit.** A single click on a card opens the page beside the map (a bottom sheet on phones); a double-click opens it full size. Pages are live Tiptap documents, and agent edits stream in with the agent's name on its caret while you type.
 - **Speak.** The microphone records, Muse Voice transcribes, and the text lands in the composer for you to check before sending.
@@ -98,7 +107,7 @@ flowchart LR
 
 ## The demo engine
 
-The recorded demo is not a video. [`scripts/demo/record.mjs`](scripts/demo/record.mjs) runs the [scenario](src/server/demo/scenario.ts) against the real Meta API on a scratch notebook and stores every Meta exchange in order in a cassette ([`lisbon-tour.json`](src/server/demo/cassettes/lisbon-tour.json): 39 exchanges, 229k input tokens of which 168k cached, 18k output). It stores responses only, never request headers, and scrubs key-like strings. A recording that has a failed run is refused rather than saved.
+The recorded demo is not a video. [`scripts/demo/record.mjs`](scripts/demo/record.mjs) runs the [scenario](src/server/demo/scenario.ts) against the real Meta API on a scratch notebook and stores every Meta exchange in order in a cassette ([`lisbon-tour.json`](src/server/demo/cassettes/lisbon-tour.json): 31 exchanges, 153k input tokens of which 97k cached, 12k output). It stores responses only, never request headers, and scrubs key-like strings. A recording that has a failed run is refused rather than saved.
 
 On replay ([`player.ts`](src/server/demo/player.ts), [`cassette.ts`](src/server/demo/cassette.ts)) the agent runtime and media routes run exactly as they do live, but their HTTP transport answers from the cassette. Ids are translated from the recording notebook to the demo notebook: seed pages by title, pages made during the scenario by creation order, and page versions by their position in the tool results. So the tool calls really execute: pages are created, edited, linked and moved, footprints walk, and the editor receives live Yjs updates. Each reply waits a bounded fraction of its real latency (`INKWELL_DEMO_PACE` scales it). The demo notebook is read-only for people (HTTP `403 demo_read_only`, read-only collab connections), and the demo needs no key on the server.
 
@@ -142,7 +151,7 @@ One Docker container behind nginx, with SQLite and uploads under `/opt/inkwell/d
 
 ## Known limits
 
-- **The demo is one recording.** Every viewer sees the same six runs. Live runs vary, and some take much longer: Wonder's first byte sometimes stalls for 30 to 90 seconds.
+- **The demo is one recording.** Every viewer sees the same seven runs. Live runs vary, and some take much longer: Wonder's first byte sometimes stalls for 30 to 90 seconds.
 - **No review step or undo for agent edits.** Version checks stop an agent overwriting your typing, but a finished edit stays until you change it. An agent's `delete_page` is a soft delete with no restore in the UI.
 - **Any agent routes by keywords**, not by a model call. It is fast and predictable, and sometimes picks the wrong agent.
 - **The key is in localStorage.** It never reaches our database or logs, but any script running on the page could read it. Use a key you can revoke.
