@@ -10,3 +10,8 @@ for (const name of ["cassettes", "assets"]) {
   const from = path.join(root, "src/server/demo", name);
   if (fs.existsSync(from)) fs.cpSync(from, path.join(root, "dist/server/demo", name), { recursive: true });
 }
+
+// Agent instructions and on-demand skills are runtime assets, not compiled TS.
+const defsTarget = path.join(root, "dist/server/agents/defs");
+fs.rmSync(defsTarget, { recursive: true, force: true });
+fs.cpSync(path.join(root, "src/server/agents/defs"), defsTarget, { recursive: true });

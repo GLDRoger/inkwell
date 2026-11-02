@@ -150,7 +150,7 @@ describe("diary replies", () => {
     expect(system).toContain(`[Billing](/p/${f.page.id}) open (id: ${f.page.id})`);
     expect(system).toContain(`Today is ${new Date().toISOString().slice(0, 10)}`);
     expect(system).toContain("Don't write any text before or between tool calls");
-    expect(system).toContain("outline first, then add each section with append_to_page");
+    expect(system).toContain("For long page writing, load the long-page skill when available");
   });
 
   it("includes the pages each earlier reply touched, so 'rename that page' resolves", async () => {

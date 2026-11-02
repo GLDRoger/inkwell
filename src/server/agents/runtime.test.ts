@@ -119,7 +119,7 @@ describe("agent runtime", () => {
       return answer("Finished the page lifecycle.");
     } });
     f = fixture({ modelFactory: () => model });
-    const result = await f.start().done;
+    const result = await f.start("Create, edit, rename, move and delete a scratch page").done;
     expect(result.run.status).toBe("succeeded");
     expect(result.run.steps).toHaveLength(8);
     expect(result.run.steps.every((s) => s.ok)).toBe(true);

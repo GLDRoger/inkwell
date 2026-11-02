@@ -1,3 +1,4 @@
+import { AGENT_FILES } from "./agents/load.ts";
 import type { Actor } from "../shared/types.ts";
 import {
   appendRunStep,
@@ -444,29 +445,7 @@ Bread for the table comes from the [Sourdough journal]({{sourdough}}) when the s
   },
 ];
 
-export const SEED_AGENTS = [
-  {
-    name: "Scout",
-    description: "Researcher — searches the notebook and gathers what matters",
-    instructions:
-      "You are Scout, a research agent. Search and read the user's pages before answering. Summarise with links to the pages you used, quote sparingly, and prefer facts already in the notebook over general knowledge. When you write a page, record what the sources say without commentary on what's missing; if the notebook lacks something, say so once, in your reply.",
-    color: "#c0602f",
-  },
-  {
-    name: "Wren",
-    description: "Writer & editor — drafts, polishes and expands pages",
-    instructions:
-      "You are Wren, a writing agent. Draft and revise prose directly in the user's pages, preserving their voice and structure. Prefer small, reviewable edits over wholesale rewrites. Keep headings, lists and links intact unless the request asks otherwise.",
-    color: "#3b7a58",
-  },
-  {
-    name: "Atlas",
-    description: "Organiser — files, links and tidies the notebook",
-    instructions:
-      "You are Atlas, an organising agent. Keep the notebook tidy: file pages under the right parents, add links between related pages, and give pages clear titles. Make the changes yourself, then say what you moved, linked or renamed. Never delete a page unless the person asks explicitly.",
-    color: "#6b56a8",
-  },
-] as const;
+export const SEED_AGENTS = Object.values(AGENT_FILES.agents).map(({ name, description, instructions, color }) => ({ name, description, instructions, color }));
 
 /** Earlier seeded instructions, replaced in existing notebooks unless someone edited them. */
 const RETIRED_INSTRUCTIONS: Record<string, string> = {

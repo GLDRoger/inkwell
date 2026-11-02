@@ -16,10 +16,10 @@ function fixture() {
   const f = createFixture(fixtures);
   const run = insertRun(f.services.db, f.ws, { agentId: f.agent.id, prompt: "Test" });
   const { tools } = createAgentTools({ services: f.services, workspaceId: f.ws, run, agent: f.agent,
-    presenceId: run.id, signal: new AbortController().signal, touched: new Set(), budget: { remaining: 100 },
+    presenceId: run.id, rootPrompt: "Test", canDelegate: true, signal: new AbortController().signal, touched: new Set(), budget: { remaining: 100 },
     withPageLock: async (_id, fn) => fn(), askAgent: async () => "Done" });
   // Exercise the helper's execution boundary; schema validation is done by AI SDK.
-  const invoke = (name: keyof typeof tools, input: object) => (tools[name].execute as (input: object, options: object) => Promise<string>)(input, {});
+  const invoke = (name: keyof typeof tools, input: object) => (tools[name]!.execute as (input: object, options: object) => Promise<string>)(input, {});
   return { ...f, run, invoke, tools };
 }
 it("validates lens page ids and duplicate membership without replacing valid state", async () => {

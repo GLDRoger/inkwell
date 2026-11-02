@@ -26,6 +26,7 @@ const defaults = { timeoutMs: 120_000 };
 
 export const calledTool = (s, name) => s.runs.some(r => r.steps.some(step => step.tool === name && step.ok));
 export const calledSkill = (s, name) => s.runs.some(r => r.steps.some(step => step.tool === 'load_skill' && step.ok && step.summary === `Loaded skill: ${name}`));
+const softSkill = name => s => ({ ...check(calledSkill(s, name), `Loaded ${name} skill`), soft: true });
 const softTool = (name) => (s) => ({ ...check(calledTool(s, name), `Called ${name}`), soft: true });
 
 export const cases = [
@@ -35,7 +36,7 @@ export const cases = [
     checks: [
       s => { const p = s.pages.find(p => !s.before.some(b => b.id === p.id) && p.parentId === named(s, 'Trip to Lisbon')?.id); return check(p && [1,2,3,4,5].every(n => new RegExp(`day\\s*${n}`, 'i').test(p.markdown)), 'New trip child page covers five days'); },
       s => { const fresh = s.pages.filter(p => !s.before.some(b => b.id === p.id)); return check(fresh.some(p => linked(named(s, 'Lisbon itinerary')?.markdown, p.id)), 'Itinerary links to the new plan'); },
-      softTool('create_page'),
+      softTool('create_page'), softSkill('plan-trip'),
     ],
   },
   {
@@ -44,7 +45,7 @@ export const cases = [
     checks: [
       s => check(s.runs.some(r => r.parentRunId === s.rootId && r.agentId === s.agents.find(a => a.name === 'Wren')?.id && r.status === 'succeeded'), 'Wren completed a child run'),
       s => check(s.pages.some(p => !s.before.some(b => b.id === p.id) && p.parentId === named(s, 'Hiring plan')?.id && /full[ -]stack/i.test(p.markdown) && p.updatedBy?.id === s.agents.find(a => a.name === 'Wren')?.id), 'Wren saved a full-stack job post under Hiring plan'),
-      softTool('ask_agent'),
+      softTool('ask_agent'), softSkill('delegate'),
     ],
   },
   {
@@ -57,7 +58,7 @@ export const cases = [
     ].map(async ([title, markdown, area]) => ({ id: (await create(s, title, markdown)).id, area }))) }),
     checks: [
       s => check(s.fixture.loose.every(p => linked(named(s, p.area)?.markdown, p.id) && linked(body(s, p.id), named(s, p.area)?.id)), 'Loose notes link to and from their area pages'),
-      s => check(s.before.every(b => { const p = s.pages.find(p => p.id === b.id); return p && p.title === b.title && p.parentId === b.parentId && contains(p.markdown, b.markdown); }), 'Tidy preserves titles, parents and original content'),
+      s => check(s.before.every(b => { const p = s.pages.find(p => p.id === b.id); return p && p.title === b.title && p.parentId === b.parentId && contains(p.markdown, b.markdown); }), 'Tidy preserves titles, parents and original content'), softSkill('tidy-links'),
     ],
   },
   {
@@ -66,7 +67,7 @@ export const cases = [
     checks: [
       async s => { const { lens, widgets } = await s.api.get('/api/map'); const ids = lens?.groups.flatMap(g => g.pageIds) ?? []; return check(lens?.kind === 'columns' && ids.length >= 3 && new Set(ids).size === ids.length && widgets.some(w => w.data.kind === 'countdown') && widgets.some(w => w.data.kind === 'progress' && w.data.done === 5 && w.data.total === 13), 'Saved launch columns, countdown and 5/13 progress'); },
       s => check(sameNotebook(s), 'Launch status leaves source pages unchanged'),
-      softTool('show_lens'),
+      softTool('show_lens'), softSkill('status-lens'),
     ],
   },
   {
@@ -76,7 +77,7 @@ export const cases = [
     checks: [
       async s => { const { widgets } = await s.api.get('/api/map'); const totals = widgets.filter(w => w.data.kind === 'total'); const ids = ['Lisbon itinerary', 'Lisbon food & neighbourhoods', 'Packing & logistics'].map(t => named(s,t)?.id); return check(totals.length === 1 && totals[0].data.amount === 1027 && totals[0].pageIds.length === 3 && ids.every(id => totals[0].pageIds.includes(id)), 'One live €1027 total uses exactly the three scoped source pages'); },
       s => check(sameNotebook(s), 'Cost question leaves source pages unchanged'),
-      softTool('create_widget'),
+      softTool('create_widget'), softSkill('trip-budget'),
     ],
   },
   {
