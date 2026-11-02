@@ -24,6 +24,13 @@ export const DOT_ONLY = 14;
 export const SMALL_H = 18;
 export const SMALL_DOT_X = 10;
 
+/** How far onto its own card a name may rest when there's no room beside it, as a fraction of the name. */
+const OWN_DEPTHS = [1 / 3, 1 / 2, 2 / 3, 1];
+/** The margin a name resting on its own card keeps from what's next door, screen px. */
+const CLEARANCE = 10;
+/** The weight of covering a widget or another card: far more than anything on its own card costs. */
+const HARD = 100;
+
 export type Side = "below" | "right" | "above" | "left";
 
 export interface LabelSpot {
@@ -103,8 +110,10 @@ export interface PlaceOptions {
  * Pick a spot for a name `w` px wide beside `card` at zoom `s`. Tries along
  * the bottom edge first (left to right, so several names line up), then the
  * right side, the top edge and the left side. The first spot that covers
- * nothing wins; otherwise the one that covers least, with titles counting
- * ten times as much as the rest of a card and other names five times.
+ * nothing wins. Failing that, the name rests on its own card's edge, leaning
+ * away from its neighbours: covering another card or a widget costs far more
+ * than covering any of its own card, so neither is covered while a spot on its
+ * own card is left.
  */
 export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, h = LABEL_H, dotX = DOT_X): LabelSpot {
   const k = 1 / Math.max(s, 1e-3);
@@ -153,14 +162,31 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     candidates.push({ side: "left", ax: card.x, ay: card.y + card.h, x: card.x - gap - pw, y });
   }
 
-  // Last resort, closer in, where the gaps are thinner than a name: resting on its own card's
-  // bottom edge, over that card's byline, rather than on a neighbour's words.
-  if (!opts.far)
-    for (let i = 0; i < runs; i++) {
-      const x = card.x + card.w - inset - pw - i * step;
-      if (x < card.x) break;
-      candidates.push({ side: "below", ax: card.x, ay: card.y + card.h, x, y: card.y + card.h + Math.min(gap, ph / 3) - ph, own: true });
+  // Last resort, where the gaps are thinner than a name (always, far out): resting
+  // on its own card's edge, a third, half, two thirds or all of the way in,
+  // rather than on a neighbour's words or a widget's number. Every side and
+  // corner, so it can lean away from whatever is next door.
+  // Along an edge: from the far end, the near end, the middle (centred if the name is the longer).
+  const along = (len: number, size: number) => (len > size ? [len - size, 0, (len - size) / 2] : [(len - size) / 2]);
+  const xs = along(card.w, pw);
+  const ys = along(card.h, ph);
+  for (const depth of OWN_DEPTHS) {
+    for (const x of xs) {
+      // Bottom edge, then top edge: `depth` of the figure inside the card.
+      candidates.push({ side: "below", ax: card.x, ay: card.y + card.h, x: card.x + x, y: card.y + card.h - ph * depth, own: true });
+      candidates.push({ side: "above", ax: card.x, ay: card.y, x: card.x + x, y: card.y - ph * (1 - depth), own: true });
     }
+    for (const y of ys) {
+      candidates.push({ side: "right", ax: card.x + card.w, ay: card.y + card.h, x: card.x + card.w - pw * depth, y: card.y + y, own: true });
+      candidates.push({ side: "left", ax: card.x, ay: card.y + card.h, x: card.x - pw * (1 - depth), y: card.y + y, own: true });
+    }
+  }
+
+  // What's next door, a little bigger: among spots on its own card, the one leaning away from it.
+  const pad = CLEARANCE * k;
+  const grow = (b: Box) => ({ x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 });
+  const halos = [...opts.cards, ...(opts.obstacles ?? [])].map(grow);
+  const ownTitle = titleZone(card, !!opts.far);
 
   let best: (typeof candidates)[number] | null = null;
   let bestScore = Infinity;
@@ -169,14 +195,19 @@ export function placeLabel(card: Box, w: number, s: number, opts: PlaceOptions, 
     let score = 0;
     for (const t of taken) if (overlaps(t, box)) score += area(t, box) * 5;
     for (const a of opts.areas ?? []) if (overlaps(a, box)) score += area(a, box) * 10;
-    for (const o of opts.obstacles ?? []) if (overlaps(o, box)) score += area(o, box) * 10;
+    // A widget's number (or a lens's label) is never covered while any other spot is left.
+    for (const o of opts.obstacles ?? []) if (overlaps(o, box)) score += area(o, box) * HARD;
     if (opts.within) score += (box.w * box.h - area(opts.within, box)) * 20;
-    // Its own card's foot is the byline: a fraction of the cost of a neighbour's text.
-    if (c.own) score += area(card, box) * 0.3;
+    // Its own card is cheap to cover: its edge first, its title a little dearer.
+    if (c.own) {
+      score += area(card, box) * 0.3 + area(ownTitle, box);
+      for (const h of halos) if (overlaps(h, box)) score += area(h, box) * 0.05;
+    }
+    // Another card is never covered while any other spot is left; its title, least of all.
     for (let i = 0; i < opts.cards.length; i++) {
       const o = opts.cards[i];
       if (!overlaps(o, box)) continue;
-      score += area(o, box) + area(zones[i], box) * 10;
+      score += area(o, box) * HARD + area(zones[i], box) * HARD;
     }
     if (score === 0) {
       best = c;

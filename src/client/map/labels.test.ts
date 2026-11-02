@@ -50,6 +50,38 @@ describe("placeLabel", () => {
     for (const c of [right, below, above]) expect(overlaps(spot.box, titleZone(c, true))).toBe(false);
   });
 
+  it("at the overview, rests on its own card rather than over a neighbour's widget or card", () => {
+    // The demo's last frame: "Hiring plan" with the "Lisbon budget" widget to its left,
+    // cards a few pixels off above and right, another widget just below. No gap fits Scout.
+    const s = 0.21;
+    const widgets = [
+      { x: -375, y: -20, w: 290, h: 290 },
+      { x: -90, y: 290, w: 290, h: 130 },
+    ];
+    const cards = [
+      { x: 20, y: -273, w: 300, h: 250 },
+      { x: 323, y: 130, w: 300, h: 250 },
+      { x: 343, y: -136, w: 300, h: 250 },
+    ];
+    const fig = { w: 36, h: 37 };
+    const spot = placeLabel(card, fig.w, s, { cards, obstacles: widgets, far: true }, fig.h);
+    for (const b of [...widgets, ...cards]) expect(overlaps(spot.box, b)).toBe(false);
+    expect(overlaps(spot.box, card)).toBe(true);
+  });
+
+  it("on its own card, leans away from the widget next door", () => {
+    const s = 0.21;
+    const widget = { x: -300, y: 0, w: 290, h: 250 };
+    const cards = [
+      { x: 360, y: 0, w: 300, h: 250 },
+      { x: 0, y: -260, w: 300, h: 250 },
+      { x: 0, y: 260, w: 300, h: 250 },
+    ];
+    const spot = placeLabel(card, 36, s, { cards, obstacles: [widget], far: true }, 37);
+    for (const b of [widget, ...cards]) expect(overlaps(spot.box, b)).toBe(false);
+    expect(spot.box.x + spot.box.w / 2).toBeGreaterThan(card.x + card.w / 2);
+  });
+
   it("lines several names up along the edge instead of stacking them", () => {
     const s = 1;
     const a = placeLabel(card, labelWidth("Scout"), s, { cards: [] });
