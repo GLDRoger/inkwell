@@ -46,6 +46,8 @@ export interface Cassette {
   seed: Record<string, string>;
   /** Pages created during the recording, in creation order. */
   created: string[];
+  /** Widget ids in first-creation order (not updates/replacements). */
+  widgets?: string[];
   steps: CassetteStep[];
   usage: Usage & { exchanges: number };
 }
@@ -200,6 +202,10 @@ export class IdTranslator {
     const recorded = this.cassette.created[index];
     if (recorded) this.ids.set(recorded, demoId);
   }
+  mapWidget(index: number, demoId: string) {
+    const recorded = this.cassette.widgets?.[index];
+    if (recorded) this.ids.set(recorded, demoId);
+  }
   translate(text: string, versions: Map<string, string> = new Map()): string {
     let out = text.replace(ID, (id) => this.ids.get(id) ?? id);
     for (const [from, to] of versions) if (from !== to) out = out.split(from).join(to);
@@ -236,7 +242,7 @@ export function replayDelay(exchange: Exchange, pace: ReplayPace): number {
 const READ_ONLY_TOOLS = new Set(["list_pages", "read_page", "search_pages"]);
 
 /** A step's replay delays shrink to a beat once it has been on screen this long (before pace). */
-export const STEP_BUDGET_MS = 30_000;
+export const STEP_BUDGET_MS = 20_000;
 
 export interface ReplayContext {
   /** Milliseconds since the step began. */

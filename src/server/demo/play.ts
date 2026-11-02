@@ -1,3 +1,5 @@
+import { clearLens, listWidgets } from "../widgets.ts";
+import { applyFind, readView } from "../agents/page-edit.ts";
 /**
  * Plays a demo scenario in one notebook through the real agent runtime and media
  * code. The transport decides where Meta's answers come from: the real API while
@@ -6,7 +8,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Attachment, Id, Page } from "../../shared/types.ts";
+import type { Attachment, DemoFocus, Page } from "../../shared/types.ts";
 import {
   insertAttachmentRow, insertDiaryEntry, insertDiaryThread, listAgents, newId,
 } from "../db.ts";
@@ -36,7 +38,7 @@ export interface Transport {
   media: () => typeof globalThis.fetch;
 }
 
-export interface Focus { pageId?: Id; agentId?: Id; runId?: Id }
+export type Focus = DemoFocus;
 
 export interface PlayOptions {
   services: Services;
@@ -71,12 +73,14 @@ export async function playScenario(o: PlayOptions): Promise<void> {
   const ws = ctx.workspaceId;
   const created: Page[] = [];
   let step = -1;
+  let lensShownAt: number | undefined;
   let focus: Focus = {};
   const setFocus = (next: Focus) => {
     focus = next;
     o.onStep(step, focus);
   };
   const unsubscribe = s.bus.subscribe(ws, (event) => {
+    if (event.type === "lens.shown") lensShownAt = Date.now();
     if (event.type === "page.created") created.push(event.page);
     // The camera and peek follow the agent to the page it writes.
     if (event.type === "agent.moved" && event.action === "writing" && event.toPageId && event.toPageId !== focus.pageId) {
@@ -86,17 +90,20 @@ export async function playScenario(o: PlayOptions): Promise<void> {
   const media = () => createMetaClient({ apiKey: o.apiKey, baseUrl: o.baseUrl, fetch: transport.media() });
   const meta = { apiKey: o.apiKey, baseUrl: o.baseUrl, model: o.model, source: "server" as const, fetchForRun: transport.forRun, recorded: transport.replaying };
 
-  const ask = async (agentName: string, prompt: string, attachments: Attachment[] = [], guidance?: string) => {
+  const ask = async (agentName: string, prompt: string, attachments: Attachment[] = [], guidance?: string, scopePageIds?: string[]) => {
     const agent = listAgents(s.db, ws).find((a) => a.name === agentName);
     if (!agent) throw new Error(`demo agent ${agentName} is missing`);
     const thread = insertDiaryThread(s.db, ws, prompt.slice(0, 80));
-    const entry = insertDiaryEntry(s.db, ws, { threadId: thread.id, role: "person", text: prompt, attachments });
+    const entry = insertDiaryEntry(s.db, ws, { threadId: thread.id, role: "person", text: prompt, attachments, pageIds: scopePageIds });
     s.bus.publish(ws, { type: "diary.entry", entry });
-    const started = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId: thread.id, prompt, meta, ...(guidance ? { guidance } : {}) });
+    const started = s.runtime.start({ workspaceId: ws, agentId: agent.id, threadId: thread.id, prompt, meta, scopePageIds, ...(guidance ? { guidance } : {}) });
     setFocus({ agentId: agent.id, runId: started.run.id, ...(started.run.pageId ? { pageId: started.run.pageId } : {}) });
     const cancel = () => { void s.runtime.cancel(ws, started.run.id); };
     signal.addEventListener("abort", cancel, { once: true });
-    try { await started.done; } finally { signal.removeEventListener("abort", cancel); }
+    try {
+      const result = await started.done;
+      if (result.run.status !== "succeeded") throw new Error(`Demo run ${result.run.status}: ${result.run.error}`);
+    } finally { signal.removeEventListener("abort", cancel); }
   };
 
   try {
@@ -108,7 +115,25 @@ export async function playScenario(o: PlayOptions): Promise<void> {
       setFocus({});
       const action = def.action;
       if (action.kind === "ask") {
-        await ask(action.agent, action.prompt, [], action.guidance);
+        const scopePageIds = action.circle ? s.pages.listPages(ws).filter(p => action.circle!.test(p.title)).map(p => p.id) : undefined;
+        if (scopePageIds) {
+          setFocus({ circledPageIds: scopePageIds });
+          await sleep(2500 * (o.holdScale ?? 0), signal);
+        }
+        await ask(action.agent, action.prompt, [], action.guidance, scopePageIds);
+        const widget = listWidgets(s.db, ws).find(w => w.data.kind === (def.id === "cost" ? "total" : "progress"));
+        if (widget && (def.id === "cost" || def.id === "lens")) setFocus({ widgetId: widget.id });
+      } else if (action.kind === "edit") {
+        if (def.id === "tick") clearLens(s.db, s.bus, ws);
+        const target = s.pages.listPages(ws).find(p => action.title.test(p.title));
+        if (!target) throw new Error(`Demo edit page missing: ${action.title}`);
+        const widget = listWidgets(s.db, ws).find(w => w.pageIds.includes(target.id) && w.data.kind === (def.id === "tick" ? "progress" : "total"));
+        setFocus({ pageId: target.id, ...(widget ? { widgetId: widget.id } : {}) });
+        const json = await s.collab.getPageJSON(target.id, ws);
+        if (!json) throw new Error("Demo source page missing");
+        await s.collab.editPage(target.id, ws, current => applyFind(current, readView(json).version, action.find, action.replace).json, ctx.person);
+        // Let the same 300ms reactor used by real editors publish before the next step.
+        await sleep(400, signal);
       } else if (action.kind === "voice") {
         const audio = await addAttachment(s, ws, action.audio, "audio", "audio/wav");
         const bytes = await fs.readFile(path.join(ASSETS_DIR, action.audio));
@@ -130,7 +155,8 @@ export async function playScenario(o: PlayOptions): Promise<void> {
       const last = index === o.scenario.steps.length - 1;
       const gap = last ? 0 : o.gapMs;
       // Quick steps (a photo, a cover) stay up long enough to read what landed.
-      const hold = (def.minMs ?? 0) * (o.holdScale ?? 0) - (Date.now() - began) - gap;
+      const visibleSince = def.id === "lens" && lensShownAt ? lensShownAt : began;
+      const hold = (def.minMs ?? 0) * (o.holdScale ?? 0) - (Date.now() - visibleSince) - gap;
       if (hold > 0) await sleep(hold, signal);
       if (gap > 0) await sleep(gap, signal);
     }

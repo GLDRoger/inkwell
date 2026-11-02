@@ -69,7 +69,8 @@ Light, hills, trams, and custard tarts. Also a serious test of whether we could 
 
 ## Notes
 
-- Book Pena Palace entry for the first slot — it fills up by 11.
+- Book Pena Palace entry for the first slot — it fills up by 11. Tickets for two: €40.
+- Tram day passes for two on day 2: €14.
 - The Lisboa Card only pays off if we do two paid museums on day 3.
 - Restaurants worth booking are listed in [Lisbon food & neighbourhoods]({{lisbon-food}}).
 `,
@@ -89,6 +90,9 @@ Light, hills, trams, and custard tarts. Also a serious test of whether we could 
 - **Time Out Market** — easy first-night option, go early
 - **A neighbourhood tasca in Graça** — grilled sardines if they're on
 - **Ginjinha stand** — sour cherry liqueur, one shot, standing up
+
+Saturday dinner for two at the Graça tasca: €85.
+Alfama fado night for two, including supper: €100.
 
 ## Neighbourhoods
 
@@ -129,7 +133,11 @@ Monumental and riverside. Monastery, tower, and the tart queue that's actually w
 
 ## Money notes
 
-Cards work almost everywhere; keep €20 in coins/small notes for trams and tiny cafés.
+Return flights for two, cabin bags included: €380.
+Graça apartment, four nights at 95 euros a night: €380 for the stay.
+Airport transfer for two on arrival: €28.
+
+Cards work almost everywhere; keep a little cash for trams and tiny cafés.
 `,
   },
 
@@ -142,6 +150,8 @@ Cards work almost everywhere; keep €20 in coins/small notes for trams and tiny
     x: 120,
     y: -480,
     body: `The hub for getting v1 into real users' hands. Everything below rolls up to one goal: **ten happy paying teams by the end of the quarter.**
+
+Launch: Friday 4 December 2026. Ship the pilot release that morning, then stay close to support.
 
 ## Workstreams
 
@@ -170,7 +180,7 @@ Cards work almost everywhere; keep €20 in coins/small notes for trams and tiny
 
 - [x] Onboarding flow with sample data
 - [ ] Billing: cards, invoices, dunning emails
-- [ ] Audit log for workspace admins
+- [x] Audit log for workspace admins
 - [ ] Performance pass on the two slowest screens
 
 ## Next
@@ -213,6 +223,12 @@ Progress is judged against [Metrics that matter]({{metrics}}), not against this 
 ## Diligence folder
 
 Financial model, cap table, pilot references, and the security one-pager. Keep it boring and current.
+
+## Before launch
+
+- [ ] Financial model reviewed
+- [ ] Send pilot metrics to North Pier
+- [ ] Refresh the security one-pager
 `,
   },
   {
@@ -234,6 +250,12 @@ Financial model, cap table, pilot references, and the security one-pager. Keep i
 
 - Owns onboarding polish and the templates gallery
 - Sets the visual system we keep improvising today
+
+## Before launch
+
+- [ ] Full-stack scorecard agreed
+- [ ] Publish the full-stack job post
+- [ ] Set up the paid work trial
 
 ## Rules
 
@@ -260,6 +282,12 @@ Financial model, cap table, pilot references, and the security one-pager. Keep i
 | Weekly active editors | People editing in the last 7 days | Growing 5%/week |
 | Time to first value | Signup → first shared page | < 10 minutes |
 | Support load | Tickets per active team per week | < 0.5 |
+
+## Launch readiness
+
+- [x] Activation dashboard connected
+- [x] Check week-4 retention with the pilot teams
+- [x] Rehearse the Monday review
 
 ## How we use them
 

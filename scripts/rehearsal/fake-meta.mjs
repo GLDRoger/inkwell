@@ -129,7 +129,7 @@ function readConversation(body) {
       const value = typeof m.content === "string" || Array.isArray(m.content) ? raw : JSON.stringify(m.content);
       step.raw = value;
       step.error = value.startsWith("Error:") ? value.slice(6).trim() : null;
-      step.result = step.error ? null : tryJson(value) ?? value;
+      step.result = step.error ? null : tryJson(value.split("\nCurrent widgets:")[0]) ?? value;
     }
   }
   const tools = (Array.isArray(body.tools) ? body.tools : []).map((t) => t?.function?.name).filter(Boolean);
@@ -324,6 +324,25 @@ function planTurn(c) {
     }
     const exact = /reply with exactly:\s*(.+)$/i.exec(prompt)?.[1];
     return finalReply(exact ?? (steps.length ? "Done." : `Hello from the rehearsal Meta API. You said: ${shorten(prompt, 200)}`));
+  }
+  // Deterministic fixtures for the map tools; these are rehearsal responses, not AI.
+  if (/what.s left before we launch/i.test(prompt) && tools.includes("show_lens")) {
+    const listing = done(steps, "list_pages")[0];
+    if (!listing) return { call: { name: "list_pages", args: {} } };
+    const pages = listing.result;
+    const launch = pages.filter(p => /^(Product roadmap|Fundraising notes|Hiring plan|Metrics that matter)$/.test(p.title));
+    if (!done(steps, "show_lens").length) return { call: { name: "show_lens", args: { title: "What's left before launch", kind: "columns", groups: [
+      { label: "In progress", pageIds: launch.map(p => p.id) }, { label: "To do", pageIds: [] }
+    ] } } };
+    if (!done(steps, "create_widget").some(s => s.args.kind === "countdown")) return { call: { name: "create_widget", args: { kind: "countdown", title: "Launch countdown", pageIds: [], date: "2026-12-04" } } };
+    if (!done(steps, "create_widget").some(s => s.args.kind === "progress")) return { call: { name: "create_widget", args: { kind: "progress", title: "Launch progress", pageIds: launch.map(p => p.id) } } };
+    return finalReply("The launch lens, countdown and live progress are on the map.");
+  }
+  if (/what will this trip cost/i.test(prompt) && tools.includes("create_widget")) {
+    const listing = done(steps, "list_pages")[0];
+    if (!listing) return { call: { name: "list_pages", args: {} } };
+    if (!done(steps, "create_widget").length) return { call: { name: "create_widget", args: { kind: "total", title: "Lisbon budget", currency: "€", pageIds: listing.result.filter(p => /^(Lisbon itinerary|Lisbon food & neighbourhoods|Packing & logistics)$/.test(p.title)).map(p => p.id) } } };
+    return finalReply(done(steps, "create_widget")[0].raw);
   }
   if (steps.length >= 12) return finalReply("I've taken as many steps as I should for one request. Here's where I got to — ask me to continue if you want more.");
   const intent = intentOf(prompt, self, c.agents);

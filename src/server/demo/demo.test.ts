@@ -155,7 +155,7 @@ describe("replay in the demo notebook", () => {
       fetchSpy.mockRestore();
 
       const steps = events.filter((e): e is Extract<ServerEvent, { type: "demo.step" }> => e.type === "demo.step");
-      expect([...new Set(steps.map((e) => e.index))]).toEqual([0, 1, 2, 3, 4, 5]);
+      expect([...new Set(steps.map((e) => e.index))]).toEqual(LISBON_TOUR.steps.map((_, index) => index));
       expect(steps.some((e) => e.focus.pageId && e.focus.runId)).toBe(true);
       expect(steps.find((e) => e.index === 0)!.step).toEqual({ id: "plan", caption: LISBON_TOUR.steps[0]!.caption, model: "muse-wonder" });
 
@@ -185,10 +185,27 @@ describe("replay in the demo notebook", () => {
       const cards = harness.services.pages.listPages(demoWs).filter((p) => p.parentId === photoNotes.id).length;
       expect(harness.services.pages.getPageWithBody(demoWs, photoNotes.id)?.markdown).toBe(`${cards} notes read from this photo.\n`);
 
+      const widgets = events.filter((e): e is Extract<ServerEvent, { type: "widget.updated" }> => e.type === "widget.updated").map(e => e.widget);
+      const progress = widgets.filter(w => w.data.kind === "progress");
+      expect(progress.map(w => w.data)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ done: 5, total: 13 }), expect.objectContaining({ done: 6, total: 13 }),
+      ]));
+      const totals = widgets.filter(w => w.data.kind === "total");
+      expect(totals.map(w => w.data)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ amount: 1027 }), expect.objectContaining({ amount: 1087 }),
+      ]));
+      expect(events.some(e => e.type === "lens.shown")).toBe(true);
+      expect(events.some(e => e.type === "lens.cleared")).toBe(true);
+      expect(steps.some(e => e.focus.circledPageIds?.length === 3)).toBe(true);
+      expect(steps.some(e => e.step.id === "tick" && e.focus.widgetId && e.focus.pageId)).toBe(true);
+      expect(steps.some(e => e.step.id === "price" && e.focus.widgetId)).toBe(true);
+      // Widget ids in later model output must follow the actual replay widgets.
+      expect(widgets.every(w => !cassette.widgets?.includes(w.id))).toBe(true);
+
       // The visitor's own notebook didn't change and heard nothing.
       expect(harness.services.pages.listPages(me.workspaceId).map((p) => p.id)).toEqual(ownBefore);
       expect(ownEvents.filter((e) => e.type !== "presence")).toEqual([]);
-      expect(await (await call("/api/demo")).json()).toMatchObject({ playing: false, stepIndex: 5 });
+      expect(await (await call("/api/demo")).json()).toMatchObject({ playing: false, stepIndex: LISBON_TOUR.steps.length - 1 });
 
       // Restarting resets the notebook to a fresh seed and plays again from the top.
       const again = waitForEvent(harness.services, demoWs, (e) => e.type === "demo.ended");
@@ -249,6 +266,14 @@ describe("recording transport, server errors", () => {
 });
 
 describe("replay transport", () => {
+  it("translates widget ids in tool arguments and later replies", () => {
+    const from = "w".repeat(21), to = "z".repeat(21);
+    const translator = new IdTranslator({ ...cassette, widgets: [from] });
+    translator.mapWidget(0, to);
+    expect(translator.translate(JSON.stringify({ widgetId: from }))).toBe(JSON.stringify({ widgetId: to }));
+    expect(translator.translate(`Updated widget ${from}.`)).toBe(`Updated widget ${to}.`);
+  });
+
   it("answers no further media call once the demo has stopped", async () => {
     const recorded: Cassette = { ...cassette, steps: [{ id: "photo", streams: [{ kind: "media", exchanges: [
       { path: "/chat/completions", status: 200, ms: 20_000, response: { type: "json", body: {} } },

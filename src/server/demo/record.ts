@@ -109,15 +109,20 @@ export async function recordScenario(o: RecordOptions): Promise<Cassette> {
   const seed: Record<string, string> = {};
   for (const page of s.pages.listPages(demoWs)) seed[page.title] = page.id;
   const created: string[] = [];
-  const unsubscribe = s.bus.subscribe(demoWs, (event) => { if (event.type === "page.created") created.push(event.page.id); });
+  const widgets: string[] = [];
+  const unsubscribe = s.bus.subscribe(demoWs, (event) => {
+    if (event.type === "page.created") created.push(event.page.id);
+    if (event.type === "widget.updated" && !widgets.includes(event.widget.id)) widgets.push(event.widget.id);
+  });
   const transport = recordingTransport({ fetch: o.fetch, secrets: o.secrets ?? [o.apiKey] });
   const controller = new AbortController();
   const date = new Date();
+  let reportedStep = -1;
   try {
     await playScenario({
       services: s, ctx, scenario: o.scenario, transport, apiKey: o.apiKey, baseUrl: o.baseUrl, model: o.model,
       signal: controller.signal, gapMs: 0, date,
-      onStep: (index, focus) => { if (!focus.agentId && !focus.pageId) o.onStep?.(index, o.scenario.steps[index]!.id); },
+      onStep: (index) => { if (index !== reportedStep) { reportedStep = index; o.onStep?.(index, o.scenario.steps[index]!.id); } },
     });
   } finally {
     unsubscribe();
@@ -129,6 +134,7 @@ export async function recordScenario(o: RecordOptions): Promise<Cassette> {
     model: o.model,
     seed,
     created,
+    widgets,
     steps: transport.steps,
     usage: totalUsage(transport.steps),
   };

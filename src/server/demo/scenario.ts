@@ -10,13 +10,14 @@ export type StepAction =
    * person would type it; `guidance` steers the recording through the agent's system
    * prompt (never shown in the diary, not passed to child runs).
    */
-  | { kind: "ask"; agent: string; prompt: string; guidance?: string }
+  | { kind: "ask"; agent: string; prompt: string; guidance?: string; circle?: RegExp }
   /** A person speaks to an agent: the bundled recording is transcribed, then sent. */
   | { kind: "voice"; agent: string; audio: string }
   /** Photo to cards on the bundled photo. */
   | { kind: "photo"; image: string }
   /** A Muse Image cover for the first page created in the demo whose title matches. */
-  | { kind: "cover"; title: RegExp };
+  | { kind: "cover"; title: RegExp }
+  | { kind: "edit"; title: RegExp; find: string; replace: string };
 
 export interface ScenarioStep extends DemoStep {
   action: StepAction;
@@ -83,6 +84,39 @@ export const LISBON_TOUR: ScenarioDefinition = {
         prompt: "Can you tidy up after today?",
         guidance: "For this request: today's new pages are the Lisbon plan, the reading summary, the job post and the photo cards. Call list_pages once, read only those pages and the area pages they belong to, and don't ask other agents. Link each new page from its area page and back. Only add links: don't move or rename any page, and leave the photo cards under Photo notes with their titles.",
       },
+    },
+    {
+      id: "lens",
+      caption: "Ask a question and the map rearranges to answer it, with a countdown and live progress.",
+      model: "muse-wonder",
+      minMs: 10_000,
+      action: {
+        kind: "ask", agent: "Atlas", prompt: "What's left before we launch?",
+        guidance: 'Call list_pages once, then read Startup: launch plan, Product roadmap, Fundraising notes, Hiring plan and Metrics that matter. Use show_lens with columns for Done, In progress and To do (each page in one group). Create a countdown widget titled "Launch countdown" to 2026-12-04, and a progress widget titled "Launch progress" over Product roadmap, Fundraising notes, Hiring plan and Metrics that matter. Do not edit pages or delegate. Reply in one short line pointing at the map.',
+      },
+    },
+    {
+      id: "tick",
+      caption: "Tick a task and the widget updates.",
+      minMs: 5000,
+      action: { kind: "edit", title: /^Product roadmap$/, find: "- [ ] Billing: cards, invoices, dunning emails", replace: "- [x] Billing: cards, invoices, dunning emails" },
+    },
+    {
+      id: "cost",
+      caption: "Circle the trip pages and ask what it will cost.",
+      model: "muse-wonder",
+      minMs: 10_000,
+      action: {
+        kind: "ask", agent: "Atlas", prompt: "What will this trip cost?",
+        circle: /^(Lisbon itinerary|Lisbon food & neighbourhoods|Packing & logistics)$/,
+        guidance: 'Read only the three circled source pages. Create one total widget titled "Lisbon budget" in € over exactly those pages. Do not include the generated Lisbon plan (it repeats prices), edit any pages, or delegate. Reply with the computed total in one short line.',
+      },
+    },
+    {
+      id: "price",
+      caption: "Change a price and the total follows.",
+      minMs: 5000,
+      action: { kind: "edit", title: /^Packing & logistics$/, find: "Graça apartment, four nights at 95 euros a night: €380 for the stay.", replace: "Graça apartment, four nights at 110 euros a night: €440 for the stay." },
     },
   ],
 };

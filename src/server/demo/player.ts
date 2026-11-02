@@ -133,8 +133,12 @@ export class DemoPlayer {
       const translator = new IdTranslator(cassette);
       translator.mapSeed(s.pages.listPages(demoWs));
       let createdCount = 0;
+      const widgetIds = new Set<string>();
       const unsubscribe = s.bus.subscribe(demoWs, (event) => {
         if (event.type === "page.created") translator.mapCreated(createdCount++, event.page.id);
+        if (event.type === "widget.updated" && !widgetIds.has(event.widget.id)) {
+          translator.mapWidget(widgetIds.size, event.widget.id); widgetIds.add(event.widget.id);
+        }
       });
       const scenario: DemoScenario = { id: def.id, title: def.title, steps: def.steps.map(publicStep), recordedFrom: cassette.scenario.recordedFrom };
       const controller = new AbortController();
@@ -146,7 +150,7 @@ export class DemoPlayer {
         // Replay never calls Meta, so it needs no key; the model is the recording's.
         apiKey: "recorded-demo", baseUrl: "https://api.meta.ai/v1", model: cassette.model,
         date: new Date(cassette.recordedAt),
-        gapMs: 3500 * pace,
+        gapMs: 2000 * pace,
         holdScale: pace,
         onStep: (index, focus) => {
           if (index < 0 || !play.playing) return;
