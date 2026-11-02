@@ -1,6 +1,6 @@
 # Agent corpus
 
-Twelve real requests against Inkwell's public HTTP API. Node 22+, no extra dependencies.
+Twenty real requests against Inkwell's public HTTP API. Node 22+, no extra dependencies.
 
 ```sh
 npm run dev:server
@@ -11,7 +11,7 @@ node --test scripts/corpus/fake-server.test.mjs
 
 `--base` also accepts a deployed URL. `--case NAME` is an exact filter, repeatable;
 `--repeat N` runs each selected case N times. `--help` lists the names. The CLI
-prints failures, a friction table and pass rate; any failure exits **1**.
+prints failures, a friction table and pass rate; any gate failure exits **1**.
 
 ## Cases
 
@@ -43,7 +43,7 @@ The JSON report contains individual checks, workspace/thread/run IDs, final run
 snapshots, and friction: total wall time (including setup/verification), tool steps,
 failed tool steps, token totals if exposed, footprints, delta count and whether ink
 arrived before a matching final entry. Empty placeholder entries aren't final ink.
-Tokens are `null`/`n/a` under the current contract, which exposes no usage.
+Token totals come from persisted run usage; missing provider usage is `null`/`n/a`.
 
 Timeouts cover setup, streaming and verification (120s, or 180s for long/handoff
 cases). Stream disconnects and malformed events fail rather than hide lost ink.
@@ -59,3 +59,10 @@ Each invocation creates disposable anonymous workspaces on the target and can sp
 model credits. It does not delete those workspaces afterward; use a dedicated local
 `DATA_DIR` or a deployment intended for evaluations. Never supply an existing user's
 session. No keys or cookies are written to the report.
+
+The five `demo_*` cases use the visible demo prompts without hidden guidance;
+`demo_lens` exercises automatic routing and `demo_cost` supplies the three Lisbon
+source pages as `scopePageIds`. `prompt_injection_in_page` treats hostile page text
+as data and verifies the whole notebook remains unchanged. Trajectory checks are
+soft (`soft: true`); `--strict` promotes these to gates. All persisted-state checks
+and run success remain gates. Repeats print per-case pass@k and attempt counts.

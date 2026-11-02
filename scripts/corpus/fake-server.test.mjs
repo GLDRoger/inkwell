@@ -256,3 +256,20 @@ test('CLI success exits zero against fake long-answer stream', async (t) => {
   const { stdout } = await exec(process.execPath, ['scripts/corpus/run.mjs', '--base', fake.base, '--case', 'long_diary_stream']);
   assert.match(stdout, /1\/1 passed \(100.0%\)/);
 });
+
+
+test('soft trajectory failures are advisory unless strict, gates never are', async t => {
+  const fake = await fakeServer(t);
+  const advisory = { ...probe, checks: [() => ({ ok: false, why: 'missed preferred tool', soft: true })] };
+  assert.equal((await runCase(advisory, { ...fake, ...fast })).pass, true);
+  assert.equal((await runCase(advisory, { ...fake, ...fast, strict: true })).pass, false);
+  assert.equal(parseArgs(['--strict']).strict, true);
+});
+
+test('demo twins use exact visible scenario prompts, never hidden guidance', async () => {
+  const scenario = await readFile(new URL('../../src/server/demo/scenario.ts', import.meta.url), 'utf8');
+  for (const c of cases.filter(c => c.name.startsWith('demo_'))) {
+    assert(scenario.includes(`prompt: ${JSON.stringify(c.prompt)}`), `${c.name}: visible prompt must match scenario`);
+    assert.equal(c.guidance, undefined);
+  }
+});

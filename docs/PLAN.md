@@ -174,3 +174,12 @@ Sub-goals, each with its check:
 3. Avatars: visual check on map and diary, both themes.
 4. New demo steps (after tidy): "What's left before we launch?" (lens + countdown + progress), a person ticks a task (progress updates), circle the Lisbon cards and ask "What will this trip cost?" (total widget), a person changes a price (total updates). Re-record from real Muse Wonder; full demo plays clean.
 5. Re-shoot video, README/SUBMISSION, deploy.
+
+## eve-style agent definitions (2026-11-02)
+
+Scope: copy eve's file-first conventions into the existing Vercel AI SDK runtime, not install eve. Preserve recorded tool names/arguments and the ten-step Lisbon replay.
+
+1. Add public-API unguided demo twins and a page-injection case; capture real Wonder baseline twice before changing prompts.
+2. Route status/money questions to Atlas; load validated instructions and scoped skills from `agents/defs`, with an inline fallback.
+3. Polish tool field contracts, prevent child re-delegation, report failed-child partial work, and enforce deletion intent from the root person request.
+4. Compare real Wonder tool/inline outcomes; run the full corpus, typecheck, tests, production asset boot and replay gates. Record results below before completion.
