@@ -103,7 +103,7 @@ function metrics(state, started) {
   };
 }
 
-export async function runCase(testCase, { base = 'http://localhost:8787', pollMs = 500, settleMs = 250 } = {}) {
+export async function runCase(testCase, { base = 'http://localhost:8787', pollMs = 500, settleMs = 250, strict = false } = {}) {
   const started = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error(`Timed out after ${testCase.timeoutMs}ms`)), testCase.timeoutMs);
@@ -135,6 +135,7 @@ export async function runCase(testCase, { base = 'http://localhost:8787', pollMs
     const submission = await api.post('/api/diary', {
       text: typeof testCase.prompt === 'function' ? testCase.prompt(state) : testCase.prompt,
       ...(agent ? { agentId: agent.id } : {}),
+      ...(testCase.scopePageIds ? { scopePageIds: testCase.scopePageIds(state) } : {}),
       ...(state.fixture.pageId ? { pageId: state.fixture.pageId } : {}),
     });
     state.rootId = submission.runId;
@@ -190,7 +191,7 @@ export async function runCase(testCase, { base = 'http://localhost:8787', pollMs
       }
     }
   }
-  return { name: testCase.name, pass: checks.length > 0 && checks.every((c) => c.ok), workspaceId: state.workspaceId,
+  return { name: testCase.name, pass: checks.length > 0 && checks.every((c) => c.ok || (c.soft && !strict)), workspaceId: state.workspaceId,
     runId: state.rootId, threadId: state.threadId, checks, error, metrics: metrics(state, started),
     runs: state.runs, cleanupErrors: state.cleanupErrors ?? [] };
 }
@@ -199,6 +200,7 @@ export function parseArgs(args) {
   const options = { base: 'http://localhost:8787', repeat: 1, names: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === '--strict') { options.strict = true; continue; }
     if (arg === '--help') { options.help = true; continue; }
     if (!['--base', '--case', '--repeat', '--json'].includes(arg) || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`Invalid argument: ${arg}`);
     const value = args[++i];
@@ -229,6 +231,7 @@ export async function main(args = process.argv.slice(2)) {
     seconds: (r.metrics.wallMs / 1000).toFixed(1), steps: r.metrics.steps, failedTools: r.metrics.failedToolSteps,
     tokens: r.metrics.tokens ?? 'n/a', footprints: r.metrics.footprints, earlyInk: r.metrics.deltaBeforeFinal })));
   const passed = results.filter((r) => r.pass).length;
+  for (const name of new Set(results.map(r => r.name))) { const attempts = results.filter(r => r.name === name); console.log(`${name}: pass@${attempts.length} ${attempts.some(r => r.pass) ? 'PASS' : 'FAIL'} (${attempts.filter(r => r.pass).length}/${attempts.length})`); }
   const report = { at: new Date().toISOString(), base: options.base, passed, total: results.length, passRate: passed / results.length, results };
   console.log(`${passed}/${results.length} passed (${(report.passRate * 100).toFixed(1)}%)`);
   if (options.json) await writeFile(options.json, JSON.stringify(report, null, 2) + '\n');
