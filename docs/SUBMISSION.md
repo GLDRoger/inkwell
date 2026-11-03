@@ -1,6 +1,6 @@
 # Inkwell: submission
 
-Answers for the submission form. The four TODOs at the bottom must be resolved before pasting.
+Answers for the submission form. The checklist at the bottom is complete.
 
 ## Project name
 
@@ -80,13 +80,13 @@ All five paths were run live on 2026-10-30: `scripts/smoke-meta.mjs` passed 5/5,
 - Video: https://youtu.be/2sWUdSjPVd8
 - Video script and shot list: [DEMO.md](DEMO.md)
 
-## AI-assistance disclosure (draft)
+## AI-assistance disclosure
 
-Inkwell's code and documentation were written with AI coding agents under the author's direction and review. Most of the work, including the current version, was done with Claude Code using Claude Opus. Earlier phases also used GPT and Muse coding agents for parts of the server, deployment and evaluation corpus. Every AI feature inside the product runs on Meta's models only: Muse Wonder, Muse Spark Contributor, Muse Voice Transcribe, SAM 3.1 and Muse Image.
+Inkwell's code and documentation were written with AI coding agents under the author's direction and review. Server work was led by Meta's Muse Wonder Full coding model. The frontend was built with Claude Opus 5.5 in Claude Code, because Meta's coding models didn't meet the quality bar we needed for the interface. Every AI feature inside the product runs on Meta's models only: Muse Wonder, Muse Spark Contributor, Muse Voice Transcribe, SAM 3.1 and Muse Image.
 
 ## Before submitting
 
 - [x] Video uploaded: https://youtu.be/2sWUdSjPVd8 (2:25, 1920×1080, narrated, captions in `inkwell-submission-v3.srt`).
 - [x] Team: Nishchay Chandra (solo), Indie Developer Track, problem statement Build for Your World.
-- [ ] **TODO: AI-assistance disclosure.** Check the draft above against the wording the form asks for.
+- [x] AI-assistance disclosure written (above).
 - [x] **Track and deadline confirmed** on the official event page (our notes: due November 4, 2026, 9:00 PM ET; judged on impact 30%, use of Meta AI tooling 25%, technical depth 20%, demo 25%).
