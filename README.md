@@ -11,7 +11,7 @@ Ask a question about your notes and the map rearranges itself to answer it: "Wha
 - **Watch it work** needs nothing. It plays a two-minute recording of real Muse Wonder, Muse Voice, SAM 3.1 and Muse Image runs, replayed through the live agent runtime in a throwaway demo notebook.
 - **Try it yourself** gives you your own notebook and a four-step guide. The AI features need a Meta API key ([dev.meta.ai](https://dev.meta.ai)); the key stays in your browser.
 
-[Submission](docs/SUBMISSION.md) · [Video script](docs/DEMO.md) · [Demo design](docs/DEMO-MODE.md) · [Visual design](docs/DESIGN.md) · [Build log](docs/PLAN.md)
+[Video (2:25)](https://youtu.be/2sWUdSjPVd8) · [Submission](docs/SUBMISSION.md) · [Video script](docs/DEMO.md) · [Demo design](docs/DEMO-MODE.md) · [Visual design](docs/DESIGN.md) · [Build log](docs/PLAN.md)
 
 ![The welcome screen: "A notebook that writes back." with Watch it work and Try it yourself, surrounded by objects painted with Muse Image](docs/images/welcome.webp)
 

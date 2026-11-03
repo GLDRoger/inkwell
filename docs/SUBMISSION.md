@@ -77,7 +77,7 @@ All five paths were run live on 2026-10-30: `scripts/smoke-meta.mjs` passed 5/5,
 
 - Live app: https://inkwell.76-13-246-244.sslip.io
 - Repository: https://github.com/GLDRoger/inkwell
-- Video: **TODO**
+- Video: https://youtu.be/2sWUdSjPVd8
 - Video script and shot list: [DEMO.md](DEMO.md)
 
 ## AI-assistance disclosure (draft)
@@ -86,7 +86,7 @@ Inkwell's code and documentation were written with AI coding agents under the au
 
 ## Before submitting
 
-- [ ] **TODO: video link.** The video is final (2:25, 1920×1080, narrated; kept outside the repo as `inkwell-submission-v3.mp4`, with captions in `inkwell-submission-v3.srt`). Upload both and add the link above.
-- [ ] **TODO: team details** for the form.
+- [x] Video uploaded: https://youtu.be/2sWUdSjPVd8 (2:25, 1920×1080, narrated, captions in `inkwell-submission-v3.srt`).
+- [x] Team: Nishchay Chandra (solo), Indie Developer Track, problem statement Build for Your World.
 - [ ] **TODO: AI-assistance disclosure.** Check the draft above against the wording the form asks for.
-- [ ] **TODO: confirm track and eligibility** on the official event page (our notes: due November 4, 2026, 9:00 PM ET; judged on impact 30%, use of Meta AI tooling 25%, technical depth 20%, demo 25%).
+- [x] **Track and deadline confirmed** on the official event page (our notes: due November 4, 2026, 9:00 PM ET; judged on impact 30%, use of Meta AI tooling 25%, technical depth 20%, demo 25%).
